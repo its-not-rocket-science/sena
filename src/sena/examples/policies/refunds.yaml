@@ -1,0 +1,22 @@
+[
+  {
+    "id": "refund_block_without_order",
+    "description": "Refunds require a valid order identifier",
+    "severity": "high",
+    "inviolable": true,
+    "applies_to": ["release_refund"],
+    "condition": {"field": "order_exists", "eq": false},
+    "decision": "BLOCK",
+    "reason": "Refund blocked because no valid order is linked."
+  },
+  {
+    "id": "refund_escalate_large_amount",
+    "description": "Large refunds require manager review",
+    "severity": "medium",
+    "inviolable": false,
+    "applies_to": ["release_refund"],
+    "condition": {"field": "amount", "gte": 2000},
+    "decision": "ESCALATE",
+    "reason": "Refund amount exceeds auto-approval threshold."
+  }
+]

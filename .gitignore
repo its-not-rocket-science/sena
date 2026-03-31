@@ -122,3 +122,4 @@ checkpoints/
 # =========================
 *.bak
 *.tmp
+!src/sena/examples/scenarios/*.json
