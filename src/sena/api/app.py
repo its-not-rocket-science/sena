@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from sena.api.schemas import EvaluateRequest, HealthResponse
-from sena.core.models import ActionProposal
+from sena.core.enums import DecisionOutcome
+from sena.core.models import ActionProposal, EvaluatorConfig
 from sena.engine.evaluator import PolicyEvaluator
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 
@@ -34,8 +35,12 @@ def create_app(
     except PolicyParseError as exc:
         raise RuntimeError(f"Failed to load policy bundle: {exc}") from exc
 
-    evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
     app = FastAPI(title="SENA Compliance Engine API", version="0.2.0")
+
+    def _parse_default_decision(raw: str) -> DecisionOutcome:
+        if raw == "ESCALATE":
+            return DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
+        return DecisionOutcome(raw)
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -57,6 +62,14 @@ def create_app(
                 request_id=req.request_id,
                 actor_id=req.actor_id,
                 attributes=req.attributes,
+            )
+            evaluator = PolicyEvaluator(
+                rules,
+                policy_bundle=metadata,
+                config=EvaluatorConfig(
+                    default_decision=_parse_default_decision(req.default_decision),
+                    require_allow_match=req.strict_require_allow,
+                ),
             )
             trace = evaluator.evaluate(proposal, req.facts)
             return trace.to_dict()

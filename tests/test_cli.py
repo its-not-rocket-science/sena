@@ -19,5 +19,7 @@ def test_cli_json_output_contains_audit_fields() -> None:
 
     assert payload["decision_id"].startswith("dec_")
     assert payload["decision"] == payload["outcome"]
-    assert payload["policy_bundle"]["bundle_name"] == "default-bundle"
+    assert payload["policy_bundle"]["bundle_name"] == "enterprise-compliance-controls"
     assert "precedence_explanation" in payload["reasoning"]
+    assert "decision_timestamp" in payload
+    assert "decision_hash" in payload

@@ -7,7 +7,11 @@ def format_trace(trace: EvaluationTrace) -> str:
         f"Action: {trace.action_type}",
         f"Outcome: {trace.outcome.value}",
         f"Summary: {trace.summary}",
+        f"Decision Timestamp: {trace.decision_timestamp.isoformat() if trace.decision_timestamp else 'n/a'}",
+        f"Decision Hash: {trace.decision_hash or 'n/a'}",
         f"Precedence: {trace.reasoning.precedence_explanation if trace.reasoning else 'n/a'}",
+        f"Missing Fields: {', '.join(trace.missing_fields) if trace.missing_fields else 'none'}",
+        f"Conflicting Rules: {', '.join(trace.conflicting_rules) if trace.conflicting_rules else 'none'}",
         "Rule Evaluations:",
     ]
 

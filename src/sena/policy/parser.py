@@ -18,6 +18,17 @@ class PolicyParseError(ValueError):
     pass
 
 
+def _load_bundle_manifest(base: Path) -> dict[str, Any] | None:
+    for filename in ("bundle.yaml", "bundle.yml", "bundle.json"):
+        manifest_path = base / filename
+        if manifest_path.exists():
+            raw_manifest = _load_mapping(manifest_path.read_text(), manifest_path)
+            if not isinstance(raw_manifest, dict):
+                raise PolicyParseError(f"bundle manifest {manifest_path} must be a mapping")
+            return raw_manifest
+    return None
+
+
 def _load_mapping(raw_text: str, source: Path) -> Any:
     if yaml is not None:
         return yaml.safe_load(raw_text)
@@ -68,14 +79,19 @@ def load_policy_bundle(
     version: str = "0.1.0-alpha",
 ) -> tuple[list[PolicyRule], PolicyBundleMetadata]:
     base = Path(path)
+    manifest = _load_bundle_manifest(base) or {}
     all_rules: list[PolicyRule] = []
     for pattern in ("*.yaml", "*.yml", "*.json"):
         for policy_file in sorted(base.glob(pattern)):
+            if policy_file.name in {"bundle.yaml", "bundle.yml", "bundle.json"}:
+                continue
             all_rules.extend(parse_policy_file(policy_file))
 
     metadata = PolicyBundleMetadata(
-        bundle_name=bundle_name,
-        version=version,
+        bundle_name=str(manifest.get("bundle_name", bundle_name)),
+        version=str(manifest.get("version", version)),
         loaded_from=str(base.resolve()),
+        owner=manifest.get("owner"),
+        description=manifest.get("description"),
     )
     return all_rules, metadata

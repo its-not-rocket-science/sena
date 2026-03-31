@@ -20,3 +20,8 @@ def test_export_requires_human_review_when_escalation_matches() -> None:
 
     assert trace.outcome == DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
     assert "manual review" in trace.reasoning.precedence_explanation.lower()
+    assert trace.decision_timestamp is not None
+    assert len(trace.decision_hash or "") == 64
+    assert trace.audit_record is not None
+    assert trace.audit_record.input_fingerprint
+    assert isinstance(trace.missing_fields, list)
