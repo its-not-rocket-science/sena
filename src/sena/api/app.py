@@ -1,19 +1,27 @@
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
+from sena.audit.chain import append_audit_record, verify_audit_chain
 from sena.api.config import ApiSettings, load_settings_from_env
 from sena.api.logging import configure_logging
-from sena.api.schemas import BundleInfo, EvaluateRequest, HealthResponse, ReadinessResponse
+from sena.api.schemas import (
+    BatchEvaluateRequest,
+    BundleInfo,
+    EvaluateRequest,
+    HealthResponse,
+    ReadinessResponse,
+    SimulationRequest,
+)
 from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig, PolicyBundleMetadata
 from sena.engine.evaluator import PolicyEvaluator
+from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.policy.parser import PolicyParseError, load_policy_bundle
+from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 
 try:
     from fastapi import APIRouter, FastAPI, HTTPException, Request
@@ -49,14 +57,6 @@ def _parse_default_decision(raw: str) -> DecisionOutcome:
     if raw == "ESCALATE":
         return DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
     return DecisionOutcome(raw)
-
-
-
-def _write_audit_sink(path: str, payload: dict[str, Any]) -> None:
-    sink = Path(path)
-    sink.parent.mkdir(parents=True, exist_ok=True)
-    with sink.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, default=str, separators=(",", ":")) + "\n")
 
 
 
@@ -136,6 +136,18 @@ def create_app(settings: ApiSettings | None = None):
     def bundle() -> BundleInfo:
         return BundleInfo.model_validate(state.metadata.__dict__)
 
+    @api_v1.get("/bundle/inspect")
+    def bundle_inspect() -> dict[str, Any]:
+        applies_to: dict[str, int] = {}
+        for rule in state.rules:
+            for action in rule.applies_to:
+                applies_to[action] = applies_to.get(action, 0) + 1
+        return {
+            "bundle": BundleInfo.model_validate(state.metadata.__dict__),
+            "rules_total": len(state.rules),
+            "actions_covered": applies_to,
+        }
+
     @api_v1.post("/evaluate")
     def evaluate(req: EvaluateRequest, request: Request) -> dict[str, Any]:
         try:
@@ -156,10 +168,61 @@ def create_app(settings: ApiSettings | None = None):
             trace = evaluator.evaluate(proposal, req.facts)
             payload = trace.to_dict()
             if state.settings.audit_sink_jsonl:
-                _write_audit_sink(state.settings.audit_sink_jsonl, payload["audit_record"])
+                payload["audit_record"] = append_audit_record(
+                    state.settings.audit_sink_jsonl, payload["audit_record"]
+                )
             return payload
         except Exception as exc:  # pragma: no cover
             raise HTTPException(status_code=400, detail=f"Evaluation error: {exc}") from exc
+
+    @api_v1.post("/evaluate/batch")
+    def evaluate_batch(req: BatchEvaluateRequest, request: Request) -> dict[str, Any]:
+        return {
+            "count": len(req.items),
+            "results": [evaluate(item, request) for item in req.items],
+        }
+
+    @api_v1.post("/simulation")
+    def simulation(req: SimulationRequest) -> dict[str, Any]:
+        baseline_rules, baseline_meta = load_policy_bundle(req.baseline_policy_dir)
+        candidate_rules, candidate_meta = load_policy_bundle(req.candidate_policy_dir)
+        scenarios = {
+            item.scenario_id: SimulationScenario(
+                action_type=item.action_type,
+                request_id=item.request_id,
+                actor_id=item.actor_id,
+                attributes=item.attributes,
+                facts=item.facts,
+            )
+            for item in req.scenarios
+        }
+        return simulate_bundle_impact(
+            scenarios, baseline_rules, candidate_rules, baseline_meta, candidate_meta
+        )
+
+    @api_v1.post("/bundle/diff")
+    def bundle_diff(payload: dict[str, str]) -> dict[str, Any]:
+        current_rules, _ = load_policy_bundle(payload["current_policy_dir"])
+        target_rules, _ = load_policy_bundle(payload["target_policy_dir"])
+        return diff_rule_sets(current_rules, target_rules).__dict__
+
+    @api_v1.post("/bundle/promotion/validate")
+    def bundle_promotion_validate(payload: dict[str, Any]) -> dict[str, Any]:
+        source_rules, source_meta = load_policy_bundle(payload["source_policy_dir"])
+        target_rules, target_meta = load_policy_bundle(payload["target_policy_dir"])
+        result = validate_promotion(
+            payload.get("source_lifecycle", source_meta.lifecycle),
+            payload.get("target_lifecycle", target_meta.lifecycle),
+            source_rules,
+            target_rules,
+        )
+        return result.__dict__
+
+    @api_v1.get("/audit/verify")
+    def audit_verify() -> dict[str, Any]:
+        if not state.settings.audit_sink_jsonl:
+            raise HTTPException(status_code=400, detail="audit sink not configured")
+        return verify_audit_chain(state.settings.audit_sink_jsonl)
 
     app.include_router(api_v1)
 

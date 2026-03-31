@@ -13,7 +13,7 @@ def test_invalid_condition_without_field() -> None:
 
 def test_unsupported_operator_rejected() -> None:
     with pytest.raises(PolicyValidationError, match="unsupported operator"):
-        validate_condition({"field": "amount", "between": [1, 2]})
+        validate_condition({"field": "amount", "approx": 2})
 
 
 def test_nested_logical_expression_is_valid() -> None:

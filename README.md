@@ -49,7 +49,13 @@ Versioned endpoints:
 - `GET /v1/health`
 - `GET /v1/ready`
 - `GET /v1/bundle`
+- `GET /v1/bundle/inspect`
 - `POST /v1/evaluate`
+- `POST /v1/evaluate/batch`
+- `POST /v1/simulation`
+- `POST /v1/bundle/diff`
+- `POST /v1/bundle/promotion/validate`
+- `GET /v1/audit/verify`
 
 Backward-compatible aliases still exist at `/health`, `/bundle`, `/evaluate`.
 
@@ -63,15 +69,19 @@ docker compose up --build
 
 - Optional shared API key middleware (`SENA_API_KEY_ENABLED=true`, `SENA_API_KEY=...`).
 - Request ID propagation (`x-request-id`) for traceability.
-- Optional JSONL audit sink (`SENA_AUDIT_SINK_JSONL=/path/to/audit.jsonl`).
+- Optional JSONL audit sink (`SENA_AUDIT_SINK_JSONL=/path/to/audit.jsonl`) with tamper-evident hash chaining + verification endpoint/CLI.
+- Bundle manifest lifecycle states (`draft` / `candidate` / `active` / `deprecated`) and promotion validation tooling.
+- Bundle-to-bundle simulation and impact analysis via API and CLI.
+- Deterministic DSL extensions (`starts_with`, `ends_with`, `matches_regex`, `exists`, `between`) and optional context schema checks.
 
 ## Documentation
 
 - Architecture: `docs/ARCHITECTURE.md`
+- Control plane capabilities and alpha boundaries: `docs/CONTROL_PLANE.md`
 - Operations/deployment: `docs/OPERATIONS.md`
 - Legacy migration boundary: `docs/MIGRATION.md`
 - Gap analysis: `ENTERPRISE_GAP_ANALYSIS.md`
 
 ## Alpha honesty
 
-SENA is not yet a full enterprise platform. It does **not** currently provide HA control plane, OIDC/SSO, tenant isolation, policy authoring UI, or formal compliance certification claims.
+SENA is not yet a full enterprise platform. It does **not** currently provide HA multi-region control plane, OIDC/SSO, tenant isolation, policy authoring UI, durable DB-backed lifecycle workflow state, or formal compliance certification claims.

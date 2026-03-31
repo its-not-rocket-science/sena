@@ -29,6 +29,8 @@ class BundleManifest(BaseModel):
     owner: str | None = None
     description: str | None = None
     schema_version: str = "1"
+    lifecycle: str = "draft"
+    context_schema: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("version")
     @classmethod
@@ -140,7 +142,9 @@ def load_policy_bundle(
         owner=manifest.owner if manifest else None,
         description=manifest.description if manifest else None,
         schema_version=manifest.schema_version if manifest else "1",
+        lifecycle=manifest.lifecycle if manifest else "draft",
         integrity_sha256=_bundle_integrity_digest(policy_files),
         policy_file_count=len(policy_files),
+        context_schema=manifest.context_schema if manifest else {},
     )
     return all_rules, metadata

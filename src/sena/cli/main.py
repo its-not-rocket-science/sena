@@ -5,10 +5,13 @@ import json
 import sys
 from pathlib import Path
 
+from sena.audit.chain import verify_audit_chain
 from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig
 from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.explain import format_trace
+from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
+from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
 
@@ -72,7 +75,31 @@ def main() -> None:
         action="store_true",
         help="Fail if required action types are not covered",
     )
+    parser.add_argument(
+        "--compare-policy-dir",
+        type=Path,
+        help="Optional second policy directory used for diff/promotion validation",
+    )
+    parser.add_argument(
+        "--simulate-scenarios",
+        type=Path,
+        help="Optional JSON file containing map of simulation scenarios",
+    )
+    parser.add_argument(
+        "--validate-promotion",
+        action="store_true",
+        help="When --compare-policy-dir is set, run lifecycle promotion validation",
+    )
+    parser.add_argument(
+        "--verify-audit-chain",
+        type=Path,
+        help="Verify tamper-evident audit chain JSONL and exit",
+    )
     args = parser.parse_args()
+
+    if args.verify_audit_chain:
+        print(json.dumps(verify_audit_chain(str(args.verify_audit_chain)), indent=2))
+        return
 
     try:
         payload = json.loads(args.scenario.read_text())
@@ -102,6 +129,42 @@ def main() -> None:
             f"Policy coverage warning: missing required coverage for action_type(s): {sorted(uncovered)}",
             file=sys.stderr,
         )
+
+    if args.compare_policy_dir:
+        compare_rules, compare_meta = load_policy_bundle(args.compare_policy_dir)
+        print(
+            json.dumps(diff_rule_sets(rules, compare_rules).__dict__, indent=2),
+            file=sys.stderr,
+        )
+        if args.validate_promotion:
+            print(
+                json.dumps(
+                    validate_promotion(metadata.lifecycle, compare_meta.lifecycle, rules, compare_rules).__dict__,
+                    indent=2,
+                ),
+                file=sys.stderr,
+            )
+        if args.simulate_scenarios:
+            scenarios_payload = json.loads(args.simulate_scenarios.read_text())
+            scenarios = {
+                scenario_id: SimulationScenario(
+                    action_type=item["action_type"],
+                    request_id=item.get("request_id"),
+                    actor_id=item.get("actor_id"),
+                    attributes=item.get("attributes", {}),
+                    facts=item.get("facts", {}),
+                )
+                for scenario_id, item in scenarios_payload.items()
+            }
+            print(
+                json.dumps(
+                    simulate_bundle_impact(
+                        scenarios, rules, compare_rules, metadata, compare_meta
+                    ),
+                    indent=2,
+                ),
+                file=sys.stderr,
+            )
 
     proposal = ActionProposal(
         action_type=payload["action_type"],

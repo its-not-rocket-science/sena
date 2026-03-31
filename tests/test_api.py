@@ -104,3 +104,41 @@ def test_validation_error_shape() -> None:
     assert response.status_code == 422
     body = response.json()
     assert body["error"]["code"] == "validation_error"
+
+
+def test_batch_and_bundle_inspect_endpoints() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    inspect_response = client.get("/v1/bundle/inspect")
+    assert inspect_response.status_code == 200
+    assert inspect_response.json()["rules_total"] > 0
+
+    batch_response = client.post(
+        "/v1/evaluate/batch",
+        json={"items": [{"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}}]},
+    )
+    assert batch_response.status_code == 200
+    assert batch_response.json()["count"] == 1
+
+
+def test_simulation_endpoint() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    response = client.post(
+        "/v1/simulation",
+        json={
+            "baseline_policy_dir": "src/sena/examples/policies",
+            "candidate_policy_dir": "src/sena/examples/policies",
+            "scenarios": [
+                {
+                    "scenario_id": "s1",
+                    "action_type": "approve_vendor_payment",
+                    "attributes": {"vendor_verified": False},
+                    "facts": {},
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["total_scenarios"] == 1

@@ -20,11 +20,13 @@ class PolicyBundleMetadata:
     bundle_name: str
     version: str
     loaded_from: str
+    lifecycle: str = "draft"
     owner: str | None = None
     description: str | None = None
     schema_version: str = "1"
     integrity_sha256: str | None = None
     policy_file_count: int = 0
+    context_schema: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -52,6 +54,7 @@ class RuleEvaluationResult:
 class EvaluatorConfig:
     default_decision: DecisionOutcome = DecisionOutcome.APPROVED
     require_allow_match: bool = False
+    enforce_context_schema: bool = True
 
 
 @dataclass
@@ -75,6 +78,8 @@ class AuditRecord:
     precedence_explanation: str
     input_fingerprint: str
     decision_hash: str
+    chain_hash: str | None = None
+    previous_chain_hash: str | None = None
 
 
 @dataclass

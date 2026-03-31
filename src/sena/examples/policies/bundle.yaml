@@ -2,3 +2,7 @@ bundle_name: enterprise-compliance-controls
 version: 2026.03
 owner: finance-risk
 description: Enterprise baseline controls for payments, refunds, data access, and account recovery.
+lifecycle: candidate
+context_schema:
+  amount: int?
+  vendor_verified: bool?

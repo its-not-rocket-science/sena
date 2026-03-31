@@ -21,6 +21,25 @@ class EvaluateRequest(BaseModel):
     strict_require_allow: bool = False
 
 
+class BatchEvaluateRequest(BaseModel):
+    items: list[EvaluateRequest] = Field(min_length=1, max_length=500)
+
+
+class SimulationScenarioRequest(BaseModel):
+    scenario_id: NonEmptyStr
+    action_type: NonEmptyStr
+    request_id: str | None = None
+    actor_id: str | None = None
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    facts: dict[str, Any] = Field(default_factory=dict)
+
+
+class SimulationRequest(BaseModel):
+    baseline_policy_dir: NonEmptyStr
+    candidate_policy_dir: NonEmptyStr
+    scenarios: list[SimulationScenarioRequest] = Field(min_length=1)
+
+
 class BundleInfo(BaseModel):
     bundle_name: str
     version: str
@@ -28,8 +47,10 @@ class BundleInfo(BaseModel):
     owner: str | None = None
     description: str | None = None
     schema_version: str = "1"
+    lifecycle: str = "draft"
     integrity_sha256: str | None = None
     policy_file_count: int = 0
+    context_schema: dict[str, str] = Field(default_factory=dict)
 
 
 class HealthResponse(BaseModel):
