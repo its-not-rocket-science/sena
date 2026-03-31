@@ -1,62 +1,50 @@
 # SENA
 
-**Syncretic Evolutionary Neuro-symbolic Architecture (SENA)** now focuses on a narrow, demonstrable wedge:
+SENA is an **alpha deterministic policy-enforcement engine for AI-assisted enterprise approval workflows**.
 
-> A deterministic policy-enforcement engine for AI-assisted enterprise compliance workflows.
+It evaluates high-risk workflow actions against structured policy bundles and returns an auditable decision (`APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`) with decision reasoning and machine-readable trace data.
 
-This repository contains an alpha MVP that can evaluate high-risk workflow actions (payments, refunds, customer-data exports), apply executable policy constraints, and return auditable decisions.
+## Who this is for
 
-## What SENA does today
+- **Primary buyer/user:** Compliance, risk, and operations leaders introducing AI assistants into approval workflows.
+- **Primary user in product flow:** Operations analysts, support leads, and workflow owners who need deterministic pre-execution policy checks.
 
-SENA accepts:
-1. a structured action proposal,
-2. structured context facts,
-3. human-reviewable YAML policy files,
+## Core use cases (current alpha)
 
-and deterministically returns one decision:
-- `APPROVED`
-- `BLOCKED`
-- `ESCALATE_FOR_HUMAN_REVIEW`
+1. **Vendor payments:** block unverified vendors, escalate high-value disbursements.
+2. **Refunds / chargebacks:** block invalid refund attempts, escalate exceptions.
+3. **Customer data export:** block high-risk data exports and route sensitive exports to human review.
 
-Each decision includes a machine-readable audit trace and a human-readable explanation.
-
-## Why this wedge
-
-Many enterprises already use AI assistants in support workflows, but approval and compliance controls are often ad-hoc. SENA’s MVP addresses that specific problem by turning policy into executable constraints and enforcing them before action execution.
-
-## Current architecture
+## Supported architecture (current)
 
 ```text
-Action Proposal + Facts
-        |
-        v
-YAML Policy Parser/Validator (safe DSL, no eval)
-        |
-        v
-Deterministic Evaluator
-        |
-        v
-Decision + Audit Trace
+Action Proposal + Context Facts
+              |
+              v
+Policy Bundle Loader (YAML/JSON-compatible)
+              |
+              v
+Policy Validation + Safe Condition Interpreter
+              |
+              v
+Deterministic Evaluator (precedence model)
+              |
+              v
+Decision + Audit Record + Reasoning
 ```
 
-## Policy DSL (safe, structured)
+### Policy DSL
 
-Rules are YAML objects with explicit fields:
-- `id`
-- `description`
-- `severity`
-- `inviolable`
-- `applies_to`
-- `condition` (structured expression)
+Rules are structured objects with:
+- `id`, `description`, `severity`, `inviolable`
+- `applies_to` action types
+- `condition` as structured expressions
 - `decision` (`ALLOW`, `BLOCK`, `ESCALATE`)
 - `reason`
 
-Supported condition operators:
-- `eq`, `neq`, `gt`, `gte`, `lt`, `lte`
-- `in`, `not_in`, `contains`
-- `and`, `or`, `not`
-
-No dynamic code execution is used.
+Supported operators:
+- Comparison: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `not_in`, `contains`
+- Logical: `and`, `or`, `not`
 
 ## Quickstart
 
@@ -66,21 +54,22 @@ No dynamic code execution is used.
 pip install -e .
 ```
 
-### Run CLI demo
+### CLI example
 
 ```bash
-python -m sena.cli.main src/sena/examples/scenarios/blocked_payment.json
-python -m sena.cli.main src/sena/examples/scenarios/allowed_refund.json
-python -m sena.cli.main src/sena/examples/scenarios/needs_review_export.json --json
+python -m sena.cli.main \
+  src/sena/examples/scenarios/demo_vendor_payment_block_unverified.json \
+  --policy-dir src/sena/examples/policies \
+  --policy-bundle-name enterprise-demo \
+  --bundle-version 2026.03 \
+  --json
 ```
 
-### Run API
+### API example
 
 ```bash
 uvicorn sena.api.app:app --reload
 ```
-
-Then evaluate a proposal:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/evaluate \
@@ -96,31 +85,43 @@ curl -X POST http://127.0.0.1:8000/evaluate \
   }'
 ```
 
-## Project layout
+## Example output (abridged)
 
-```text
-src/sena/
-  core/
-  policy/
-  engine/
-  api/
-  cli/
-  examples/
-    policies/
-    scenarios/
-tests/
+```json
+{
+  "decision_id": "dec_a1b2c3d4e5f6",
+  "outcome": "BLOCKED",
+  "summary": "Decision dec_a1b2c3d4e5f6: BLOCKED due to inviolable policy constraints (...)",
+  "policy_bundle": {
+    "bundle_name": "enterprise-demo",
+    "version": "2026.03",
+    "loaded_from": "/.../src/sena/examples/policies"
+  },
+  "reasoning": {
+    "precedence_explanation": "One or more inviolable BLOCK rules matched..."
+  },
+  "audit_record": {
+    "matched_rule_ids": ["payment_block_unverified_vendor"]
+  }
+}
 ```
 
-## Current limitations
+## Limitations (alpha honesty)
 
-- This is an in-process engine; no persistence layer or distributed execution yet.
-- Policies are loaded from local files only.
-- No UI policy editor yet.
-- No integration adapters for enterprise systems yet.
+- In-process engine only (no distributed control plane).
+- Local-file policy loading only.
+- No policy authoring UI.
+- No connectors to ticketing/ERP/payment providers yet.
+- No formal verification claims.
 
 ## Roadmap (near-term)
 
-- Versioned policy bundles and signed policy releases.
-- Workflow connectors (ticketing, payment ops, data access tooling).
-- Decision simulation mode for policy change impact analysis.
-- Richer observability and trace export formats.
+- Policy bundle lifecycle: versioning, promotion, and change controls.
+- Workflow adapters (payment ops, CRM/support, data-access operations).
+- Simulation mode for policy change impact analysis.
+- Enhanced audit export formats for compliance workflows.
+
+## Legacy context
+
+Historical research-prototype modules are retained under `src/sena/legacy` and are **not** the supported product path.
+See `docs/ARCHITECTURE.md`, `docs/MIGRATION.md`, and `docs/archive/legacy_vision.md`.

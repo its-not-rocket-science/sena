@@ -1,0 +1,22 @@
+[
+  {
+    "id": "unlock_block_without_identity_verification",
+    "description": "Block account unlock when customer identity is unverified",
+    "severity": "critical",
+    "inviolable": true,
+    "applies_to": ["unlock_customer_account"],
+    "condition": {"field": "identity_verified", "eq": false},
+    "decision": "BLOCK",
+    "reason": "Account unlock blocked until identity verification is complete."
+  },
+  {
+    "id": "unlock_escalate_high_risk_score",
+    "description": "Escalate account unlock when fraud risk score is high",
+    "severity": "high",
+    "inviolable": false,
+    "applies_to": ["unlock_customer_account"],
+    "condition": {"field": "risk_score", "gte": 80},
+    "decision": "ESCALATE",
+    "reason": "High-risk account unlock requires trust-and-safety review."
+  }
+]

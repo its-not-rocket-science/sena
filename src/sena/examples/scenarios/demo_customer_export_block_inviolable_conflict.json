@@ -1,0 +1,13 @@
+{
+  "request_id": "req-data-002",
+  "action_type": "export_customer_data",
+  "actor_id": "ops-11",
+  "attributes": {
+    "requested_fields": ["customer_id", "ssn", "date_of_birth"],
+    "legal_basis": "contract",
+    "dpo_approved": false
+  },
+  "facts": {
+    "region": "US"
+  }
+}

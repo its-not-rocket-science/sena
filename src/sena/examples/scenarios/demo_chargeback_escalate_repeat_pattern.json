@@ -1,0 +1,13 @@
+{
+  "request_id": "req-cb-001",
+  "action_type": "issue_chargeback",
+  "actor_id": "agent-72",
+  "attributes": {
+    "order_exists": true,
+    "chargeback_count_90d": 3,
+    "amount": 450
+  },
+  "facts": {
+    "customer_segment": "consumer"
+  }
+}

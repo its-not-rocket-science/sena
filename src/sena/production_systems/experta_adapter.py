@@ -1,63 +1,24 @@
-from dataclasses import replace
-from typing import List, Tuple
+"""Deprecated legacy adapter shim.
 
-from sena.core.types import Rule, WorkingMemory, Trace
+The supported enterprise-compliance path does not use this module.
+Use sena.engine.evaluator with structured policy rules instead.
+"""
+
+from __future__ import annotations
+
+import warnings
+
+__all__ = ["ExpertaAdapter"]
 
 
-class ExpertaAdapter:
-    def __init__(self) -> None:
-        self.rules: List[Rule] = []
-
-    def add_rule(self, rule: Rule, inviolable: bool = False) -> None:
-        stored_rule = replace(rule, inviolable=inviolable or rule.inviolable)
-        self.rules.append(stored_rule)
-
-    def get_rules(self) -> List[Rule]:
-        return list(self.rules)
-
-    def get_inviolable_rules(self) -> List[Rule]:
-        return [rule for rule in self.rules if rule.inviolable]
-
-    def remove_rule(self, rule_id: str) -> bool:
-        for index, rule in enumerate(self.rules):
-            if getattr(rule, "rule_id", None) == rule_id:
-                if rule.inviolable:
-                    return False
-                del self.rules[index]
-                return True
-        return False
-
-    def clear_rules(self, preserve_inviolable: bool = True) -> None:
-        if preserve_inviolable:
-            self.rules = [rule for rule in self.rules if rule.inviolable]
-        else:
-            self.rules = []
-
-    def infer(self, memory: WorkingMemory) -> Tuple[WorkingMemory, List[Trace]]:
-        updated = dict(memory)
-        trace: List[Trace] = []
-
-        ordered_rules = sorted(
-            self.rules,
-            key=lambda rule: (rule.inviolable, rule.priority),
-            reverse=True,
+def __getattr__(name: str):
+    if name == "ExpertaAdapter":
+        warnings.warn(
+            "sena.production_systems.experta_adapter is deprecated and kept for legacy compatibility.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        from sena.legacy.production_systems.experta_adapter import ExpertaAdapter
 
-        for iteration, rule in enumerate(ordered_rules, start=1):
-            if rule.evaluate(updated):
-                trace.append(
-                    Trace(
-                        iteration=iteration,
-                        rule_id=rule.rule_id,
-                        rule_name=rule.name,
-                        condition=rule.condition,
-                        action=rule.action,
-                        working_memory_snapshot=dict(updated),
-                    )
-                )
-                updated = rule.execute(updated)
-
-                if updated.get("_blocked") or updated.get("_halted"):
-                    break
-
-        return updated, trace
+        return ExpertaAdapter
+    raise AttributeError(name)

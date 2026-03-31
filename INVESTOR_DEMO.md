@@ -1,76 +1,54 @@
-# SENA Investor Demo (Wedge MVP)
+# SENA Investor / Design-Partner Demo
 
-## 1) Wedge
+## Problem
 
-SENA is focused on one narrow product wedge:
+Enterprises are deploying AI assistants into workflows that can trigger high-risk actions (payments, refunds, sensitive data exports). Most controls are prompt-level guardrails or ad-hoc checks that are hard to audit.
 
-**Deterministic policy enforcement for AI-assisted enterprise approval workflows.**
+## Why now
 
-This is intentionally narrower than general AI safety. The current MVP covers policy checks for:
-- vendor payments,
-- refunds,
-- customer-data exports.
+AI-assisted operations are moving from low-risk drafting into action-taking workflows. Compliance and risk teams need deterministic pre-execution controls before scale-out.
 
-## 2) Problem
+## Why current AI guardrails are insufficient
 
-AI copilots can draft or recommend operational actions quickly, but regulated and high-risk actions still require reliable controls. Teams need:
-- consistent enforcement of compliance policy,
-- deterministic outcomes for auditability,
-- transparent decision traces for internal and external review.
+- Prompt-level guardrails are not deterministic policy enforcement.
+- Policy intent is often buried in docs/SOPs, not executable.
+- Auditors and risk teams need consistent decision records and precedence explanations.
 
-Rule logic hidden inside prompts or ad-hoc code is hard to audit and easy to drift.
+## What SENA does today
 
-## 3) Workflow (5-minute live demo)
+SENA provides an alpha policy engine that:
+- loads structured policy bundles
+- validates rule payloads and supported operators
+- evaluates actions deterministically with clear precedence
+- returns audit-friendly outputs with decision IDs and bundle metadata
 
-1. Load policies from YAML.
-2. Send a structured action proposal with supporting facts.
-3. SENA evaluates rules deterministically.
-4. SENA returns one outcome:
-   - `APPROVED`
-   - `BLOCKED`
-   - `ESCALATE_FOR_HUMAN_REVIEW`
-5. SENA returns an audit trace listing matched rules and reasons.
+## 5-minute demo script
 
-## 4) Why deterministic enforcement matters
+1. Start API.
+   - `uvicorn sena.api.app:app --reload`
+2. Show `/health` and `/bundle`.
+3. Run blocked vendor payment scenario via CLI JSON output.
+4. Run escalate data-export scenario.
+5. Show allow scenario (no matching rules or passing conditions).
+6. Highlight `decision_id`, matched rules, and precedence explanation.
 
-For high-risk workflows, “usually correct” is not enough.
+## Who buys first
 
-Deterministic policy enforcement provides:
-- repeatable outcomes for identical inputs,
-- explicit and reviewable control logic,
-- clear separation between AI recommendation generation and policy gating,
-- auditable evidence for governance/compliance functions.
+- Mid-market to enterprise teams with AI-enabled ops and strict internal controls:
+  - finance operations
+  - trust & safety / risk operations
+  - data governance teams
 
-## 5) What is implemented now
+## Future work (not yet delivered)
 
-- Safe policy DSL using structured YAML conditions (no Python `eval`).
-- Policy parser + validation.
-- Condition interpreter with a constrained set of operators.
-- Evaluation engine with outcome prioritization (`BLOCK` > `ESCALATE` > `ALLOW`).
-- Machine-readable evaluation trace.
-- Human-readable explanation output.
-- CLI demo for local scenario playback.
-- FastAPI endpoint for programmatic evaluation.
-- Example policies and scenarios for payments/refunds/data exports.
-- Basic pytest coverage.
+- Managed policy lifecycle and release workflow
+- Integration connectors (ticketing, ERP, payments, CRM)
+- Decision simulation and drift monitoring
+- Enterprise deployment controls
 
-## 6) Future work (not yet implemented)
+## Risks / limitations
 
-- Policy versioning and approval lifecycle.
-- Identity/role integrations with enterprise systems.
-- Persistent audit log storage and signed trace artifacts.
-- Multi-tenant policy management.
-- Connectors to workflow engines and case-management tools.
-- Benchmarks on real production workload characteristics.
-
-## 7) Demo commands
-
-```bash
-# CLI examples
-python -m sena.cli.main src/sena/examples/scenarios/blocked_payment.json
-python -m sena.cli.main src/sena/examples/scenarios/allowed_refund.json
-python -m sena.cli.main src/sena/examples/scenarios/needs_review_export.json --json
-
-# API
-uvicorn sena.api.app:app --reload
-```
+- Early alpha: no managed control plane
+- No formal verification guarantees
+- Local policy loading only
+- Limited out-of-the-box connectors

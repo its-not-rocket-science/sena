@@ -1,17 +1,17 @@
 [
   {
     "id": "payment_block_unverified_vendor",
-    "description": "Vendor payments must use a verified vendor account",
+    "description": "Block vendor payments when vendor verification is incomplete",
     "severity": "critical",
     "inviolable": true,
     "applies_to": ["approve_vendor_payment"],
     "condition": {"field": "vendor_verified", "eq": false},
     "decision": "BLOCK",
-    "reason": "Payment blocked because vendor verification is required."
+    "reason": "Payment blocked because vendor verification is required before disbursement."
   },
   {
-    "id": "payment_requires_human_review_over_threshold",
-    "description": "Payments above threshold require finance director approval",
+    "id": "payment_escalate_high_amount_non_director",
+    "description": "Escalate high-value payments without finance-director initiator",
     "severity": "high",
     "inviolable": false,
     "applies_to": ["approve_vendor_payment"],
@@ -22,6 +22,6 @@
       ]
     },
     "decision": "ESCALATE",
-    "reason": "High-value payments require finance director approval."
+    "reason": "High-value payments require finance director review."
   }
 ]
