@@ -1,7 +1,7 @@
 [
   {
-    "id": "never_export_ssn_without_legal_basis",
-    "description": "SSN exports require a valid legal basis",
+    "id": "export_block_ssn_without_consent",
+    "description": "Block SSN exports unless explicit consent basis is present",
     "severity": "critical",
     "inviolable": true,
     "applies_to": ["export_customer_data"],
@@ -12,11 +12,11 @@
       ]
     },
     "decision": "BLOCK",
-    "reason": "SSN export blocked due to missing valid legal basis."
+    "reason": "SSN export blocked due to missing consent legal basis."
   },
   {
-    "id": "export_requires_dpo_for_sensitive_data",
-    "description": "Sensitive field exports require DPO review",
+    "id": "export_escalate_sensitive_fields_without_dpo",
+    "description": "Escalate sensitive exports when DPO approval is missing",
     "severity": "high",
     "inviolable": false,
     "applies_to": ["export_customer_data"],

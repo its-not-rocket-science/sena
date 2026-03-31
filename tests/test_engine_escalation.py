@@ -1,11 +1,12 @@
 from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal
 from sena.engine.evaluator import PolicyEvaluator
-from sena.policy.parser import load_policies_from_dir
+from sena.policy.parser import load_policy_bundle
 
 
-def test_export_requires_review() -> None:
-    evaluator = PolicyEvaluator(load_policies_from_dir("src/sena/examples/policies"))
+def test_export_requires_human_review_when_escalation_matches() -> None:
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
     proposal = ActionProposal(
         action_type="export_customer_data",
         attributes={
@@ -16,4 +17,6 @@ def test_export_requires_review() -> None:
     )
 
     trace = evaluator.evaluate(proposal, {})
+
     assert trace.outcome == DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
+    assert "manual review" in trace.reasoning.precedence_explanation.lower()

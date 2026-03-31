@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from sena.core.enums import RuleDecision, Severity
-from sena.core.models import PolicyRule
+from sena.core.models import PolicyBundleMetadata, PolicyRule
 from sena.policy.validation import PolicyValidationError, validate_rule_payload
 
 try:
@@ -59,8 +59,23 @@ def parse_policy_file(path: str | Path) -> list[PolicyRule]:
 
 
 def load_policies_from_dir(path: str | Path) -> list[PolicyRule]:
+    return load_policy_bundle(path)[0]
+
+
+def load_policy_bundle(
+    path: str | Path,
+    bundle_name: str = "default-bundle",
+    version: str = "0.1.0-alpha",
+) -> tuple[list[PolicyRule], PolicyBundleMetadata]:
     base = Path(path)
     all_rules: list[PolicyRule] = []
-    for policy_file in sorted(base.glob("*.yaml")):
-        all_rules.extend(parse_policy_file(policy_file))
-    return all_rules
+    for pattern in ("*.yaml", "*.yml", "*.json"):
+        for policy_file in sorted(base.glob(pattern)):
+            all_rules.extend(parse_policy_file(policy_file))
+
+    metadata = PolicyBundleMetadata(
+        bundle_name=bundle_name,
+        version=version,
+        loaded_from=str(base.resolve()),
+    )
+    return all_rules, metadata

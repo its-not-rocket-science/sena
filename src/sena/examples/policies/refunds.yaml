@@ -1,22 +1,37 @@
 [
   {
     "id": "refund_block_without_order",
-    "description": "Refunds require a valid order identifier",
+    "description": "Block refunds when order identifier cannot be validated",
     "severity": "high",
     "inviolable": true,
-    "applies_to": ["release_refund"],
+    "applies_to": ["release_refund", "issue_chargeback"],
     "condition": {"field": "order_exists", "eq": false},
     "decision": "BLOCK",
-    "reason": "Refund blocked because no valid order is linked."
+    "reason": "Refund/chargeback blocked because no valid order is linked."
   },
   {
     "id": "refund_escalate_large_amount",
-    "description": "Large refunds require manager review",
+    "description": "Escalate refunds above auto-approval threshold",
     "severity": "medium",
     "inviolable": false,
     "applies_to": ["release_refund"],
     "condition": {"field": "amount", "gte": 2000},
     "decision": "ESCALATE",
     "reason": "Refund amount exceeds auto-approval threshold."
+  },
+  {
+    "id": "chargeback_escalate_repeat_request",
+    "description": "Escalate repeat chargeback attempts for manual fraud review",
+    "severity": "high",
+    "inviolable": false,
+    "applies_to": ["issue_chargeback"],
+    "condition": {
+      "and": [
+        {"field": "chargeback_count_90d", "gte": 2},
+        {"field": "amount", "gte": 300}
+      ]
+    },
+    "decision": "ESCALATE",
+    "reason": "Repeat chargeback pattern requires fraud analyst review."
   }
 ]

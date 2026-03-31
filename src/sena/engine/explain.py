@@ -3,9 +3,11 @@ from sena.core.models import EvaluationTrace
 
 def format_trace(trace: EvaluationTrace) -> str:
     lines = [
+        f"Decision ID: {trace.decision_id}",
         f"Action: {trace.action_type}",
         f"Outcome: {trace.outcome.value}",
         f"Summary: {trace.summary}",
+        f"Precedence: {trace.reasoning.precedence_explanation if trace.reasoning else 'n/a'}",
         "Rule Evaluations:",
     ]
 

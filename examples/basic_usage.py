@@ -1,18 +1,26 @@
+"""Basic usage for the supported compliance engine path."""
 
-from sena.orchestrator.sena import SENA
-from sena.production_systems.experta_adapter import ExpertaAdapter
-from sena.evolutionary.deap_adapter import DEAPAdapter
-from sena.llm.simulated_adapter import SimulatedLLMAdapter
+from sena.core.models import ActionProposal
+from sena.engine.evaluator import PolicyEvaluator
+from sena.policy.parser import load_policy_bundle
 
-ps = ExpertaAdapter()
-ea = DEAPAdapter()
-llm = SimulatedLLMAdapter()
+rules, metadata = load_policy_bundle(
+    "src/sena/examples/policies",
+    bundle_name="example-bundle",
+    version="2026.03",
+)
+evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
 
-sena = SENA(ps, ea, llm)
+proposal = ActionProposal(
+    action_type="approve_vendor_payment",
+    request_id="req-demo-001",
+    actor_id="user-42",
+    attributes={
+        "amount": 7500,
+        "vendor_verified": True,
+        "requester_role": "finance_analyst",
+    },
+)
 
-sena.initialise_from_domain("test")
-
-sena.train([])
-
-result = sena.evaluate({"x": 1})
-print(result)
+trace = evaluator.evaluate(proposal, facts={"country": "US"})
+print(trace.to_dict())

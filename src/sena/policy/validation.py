@@ -13,6 +13,14 @@ def validate_condition(node: Any) -> None:
     if not isinstance(node, dict):
         raise PolicyValidationError("condition nodes must be dictionaries")
 
+    unknown_keys = [
+        key
+        for key in node
+        if key not in LOGICAL_OPERATORS and key not in COMPARISON_OPERATORS and key != "field"
+    ]
+    if unknown_keys:
+        raise PolicyValidationError(f"unsupported operator(s) in condition: {unknown_keys}")
+
     if any(op in node for op in LOGICAL_OPERATORS):
         keys = [k for k in node if k in LOGICAL_OPERATORS]
         if len(keys) != 1:
@@ -29,8 +37,8 @@ def validate_condition(node: Any) -> None:
             validate_condition(payload)
             return
 
-    if "field" not in node:
-        raise PolicyValidationError("leaf condition must include 'field'")
+    if "field" not in node or not isinstance(node["field"], str):
+        raise PolicyValidationError("leaf condition must include string 'field'")
 
     ops = [k for k in node if k in COMPARISON_OPERATORS]
     if len(ops) != 1:
@@ -51,4 +59,8 @@ def validate_rule_payload(rule: dict[str, Any]) -> None:
     missing = required - set(rule.keys())
     if missing:
         raise PolicyValidationError(f"rule missing required fields: {sorted(missing)}")
+
+    if not isinstance(rule["applies_to"], list) or not rule["applies_to"]:
+        raise PolicyValidationError("'applies_to' must be a non-empty list")
+
     validate_condition(rule["condition"])
