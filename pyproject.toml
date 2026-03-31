@@ -4,46 +4,30 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sena"
-version = "0.1.0"
-description = "Syncretic Evolutionary Neuro-symbolic Architecture"
+version = "0.2.0"
+description = "Deterministic policy-enforcement engine for AI-assisted compliance workflows"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [
-  { name = "SENA Contributors" }
-]
-keywords = [
-  "ai",
-  "neuro-symbolic",
-  "evolutionary-algorithms",
-  "production-systems",
-  "llm",
-  "safety"
-]
-classifiers = [
-  "Development Status :: 3 - Alpha",
-  "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Topic :: Scientific/Engineering :: Artificial Intelligence",
-  "Typing :: Typed"
-]
+authors = [{ name = "SENA Contributors" }]
+keywords = ["ai", "compliance", "policy-engine", "safety", "auditability"]
 dependencies = [
-  "numpy>=1.24",
-  "deap>=1.4",
-  "experta>=1.9"
+  "fastapi>=0.111",
+  "pydantic>=2.7",
+  "PyYAML>=6.0",
+  "uvicorn>=0.30"
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
   "pytest-cov>=5.0",
-  "mypy>=1.8",
+  "mypy>=1.10",
   "ruff>=0.5"
 ]
+
+[project.scripts]
+sena-eval = "sena.cli.main:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -55,32 +39,4 @@ where = ["src"]
 minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = [
-  "-ra",
-  "--strict-markers",
-  "--strict-config"
-]
-
-[tool.coverage.run]
-source = ["src/sena"]
-branch = true
-
-[tool.coverage.report]
-show_missing = true
-skip_covered = false
-
-[tool.mypy]
-python_version = "3.10"
-strict = true
-warn_unused_ignores = true
-warn_redundant_casts = true
-warn_unreachable = true
-pretty = true
-mypy_path = "src"
-
-[tool.ruff]
-line-length = 100
-target-version = "py310"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
