@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from typing import Any
 
 from sena.core.enums import DecisionOutcome, RuleDecision, Severity
@@ -19,6 +20,8 @@ class PolicyBundleMetadata:
     bundle_name: str
     version: str
     loaded_from: str
+    owner: str | None = None
+    description: str | None = None
 
 
 @dataclass
@@ -42,6 +45,12 @@ class RuleEvaluationResult:
     reason: str | None = None
 
 
+@dataclass(frozen=True)
+class EvaluatorConfig:
+    default_decision: DecisionOutcome = DecisionOutcome.APPROVED
+    require_allow_match: bool = False
+
+
 @dataclass
 class DecisionReasoning:
     precedence_explanation: str
@@ -51,6 +60,7 @@ class DecisionReasoning:
 @dataclass
 class AuditRecord:
     decision_id: str
+    timestamp: datetime
     action_type: str
     request_id: str | None
     actor_id: str | None
@@ -58,7 +68,10 @@ class AuditRecord:
     policy_bundle: PolicyBundleMetadata
     matched_rule_ids: list[str]
     evaluated_rule_ids: list[str]
+    missing_fields: list[str]
     precedence_explanation: str
+    input_fingerprint: str
+    decision_hash: str
 
 
 @dataclass
@@ -68,12 +81,16 @@ class EvaluationTrace:
     summary: str
     decision_id: str
     decision: DecisionOutcome | None = None
+    decision_timestamp: datetime | None = None
+    decision_hash: str | None = None
     request_id: str | None = None
     policy_bundle: PolicyBundleMetadata | None = None
     reasoning: DecisionReasoning | None = None
     applicable_rules: list[str] = field(default_factory=list)
     evaluated_rules: list[RuleEvaluationResult] = field(default_factory=list)
     matched_rules: list[RuleEvaluationResult] = field(default_factory=list)
+    conflicting_rules: list[str] = field(default_factory=list)
+    missing_fields: list[str] = field(default_factory=list)
     context: dict[str, Any] = field(default_factory=dict)
     audit_record: AuditRecord | None = None
 

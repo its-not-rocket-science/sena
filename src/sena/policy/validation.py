@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sena.core.models import PolicyRule
 from sena.policy.grammar import COMPARISON_OPERATORS, LOGICAL_OPERATORS
 
 
@@ -64,3 +65,24 @@ def validate_rule_payload(rule: dict[str, Any]) -> None:
         raise PolicyValidationError("'applies_to' must be a non-empty list")
 
     validate_condition(rule["condition"])
+
+
+def validate_policy_coverage(
+    rules: list[PolicyRule],
+    required_action_types: list[str],
+    explicitly_allowed_action_types: list[str] | None = None,
+    strict: bool = False,
+) -> list[str]:
+    explicitly_allowed = set(explicitly_allowed_action_types or [])
+    covered_action_types = {action for rule in rules for action in rule.applies_to}
+
+    missing = [
+        action_type
+        for action_type in required_action_types
+        if action_type not in covered_action_types and action_type not in explicitly_allowed
+    ]
+    if missing and strict:
+        raise PolicyValidationError(
+            f"missing policy coverage for required action_type(s): {sorted(missing)}"
+        )
+    return missing

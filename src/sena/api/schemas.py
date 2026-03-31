@@ -11,12 +11,18 @@ class EvaluateRequest(BaseModel):
     actor_id: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
     facts: dict[str, Any] = Field(default_factory=dict)
+    default_decision: Literal["APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"] = (
+        "APPROVED"
+    )
+    strict_require_allow: bool = False
 
 
 class BundleInfo(BaseModel):
     bundle_name: str
     version: str
     loaded_from: str
+    owner: str | None = None
+    description: str | None = None
 
 
 class HealthResponse(BaseModel):

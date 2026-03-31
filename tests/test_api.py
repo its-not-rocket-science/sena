@@ -40,4 +40,5 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     assert body["outcome"] == "BLOCKED"
     assert body["decision"] == "BLOCKED"
     assert body["decision_id"].startswith("dec_")
-    assert body["policy_bundle"]["version"] == "0.1.0-alpha"
+    assert body["policy_bundle"]["version"] == "2026.03"
+    assert "decision_hash" in body
