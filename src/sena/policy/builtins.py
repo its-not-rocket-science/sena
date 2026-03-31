@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from typing import Any, Callable
 
@@ -40,6 +41,27 @@ def op_contains(left: Iterable[Any], right: Any) -> bool:
     return right in left
 
 
+def op_starts_with(left: Any, right: str) -> bool:
+    return isinstance(left, str) and left.startswith(right)
+
+
+def op_ends_with(left: Any, right: str) -> bool:
+    return isinstance(left, str) and left.endswith(right)
+
+
+def op_matches_regex(left: Any, right: str) -> bool:
+    return isinstance(left, str) and re.fullmatch(right, left) is not None
+
+
+def op_exists(left: Any, right: bool) -> bool:
+    return bool(left is not None) is bool(right)
+
+
+def op_between(left: Any, right: tuple[Any, Any] | list[Any]) -> bool:
+    lower, upper = right
+    return lower <= left <= upper
+
+
 ALLOWED_OPERATORS: dict[str, Callable[..., bool]] = {
     "eq": op_eq,
     "neq": op_neq,
@@ -50,4 +72,9 @@ ALLOWED_OPERATORS: dict[str, Callable[..., bool]] = {
     "in": op_in,
     "not_in": op_not_in,
     "contains": op_contains,
+    "starts_with": op_starts_with,
+    "ends_with": op_ends_with,
+    "matches_regex": op_matches_regex,
+    "exists": op_exists,
+    "between": op_between,
 }

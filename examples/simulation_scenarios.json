@@ -1,0 +1,24 @@
+{
+  "vendor-small": {
+    "action_type": "approve_vendor_payment",
+    "request_id": "sim-1",
+    "actor_id": "analyst-1",
+    "attributes": {
+      "amount": 250,
+      "vendor_verified": true,
+      "requester_role": "finance_analyst"
+    },
+    "facts": {}
+  },
+  "vendor-large-unverified": {
+    "action_type": "approve_vendor_payment",
+    "request_id": "sim-2",
+    "actor_id": "analyst-2",
+    "attributes": {
+      "amount": 12000,
+      "vendor_verified": false,
+      "requester_role": "finance_analyst"
+    },
+    "facts": {}
+  }
+}

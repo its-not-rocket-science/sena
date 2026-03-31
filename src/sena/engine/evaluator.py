@@ -17,6 +17,7 @@ from sena.core.models import (
     RuleEvaluationResult,
 )
 from sena.policy.interpreter import evaluate_condition_with_trace
+from sena.policy.validation import validate_context_schema
 
 
 class PolicyEvaluator:
@@ -46,20 +47,24 @@ class PolicyEvaluator:
         applicable = [r for r in self.rules if proposal.action_type in r.applies_to]
         evaluated: list[RuleEvaluationResult] = []
         missing_fields: set[str] = set()
+        schema_errors: list[str] = []
+        if self.config.enforce_context_schema and self.policy_bundle.context_schema:
+            schema_errors = validate_context_schema(context, self.policy_bundle.context_schema)
 
-        for rule in applicable:
-            condition_result = evaluate_condition_with_trace(rule.condition, context)
-            matched = condition_result.matched
-            missing_fields.update(condition_result.missing_fields)
-            evaluated.append(
-                RuleEvaluationResult(
-                    rule_id=rule.id,
-                    matched=matched,
-                    decision=rule.decision if matched else None,
-                    inviolable=rule.inviolable,
-                    reason=rule.reason if matched else None,
+        if not schema_errors:
+            for rule in applicable:
+                condition_result = evaluate_condition_with_trace(rule.condition, context)
+                matched = condition_result.matched
+                missing_fields.update(condition_result.missing_fields)
+                evaluated.append(
+                    RuleEvaluationResult(
+                        rule_id=rule.id,
+                        matched=matched,
+                        decision=rule.decision if matched else None,
+                        inviolable=rule.inviolable,
+                        reason=rule.reason if matched else None,
+                    )
                 )
-            )
 
         matched = [result for result in evaluated if result.matched]
 
@@ -107,6 +112,15 @@ class PolicyEvaluator:
             summary = (
                 f"Decision {decision_id}: ESCALATE_FOR_HUMAN_REVIEW for "
                 f"rule(s) ({', '.join(r.rule_id for r in escalations)})."
+            )
+        if schema_errors:
+            outcome = DecisionOutcome.BLOCKED
+            precedence_explanation = (
+                "Context schema validation failed before policy evaluation; blocked deterministically."
+            )
+            summary = (
+                f"Decision {decision_id}: BLOCKED due to context schema errors: "
+                f"{'; '.join(schema_errors)}"
             )
         if self.config.require_allow_match and not allows:
             outcome = DecisionOutcome.BLOCKED

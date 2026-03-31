@@ -44,6 +44,15 @@ def validate_condition(node: Any) -> None:
     ops = [k for k in node if k in COMPARISON_OPERATORS]
     if len(ops) != 1:
         raise PolicyValidationError("leaf condition must include exactly one comparison operator")
+    op = ops[0]
+    value = node[op]
+    if op == "between":
+        if not isinstance(value, list | tuple) or len(value) != 2:
+            raise PolicyValidationError("'between' operator expects exactly two bounds")
+    if op in {"starts_with", "ends_with", "matches_regex"} and not isinstance(value, str):
+        raise PolicyValidationError(f"'{op}' operator expects a string value")
+    if op == "exists" and not isinstance(value, bool):
+        raise PolicyValidationError("'exists' operator expects true/false")
 
 
 def validate_rule_payload(rule: dict[str, Any]) -> None:
@@ -86,3 +95,35 @@ def validate_policy_coverage(
             f"missing policy coverage for required action_type(s): {sorted(missing)}"
         )
     return missing
+
+
+def _resolve_field(field: str, context: dict[str, Any]) -> Any:
+    value: Any = context
+    for part in field.split("."):
+        if isinstance(value, dict) and part in value:
+            value = value[part]
+        else:
+            return None
+    return value
+
+
+def validate_context_schema(context: dict[str, Any], schema: dict[str, str]) -> list[str]:
+    errors: list[str] = []
+    expected = {"str": str, "int": int, "float": float, "bool": bool, "dict": dict, "list": list}
+    for field, typename in schema.items():
+        optional = typename.endswith("?")
+        normalized_type = typename[:-1] if optional else typename
+        value = _resolve_field(field, context)
+        if value is None:
+            if not optional:
+                errors.append(f"missing required field '{field}'")
+            continue
+        py_type = expected.get(normalized_type)
+        if py_type is None:
+            errors.append(f"unsupported schema type '{typename}' for field '{field}'")
+            continue
+        if not isinstance(value, py_type):
+            errors.append(
+                f"field '{field}' expected type '{typename}' but received '{type(value).__name__}'"
+            )
+    return errors
