@@ -22,6 +22,9 @@ class PolicyBundleMetadata:
     loaded_from: str
     owner: str | None = None
     description: str | None = None
+    schema_version: str = "1"
+    integrity_sha256: str | None = None
+    policy_file_count: int = 0
 
 
 @dataclass
