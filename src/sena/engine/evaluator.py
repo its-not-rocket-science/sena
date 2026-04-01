@@ -18,6 +18,7 @@ from sena.core.models import (
     RuleEvaluationResult,
 )
 from sena.policy.interpreter import evaluate_condition_with_trace
+from sena.policy.schema_evolution import evaluate_bundle_compatibility
 from sena.policy.validation import validate_context_schema, validate_identity_fields
 
 
@@ -35,6 +36,9 @@ class PolicyEvaluator:
             loaded_from="unknown",
         )
         self.config = config or EvaluatorConfig()
+        compatibility = evaluate_bundle_compatibility(schema_version=self.policy_bundle.schema_version, runtime_version=SENA_VERSION)
+        if compatibility.errors:
+            raise ValueError("policy bundle compatibility check failed: " + "; ".join(compatibility.errors))
 
     def evaluate(self, proposal: ActionProposal, facts: dict) -> EvaluationTrace:
         decision_id = f"dec_{uuid.uuid4().hex[:12]}"

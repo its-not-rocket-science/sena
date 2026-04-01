@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from sena import __version__ as SENA_VERSION
 from sena.audit.chain import verify_audit_chain
 from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig
@@ -15,6 +16,14 @@ from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.examples import DEFAULT_POLICY_DIR
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
+from sena.policy.schema_evolution import (
+    CURRENT_BUNDLE_SCHEMA_VERSION,
+    BundleMigrationResult,
+    VersionRange,
+    evaluate_bundle_compatibility,
+    format_migration_report,
+    migrate_bundle,
+)
 from sena.policy.release_signing import (
     BundleReleaseManifest,
     generate_release_manifest,
@@ -234,6 +243,61 @@ def _run_policy_test(args: argparse.Namespace) -> None:
     print(json.dumps(report, indent=2))
     if failures:
         raise SystemExit("Policy tests failed")
+
+
+def _run_policy_schema_version(args: argparse.Namespace) -> None:
+    _, metadata = load_policy_bundle(args.policy_dir)
+    compatibility = evaluate_bundle_compatibility(schema_version=metadata.schema_version)
+    print(
+        json.dumps(
+            {
+                "bundle_name": metadata.bundle_name,
+                "version": metadata.version,
+                "schema_version": metadata.schema_version,
+                "current_supported_schema_version": CURRENT_BUNDLE_SCHEMA_VERSION,
+                "warnings": compatibility.warnings,
+            },
+            indent=2,
+        )
+    )
+
+
+def _run_policy_migrate(args: argparse.Namespace) -> None:
+    result: BundleMigrationResult = migrate_bundle(
+        args.policy_dir,
+        target_schema_version=args.target_schema_version,
+        dry_run=args.dry_run,
+    )
+    print(json.dumps(format_migration_report(result), indent=2))
+
+
+def _run_policy_verify_compatibility(args: argparse.Namespace) -> None:
+    _, metadata = load_policy_bundle(args.policy_dir)
+    compatibility = None
+    if args.min_evaluator_version or args.max_evaluator_version:
+        compatibility = VersionRange(
+            min_inclusive=args.min_evaluator_version,
+            max_inclusive=args.max_evaluator_version,
+        )
+    report = evaluate_bundle_compatibility(
+        schema_version=metadata.schema_version,
+        runtime_version=args.runtime_version,
+        compatibility=compatibility,
+    )
+    print(
+        json.dumps(
+            {
+                "compatible": report.compatible,
+                "runtime_version": args.runtime_version,
+                "schema_version": metadata.schema_version,
+                "errors": report.errors,
+                "warnings": report.warnings,
+            },
+            indent=2,
+        )
+    )
+    if not report.compatible:
+        raise SystemExit("Bundle is incompatible with runtime")
 
 
 
@@ -510,6 +574,23 @@ def _build_policy_parser() -> argparse.ArgumentParser:
     test_parser.add_argument("--policy-dir", type=Path, required=True, help="Policy directory")
     test_parser.add_argument("--test-file", type=Path, required=True, help="JSON file with policy cases")
     test_parser.set_defaults(handler=_run_policy_test)
+
+    schema_parser = sub.add_parser("schema-version", help="Inspect bundle schema version")
+    schema_parser.add_argument("--policy-dir", type=Path, required=True, help="Policy directory")
+    schema_parser.set_defaults(handler=_run_policy_schema_version)
+
+    migrate_parser = sub.add_parser("migrate", help="Migrate bundle manifest/rules to a target schema")
+    migrate_parser.add_argument("--policy-dir", type=Path, required=True, help="Policy directory")
+    migrate_parser.add_argument("--target-schema-version", default=CURRENT_BUNDLE_SCHEMA_VERSION)
+    migrate_parser.add_argument("--dry-run", action="store_true", help="Preview migration changes only")
+    migrate_parser.set_defaults(handler=_run_policy_migrate)
+
+    compatibility_parser = sub.add_parser("verify-compatibility", help="Verify runtime compatibility")
+    compatibility_parser.add_argument("--policy-dir", type=Path, required=True, help="Policy directory")
+    compatibility_parser.add_argument("--runtime-version", default=SENA_VERSION, help="Evaluator runtime version")
+    compatibility_parser.add_argument("--min-evaluator-version")
+    compatibility_parser.add_argument("--max-evaluator-version")
+    compatibility_parser.set_defaults(handler=_run_policy_verify_compatibility)
 
     return parser
 

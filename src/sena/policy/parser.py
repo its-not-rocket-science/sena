@@ -9,6 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from sena.core.enums import RuleDecision, Severity
 from sena.core.models import PolicyBundleMetadata, PolicyRule
+from sena.policy.schema_evolution import (
+    VersionRange,
+    evaluate_bundle_compatibility,
+    normalize_schema_version,
+)
 from sena.policy.validation import PolicyValidationError, validate_rule_payload
 
 try:
@@ -31,12 +36,17 @@ class BundleManifest(BaseModel):
     schema_version: str = "1"
     lifecycle: str = "draft"
     context_schema: dict[str, str] = Field(default_factory=dict)
+    runtime_compatibility: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("version")
     @classmethod
     def normalize_version(cls, value: str | int | float) -> str:
         return str(value)
 
+    @field_validator("schema_version")
+    @classmethod
+    def normalize_schema(cls, value: str | int | float) -> str:
+        return normalize_schema_version(value)
 
 
 def _load_bundle_manifest(base: Path) -> BundleManifest | None:
@@ -76,18 +86,23 @@ def parse_policy_file(path: str | Path) -> list[PolicyRule]:
     for item in raw:
         if not isinstance(item, dict):
             raise PolicyParseError("each rule must be a mapping")
+        normalized_item = dict(item)
+        if "action" in normalized_item and "applies_to" not in normalized_item:
+            action = normalized_item.pop("action")
+            if isinstance(action, str) and action:
+                normalized_item["applies_to"] = [action]
         try:
-            validate_rule_payload(item)
+            validate_rule_payload(normalized_item)
             rules.append(
                 PolicyRule(
-                    id=item["id"],
-                    description=item["description"],
-                    severity=Severity(item["severity"]),
-                    inviolable=bool(item["inviolable"]),
-                    applies_to=list(item["applies_to"]),
-                    condition=dict(item["condition"]),
-                    decision=RuleDecision(item["decision"]),
-                    reason=item["reason"],
+                    id=normalized_item["id"],
+                    description=normalized_item["description"],
+                    severity=Severity(normalized_item["severity"]),
+                    inviolable=bool(normalized_item["inviolable"]),
+                    applies_to=list(normalized_item["applies_to"]),
+                    condition=dict(normalized_item["condition"]),
+                    decision=RuleDecision(normalized_item["decision"]),
+                    reason=normalized_item["reason"],
                 )
             )
         except (PolicyValidationError, ValueError, TypeError) as exc:
@@ -149,4 +164,18 @@ def load_policy_bundle(
         policy_file_count=len(policy_files),
         context_schema=manifest.context_schema if manifest else {},
     )
+
+    compatibility = None
+    if manifest and manifest.runtime_compatibility:
+        compatibility = VersionRange(
+            min_inclusive=manifest.runtime_compatibility.get("min_evaluator_version"),
+            max_inclusive=manifest.runtime_compatibility.get("max_evaluator_version"),
+        )
+    compatibility_report = evaluate_bundle_compatibility(
+        schema_version=metadata.schema_version,
+        compatibility=compatibility,
+    )
+    if compatibility_report.errors:
+        raise PolicyParseError("bundle compatibility check failed: " + "; ".join(compatibility_report.errors))
+
     return all_rules, metadata
