@@ -1,4 +1,5 @@
 import pytest
+import time
 
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
@@ -17,6 +18,10 @@ def _settings(**kwargs):
         "enable_api_key_auth": False,
         "api_key": None,
         "audit_sink_jsonl": None,
+        "rate_limit_requests": 120,
+        "rate_limit_window_seconds": 60,
+        "request_max_bytes": 1_048_576,
+        "request_timeout_seconds": 15.0,
     }
     defaults.update(kwargs)
     return ApiSettings(**defaults)
@@ -280,3 +285,63 @@ def test_webhook_endpoint_requires_mapping_config() -> None:
     )
 
     assert response.status_code == 400
+
+
+def test_rate_limiting_per_api_key() -> None:
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_key="secret", rate_limit_requests=1, rate_limit_window_seconds=60)
+    )
+    client = TestClient(app)
+
+    first = client.post(
+        "/v1/evaluate",
+        headers={"x-api-key": "secret"},
+        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+    )
+    second = client.post(
+        "/v1/evaluate",
+        headers={"x-api-key": "secret"},
+        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["error"]["code"] == "rate_limited"
+
+
+def test_request_size_limit() -> None:
+    app = create_app(_settings(request_max_bytes=128))
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False, "padding": "x" * 200},
+        },
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
+
+
+def test_timeout_handling_returns_gateway_timeout(monkeypatch) -> None:
+    from sena.engine import evaluator as evaluator_module
+
+    app = create_app(_settings(request_timeout_seconds=0.01))
+    client = TestClient(app)
+    original_evaluate = evaluator_module.PolicyEvaluator.evaluate
+
+    def _slow_evaluate(self, proposal, facts):
+        time.sleep(0.05)
+        return original_evaluate(self, proposal, facts)
+
+    monkeypatch.setattr(evaluator_module.PolicyEvaluator, "evaluate", _slow_evaluate)
+
+    response = client.post(
+        "/v1/evaluate",
+        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+    )
+
+    assert response.status_code == 504
+    assert response.json()["error"]["code"] == "timeout"

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import logging
 import json
+import asyncio
+import time
 import uuid
 from datetime import datetime, timezone
+from collections import defaultdict, deque
 from typing import Any
 
 from sena import __version__ as SENA_VERSION
@@ -79,6 +82,27 @@ class _EngineState:
         self.connector_registry = build_connector_registry()
 
 
+class _FixedWindowRateLimiter:
+    def __init__(self, max_requests: int, window_seconds: int):
+        if max_requests <= 0:
+            raise ValueError("rate limit requests must be > 0")
+        if window_seconds <= 0:
+            raise ValueError("rate limit window seconds must be > 0")
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._request_windows: dict[str, deque[float]] = defaultdict(deque)
+
+    def allow(self, key: str, now: float) -> bool:
+        bucket = self._request_windows[key]
+        window_start = now - self.window_seconds
+        while bucket and bucket[0] <= window_start:
+            bucket.popleft()
+        if len(bucket) >= self.max_requests:
+            return False
+        bucket.append(now)
+        return True
+
+
 def _parse_default_decision(raw: str) -> DecisionOutcome:
     if raw == "ESCALATE":
         return DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
@@ -122,11 +146,19 @@ def create_app(settings: ApiSettings | None = None):
 
     if runtime_settings.enable_api_key_auth and not runtime_settings.api_key:
         raise RuntimeError("SENA_API_KEY_ENABLED=true requires SENA_API_KEY to be set")
+    if runtime_settings.request_max_bytes <= 0:
+        raise RuntimeError("SENA_REQUEST_MAX_BYTES must be greater than 0")
+    if runtime_settings.request_timeout_seconds <= 0:
+        raise RuntimeError("SENA_REQUEST_TIMEOUT_SECONDS must be greater than 0")
 
     rules, metadata, policy_repo = _load_runtime_bundle(runtime_settings)
 
     app = FastAPI(title="SENA Compliance Engine API", version=SENA_VERSION)
     state = _EngineState(runtime_settings, rules, metadata, policy_repo)
+    rate_limiter = _FixedWindowRateLimiter(
+        max_requests=runtime_settings.rate_limit_requests,
+        window_seconds=runtime_settings.rate_limit_window_seconds,
+    )
     if runtime_settings.webhook_mapping_config_path:
         mapping_config = load_webhook_mapping_config(runtime_settings.webhook_mapping_config_path)
         state.webhook_mapper = WebhookPayloadMapper(mapping_config)
@@ -144,6 +176,37 @@ def create_app(settings: ApiSettings | None = None):
     async def request_context(request: Request, call_next):
         request_id = request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex[:12]}"
         request.state.request_id = request_id
+        client_key = request.headers.get("x-api-key", "")
+        if not client_key:
+            client_host = request.client.host if request.client else "unknown"
+            client_key = f"anonymous:{client_host}"
+
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                declared_size = int(content_length)
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content=_error_payload("invalid_content_length", "Invalid Content-Length header", request_id),
+                )
+            if declared_size > state.settings.request_max_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content=_error_payload("payload_too_large", "Request payload exceeds maximum size", request_id),
+                )
+
+        body = await request.body()
+        if len(body) > state.settings.request_max_bytes:
+            return JSONResponse(
+                status_code=413,
+                content=_error_payload("payload_too_large", "Request payload exceeds maximum size", request_id),
+            )
+
+        async def _receive() -> dict[str, Any]:
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request._receive = _receive  # type: ignore[attr-defined]
 
         if state.settings.enable_api_key_auth:
             provided = request.headers.get("x-api-key")
@@ -152,8 +215,23 @@ def create_app(settings: ApiSettings | None = None):
                     status_code=401,
                     content=_error_payload("unauthorized", "Missing or invalid API key", request_id),
                 )
+            client_key = provided
 
-        response = await call_next(request)
+        if not rate_limiter.allow(client_key, time.monotonic()):
+            return JSONResponse(
+                status_code=429,
+                content=_error_payload("rate_limited", "Rate limit exceeded", request_id),
+            )
+
+        try:
+            response = await asyncio.wait_for(
+                call_next(request), timeout=state.settings.request_timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            return JSONResponse(
+                status_code=504,
+                content=_error_payload("timeout", "Request processing timed out", request_id),
+            )
         response.headers["x-request-id"] = request_id
         logger.info(
             "request_processed",

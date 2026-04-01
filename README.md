@@ -212,6 +212,9 @@ docker compose up --build
 ## Security and governance baseline (alpha)
 
 - Optional shared API key middleware (`SENA_API_KEY_ENABLED=true`, `SENA_API_KEY=...`).
+- Per-key fixed-window rate limiting (`SENA_RATE_LIMIT_REQUESTS`, `SENA_RATE_LIMIT_WINDOW_SECONDS`).
+- Request payload size cap (`SENA_REQUEST_MAX_BYTES`) with explicit `413` failure.
+- Request timeout guardrail (`SENA_REQUEST_TIMEOUT_SECONDS`) with explicit `504` failure.
 - Request ID propagation (`x-request-id`) for traceability.
 - Optional JSONL audit sink (`SENA_AUDIT_SINK_JSONL=/path/to/audit.jsonl`) with tamper-evident hash chaining + verification endpoint/CLI.
 - Bundle manifest lifecycle states (`draft` / `candidate` / `active` / `deprecated`) and promotion validation tooling.
