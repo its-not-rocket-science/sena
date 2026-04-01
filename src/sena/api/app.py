@@ -71,6 +71,8 @@ except ModuleNotFoundError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 VALID_API_ROLES = {"admin", "policy_author", "evaluator"}
+VALID_RUNTIME_MODES = {"development", "pilot", "production"}
+VALID_POLICY_STORE_BACKENDS = {"filesystem", "sqlite"}
 ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
     "policy_author": {
         ("POST", "/v1/bundle/register"),
@@ -211,11 +213,31 @@ def _load_runtime_bundle(
 
 
 def _validate_startup_settings(runtime_settings: ApiSettings) -> None:
+    if runtime_settings.runtime_mode not in VALID_RUNTIME_MODES:
+        raise RuntimeError(
+            f"SENA_RUNTIME_MODE must be one of {sorted(VALID_RUNTIME_MODES)}; got '{runtime_settings.runtime_mode}'"
+        )
+    if runtime_settings.policy_store_backend not in VALID_POLICY_STORE_BACKENDS:
+        raise RuntimeError(
+            "SENA_POLICY_STORE_BACKEND must be one of "
+            f"{sorted(VALID_POLICY_STORE_BACKENDS)}; got '{runtime_settings.policy_store_backend}'"
+        )
     if runtime_settings.policy_store_backend == "filesystem":
         policy_dir = Path(runtime_settings.policy_dir)
         if not policy_dir.exists() or not policy_dir.is_dir():
             raise RuntimeError(
                 f"SENA_POLICY_DIR must point to an existing directory: {runtime_settings.policy_dir}"
+            )
+    if runtime_settings.policy_store_backend == "sqlite":
+        if not runtime_settings.policy_store_sqlite_path:
+            raise RuntimeError(
+                "SENA_POLICY_STORE_SQLITE_PATH is required when SENA_POLICY_STORE_BACKEND=sqlite"
+            )
+        sqlite_parent = Path(runtime_settings.policy_store_sqlite_path).expanduser().resolve().parent
+        if not sqlite_parent.exists() or not sqlite_parent.is_dir():
+            raise RuntimeError(
+                "SENA_POLICY_STORE_SQLITE_PATH parent directory must exist: "
+                f"{runtime_settings.policy_store_sqlite_path}"
             )
 
     if runtime_settings.api_key and not runtime_settings.enable_api_key_auth:
@@ -230,6 +252,39 @@ def _validate_startup_settings(runtime_settings: ApiSettings) -> None:
         if role not in VALID_API_ROLES:
             raise RuntimeError(
                 f"SENA_API_KEYS contains unsupported role '{role}'. Expected one of: {sorted(VALID_API_ROLES)}"
+            )
+    if bool(runtime_settings.slack_bot_token) != bool(runtime_settings.slack_channel):
+        raise RuntimeError(
+            "SENA_SLACK_BOT_TOKEN and SENA_SLACK_CHANNEL must be set together when enabling Slack integration"
+        )
+    for config_path, env_name in (
+        (runtime_settings.webhook_mapping_config_path, "SENA_WEBHOOK_MAPPING_CONFIG"),
+        (runtime_settings.jira_mapping_config_path, "SENA_JIRA_MAPPING_CONFIG"),
+        (runtime_settings.servicenow_mapping_config_path, "SENA_SERVICENOW_MAPPING_CONFIG"),
+    ):
+        if config_path:
+            path = Path(config_path)
+            if not path.exists() or not path.is_file():
+                raise RuntimeError(f"{env_name} must point to an existing file: {config_path}")
+
+    if runtime_settings.runtime_mode == "production":
+        if not runtime_settings.audit_sink_jsonl:
+            raise RuntimeError("SENA_RUNTIME_MODE=production requires SENA_AUDIT_SINK_JSONL")
+        if not runtime_settings.bundle_signature_strict:
+            raise RuntimeError("SENA_RUNTIME_MODE=production requires SENA_BUNDLE_SIGNATURE_STRICT=true")
+        if not runtime_settings.bundle_signature_keyring_dir:
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production requires SENA_BUNDLE_SIGNATURE_KEYRING_DIR"
+            )
+        keyring_dir = Path(runtime_settings.bundle_signature_keyring_dir)
+        if not keyring_dir.exists() or not keyring_dir.is_dir():
+            raise RuntimeError(
+                "SENA_BUNDLE_SIGNATURE_KEYRING_DIR must point to an existing directory: "
+                f"{runtime_settings.bundle_signature_keyring_dir}"
+            )
+        if runtime_settings.jira_mapping_config_path and not runtime_settings.jira_webhook_secret:
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production requires SENA_JIRA_WEBHOOK_SECRET when Jira integration is enabled"
             )
 
 
@@ -430,7 +485,14 @@ def create_app(settings: ApiSettings | None = None):
 
     @api_v1.get("/ready", response_model=ReadinessResponse)
     def ready() -> ReadinessResponse:
-        return ReadinessResponse(status="ready", checks={"policy_bundle_loaded": "ok"})
+        checks = {
+            "policy_bundle_loaded": "ok",
+            "auth_config_valid": "ok",
+            "policy_store_reachable": "ok",
+        }
+        if state.settings.runtime_mode == "production":
+            checks["production_guardrails_enforced"] = "ok"
+        return ReadinessResponse(status="ready", mode=state.settings.runtime_mode, checks=checks)
 
     @api_v1.get("/bundle", response_model=BundleInfo)
     def bundle() -> BundleInfo:
