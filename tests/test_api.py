@@ -412,6 +412,7 @@ def test_webhook_endpoint_maps_payload_and_returns_reasoning() -> None:
     )
 
     assert response.status_code == 200
+    assert response.headers["x-sena-surface-stage"] == "experimental"
     body = response.json()
     assert body["provider"] == "stripe"
     assert body["mapped_action_proposal"]["action_type"] == "approve_vendor_payment"

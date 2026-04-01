@@ -106,5 +106,6 @@ def test_slack_interactions_endpoint() -> None:
     )
 
     assert response.status_code == 200
+    assert response.headers["x-sena-surface-stage"] == "experimental"
     assert response.json()["decision"] == "REJECT"
     assert response.json()["decision_id"] == "dec_555"

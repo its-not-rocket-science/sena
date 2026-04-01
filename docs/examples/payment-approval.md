@@ -1,5 +1,7 @@
 # Payment Approval End-to-End Example
 
+> **Scope note:** this walkthrough uses the generic webhook and Slack interaction endpoints, which are currently **experimental** surfaces. For supported production-depth integrations, use Jira and ServiceNow runbooks.
+
 This example shows a realistic approval flow where:
 
 1. An AI agent proposes a payment.

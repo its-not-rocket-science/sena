@@ -764,7 +764,12 @@ def create_app(settings: ApiSettings | None = None):
             raise_api_error("evaluation_error", details={"reason": str(exc)})
 
     @api_v1.post("/integrations/webhook")
-    def integrations_webhook(req: WebhookEvaluateRequest, request: Request) -> dict[str, Any]:
+    def integrations_webhook(
+        req: WebhookEvaluateRequest,
+        request: Request,
+        response: Response,
+    ) -> dict[str, Any]:
+        response.headers["x-sena-surface-stage"] = "experimental"
         if state.webhook_mapper is None:
             raise_api_error("webhook_mapping_not_configured")
         try:
@@ -978,7 +983,8 @@ def create_app(settings: ApiSettings | None = None):
             raise_api_error("servicenow_evaluation_error", details={"reason": str(exc)})
 
     @api_v1.post("/integrations/slack/interactions")
-    async def slack_interactions(request: Request) -> dict[str, Any]:
+    async def slack_interactions(request: Request, response: Response) -> dict[str, Any]:
+        response.headers["x-sena-surface-stage"] = "experimental"
         try:
             form_data = await request.form()
             payload_json = form_data.get("payload")

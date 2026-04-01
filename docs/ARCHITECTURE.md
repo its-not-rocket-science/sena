@@ -18,9 +18,11 @@ SENA's supported path is a deterministic compliance engine:
 
 ### API
 - Versioned endpoints under `/v1`
-- Backward-compatible aliases: `/health`, `/bundle`, `/evaluate`
+- Unversioned aliases are deprecated stubs returning `410 Gone`
 - Request ID propagation (`x-request-id`) and structured error envelope
 - Optional API key middleware for self-hosted baseline controls
+- Supported integration depth: Jira + ServiceNow normalized approval endpoints
+- Experimental integration endpoints: generic webhook + Slack interactions
 
 ## Policy bundle model
 

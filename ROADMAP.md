@@ -8,7 +8,7 @@ This roadmap reflects the current alpha scope. It does not assume formal verific
 
 ---
 
-## Current phase (March 2026)
+## Current phase (April 2026)
 
 **Phase: Alpha Product Validation**
 
@@ -24,7 +24,7 @@ Delivered:
 ## Phase 1 — Design Partner Readiness (next)
 
 - Harden policy bundle management conventions
-- Add integration adapters for one approval system and one ticketing system
+- Deepen Jira + ServiceNow normalized approval adapters
 - Extend audit record export (JSONL/webhook)
 - Add policy simulation tooling for rule-change testing
 
@@ -49,9 +49,9 @@ Success criteria:
 
 ## Phase 3 — Broader Workflow Coverage
 
-- Additional workflow packs (account reinstatement, vendor onboarding)
+- Additional workflow packs only after Jira + ServiceNow design-partner depth targets are met
 - More robust schema support and payload contracts
-- Connector ecosystem expansion
+- Connector ecosystem expansion remains explicitly deferred
 
 Success criteria:
 - Multiple high-risk workflows covered by deterministic policy checks
@@ -64,3 +64,4 @@ Success criteria:
 - General-purpose AI orchestration framework
 - Formal verification guarantees
 - Benchmark claims not backed by repeatable artifacts
+- Broad connector marketplace before depth goals are met
