@@ -102,7 +102,16 @@ Versioned endpoints:
 - `GET /v1/audit/verify`
 - `GET /metrics` (Prometheus exposition)
 
-Backward-compatible aliases still exist at `/health`, `/bundle`, `/evaluate`.
+### API versioning policy
+
+- SENA enforces explicit major-version routing via `/v{major}`.
+- Current supported API surface is `/v1/*` only.
+- Unversioned routes (`/health`, `/bundle`, `/evaluate`) were removed on **April 1, 2026** and now return `410 Gone`.
+- Deprecated-route responses include migration headers:
+  - `Deprecation: true`
+  - `Sunset: 2026-04-01`
+  - `Warning: 299` with migration guidance
+  - `Link` with deprecation policy reference
 
 ### API error contract and code catalog
 
