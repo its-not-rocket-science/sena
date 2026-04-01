@@ -156,8 +156,9 @@ def test_strict_mode_requires_actor_identity_fields() -> None:
     assert response.status_code == 422
     body = response.json()
     assert body["error"]["code"] == "validation_error"
-    assert "actor_id" in str(body["error"]["message"])
-    assert "actor_role" in str(body["error"]["message"])
+    assert body["error"]["details"]
+    assert "actor_id" in str(body["error"]["details"])
+    assert "actor_role" in str(body["error"]["details"])
 
 
 def test_batch_and_bundle_inspect_endpoints() -> None:
@@ -276,6 +277,7 @@ def test_bundle_promote_endpoint_enforces_transition_order(tmp_path) -> None:
         json={"bundle_id": bundle_id, "target_lifecycle": "active"},
     )
     assert skipped.status_code == 400
+    assert skipped.json()["error"]["code"] == "promotion_validation_failed"
 
     to_candidate = client.post(
         "/v1/bundle/promote",
@@ -334,6 +336,7 @@ def test_webhook_endpoint_requires_mapping_config() -> None:
     )
 
     assert response.status_code == 400
+    assert response.json()["error"]["code"] == "webhook_mapping_not_configured"
 
 
 def test_rate_limiting_per_api_key() -> None:
