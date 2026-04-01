@@ -4,6 +4,16 @@ SENA is an **alpha deterministic policy-enforcement engine for AI-assisted enter
 
 It evaluates high-risk workflow actions against structured policy bundles and returns an auditable decision (`APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`) with reasoning and machine-readable traces.
 
+## Current maturity focus
+
+We are prioritizing depth to move from alpha toward enterprise-credible pilots:
+- 1–2 killer integrations (Stripe webhook decisioning + Slack human escalation loop),
+- a defensible policy lifecycle (diff/simulation/promotion gates),
+- failure-mode and migration testing,
+- durable audit + persistence guarantees.
+
+See the opinionated implementation plan: [`docs/TECHNICAL_MATURITY_PLAN.md`](docs/TECHNICAL_MATURITY_PLAN.md).
+
 ## Version
 
 Current package/API version: `0.3.0` (single source: `src/sena/__init__.py`).
