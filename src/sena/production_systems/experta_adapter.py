@@ -7,8 +7,12 @@ Use sena.engine.evaluator with structured policy rules instead.
 from __future__ import annotations
 
 import warnings
+from typing import TYPE_CHECKING
 
 __all__ = ["ExpertaAdapter"]
+
+if TYPE_CHECKING:
+    from sena.legacy.production_systems.experta_adapter import ExpertaAdapter
 
 
 def __getattr__(name: str):

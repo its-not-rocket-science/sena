@@ -6,8 +6,12 @@ The supported enterprise-compliance path does not use this module.
 from __future__ import annotations
 
 import warnings
+from typing import TYPE_CHECKING
 
 __all__ = ["DEAPAdapter"]
+
+if TYPE_CHECKING:
+    from sena.legacy.evolutionary.deap_adapter import DEAPAdapter
 
 
 def __getattr__(name: str):

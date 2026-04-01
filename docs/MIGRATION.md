@@ -27,3 +27,14 @@ Anything under `sena.legacy` (and old shim imports) is historical/experimental a
 ## Eval contradiction removal
 
 Dynamic `eval(...)` usage exists only in legacy modules. The supported compliance engine evaluates structured conditions through an allowed-operator interpreter.
+
+
+## Import guardrails
+
+To reduce accidental dependency on legacy code paths:
+
+- Legacy imports emit explicit deprecation warnings by default.
+- Set `SENA_STRICT_LEGACY_IMPORTS=true` to fail legacy imports immediately (`ImportError`).
+- Set `SENA_RUNTIME_MODE=production` to block `sena.legacy` imports at runtime (`RuntimeError`).
+- A temporary override exists: `SENA_ALLOW_LEGACY_IN_PRODUCTION=true` (use only during tightly controlled migration windows).
+

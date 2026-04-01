@@ -16,6 +16,26 @@ Current package/API version: `0.3.0` (single source: `src/sena/__init__.py`).
 
 Legacy modules under `src/sena/legacy/*` are historical and out of supported scope.
 
+
+## What is NOT part of the product
+
+The following modules are **not** part of the supported SENA product path:
+
+- Anything under `sena.legacy.*` / `src/sena/legacy/*`
+- Compatibility shims that proxy to legacy code:
+  - `sena.core.types`
+  - `sena.orchestrator.sena`
+  - `sena.evolutionary.deap_adapter`
+  - `sena.llm.simulated_adapter`
+  - `sena.production_systems.experta_adapter`
+
+Runtime guardrails:
+
+- Legacy imports always emit deprecation warnings in non-strict modes.
+- `SENA_STRICT_LEGACY_IMPORTS=true` blocks legacy imports with `ImportError`.
+- `SENA_RUNTIME_MODE=production` blocks `sena.legacy` imports with `RuntimeError` by default.
+- `SENA_ALLOW_LEGACY_IN_PRODUCTION=true` is an explicit temporary override for controlled migrations only.
+
 ## Install
 
 ```bash
