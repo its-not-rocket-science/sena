@@ -12,6 +12,7 @@ class ActionProposal:
     action_type: str
     request_id: str | None = None
     actor_id: str | None = None
+    actor_role: str | None = None
     attributes: dict[str, Any] = field(default_factory=dict)
 
 
@@ -71,6 +72,7 @@ class AuditRecord:
     action_type: str
     request_id: str | None
     actor_id: str | None
+    actor_role: str | None
     outcome: DecisionOutcome
     policy_bundle: PolicyBundleMetadata
     matched_rule_ids: list[str]

@@ -389,7 +389,8 @@ def create_app(settings: ApiSettings | None = None):
                 action_type=req.action_type,
                 request_id=req.request_id or request.state.request_id,
                 actor_id=req.actor_id,
-                attributes={**req.attributes, "actor_role": req.actor_role},
+                actor_role=req.actor_role,
+                attributes=req.attributes,
             )
             evaluator = PolicyEvaluator(
                 state.rules,

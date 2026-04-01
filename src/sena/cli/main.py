@@ -112,6 +112,7 @@ def _run_evaluate(args: argparse.Namespace) -> None:
         action_type=payload["action_type"],
         request_id=payload.get("request_id"),
         actor_id=payload.get("actor_id"),
+        actor_role=payload.get("actor_role"),
         attributes=payload.get("attributes", {}),
     )
     facts = payload.get("facts", {})
@@ -201,6 +202,7 @@ def _run_policy_test(args: argparse.Namespace) -> None:
             action_type=proposal_data["action_type"],
             request_id=proposal_data.get("request_id"),
             actor_id=proposal_data.get("actor_id"),
+            actor_role=proposal_data.get("actor_role"),
             attributes=proposal_data.get("attributes", {}),
         )
         facts = case.get("facts", {})

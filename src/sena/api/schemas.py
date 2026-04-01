@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
+
+from sena.policy.validation import validate_identity_fields
 
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
@@ -19,6 +21,17 @@ class EvaluateRequest(BaseModel):
         "APPROVED"
     )
     strict_require_allow: bool = False
+
+    @model_validator(mode="after")
+    def validate_strict_identity_fields(self) -> "EvaluateRequest":
+        if self.strict_require_allow:
+            missing = validate_identity_fields(self.actor_id, self.actor_role)
+            if missing:
+                missing_label = ", ".join(missing)
+                raise ValueError(
+                    f"strict_require_allow=true requires identity fields: {missing_label}"
+                )
+        return self
 
 
 
