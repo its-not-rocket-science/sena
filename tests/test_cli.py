@@ -181,3 +181,67 @@ def test_bundle_release_manifest_commands(tmp_path) -> None:
         ]
     )
     verify.check_returncode()
+
+
+def test_policy_schema_migration_commands(tmp_path) -> None:
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yaml").write_text(
+        "bundle_name: demo\nversion: 1.0.0\nschema_version: '1'\n"
+    )
+    (bundle_dir / "rules.yaml").write_text(
+        """
+- id: r1
+  description: d
+  severity: low
+  inviolable: false
+  action: approve_vendor_payment
+  condition:
+    field: amount
+    gt: 5
+  decision: ALLOW
+  reason: ok
+""".strip()
+        + "\n"
+    )
+
+    inspect = _run_cli(["policy", "schema-version", "--policy-dir", str(bundle_dir)])
+    inspect.check_returncode()
+    inspect_payload = json.loads(inspect.stdout)
+    assert inspect_payload["schema_version"] == "1"
+
+    dry_run = _run_cli(["policy", "migrate", "--policy-dir", str(bundle_dir), "--dry-run"])
+    dry_run.check_returncode()
+    dry_payload = json.loads(dry_run.stdout)
+    assert dry_payload["changed_files"] == ["bundle.yaml", "rules.yaml"]
+
+    apply = _run_cli(["policy", "migrate", "--policy-dir", str(bundle_dir)])
+    apply.check_returncode()
+
+    compat = _run_cli(["policy", "verify-compatibility", "--policy-dir", str(bundle_dir)])
+    compat.check_returncode()
+    compat_payload = json.loads(compat.stdout)
+    assert compat_payload["compatible"] is True
+
+
+def test_policy_verify_compatibility_fails_for_incompatible_runtime(tmp_path) -> None:
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yaml").write_text(
+        """
+bundle_name: demo
+version: 1.0.0
+schema_version: '2'
+runtime_compatibility:
+  min_evaluator_version: '9.0.0'
+  max_evaluator_version: '10.0.0'
+""".strip()
+        + "\n"
+    )
+    (bundle_dir / "rules.yaml").write_text(
+        '[{"id":"r1","description":"d","severity":"low","inviolable":false,"applies_to":["a"],"condition":{"field":"x","eq":1},"decision":"ALLOW","reason":"ok"}]'
+    )
+
+    result = _run_cli(["policy", "verify-compatibility", "--policy-dir", str(bundle_dir)])
+    assert result.returncode != 0
+    assert "compatibility check failed" in (result.stderr + result.stdout).lower()

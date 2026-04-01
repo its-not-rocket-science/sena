@@ -54,3 +54,25 @@ def test_load_policy_bundle_rejects_invalid_manifest(tmp_path) -> None:
 
     with pytest.raises(PolicyParseError, match="invalid bundle manifest"):
         load_policy_bundle(tmp_path)
+
+
+def test_parse_policy_file_supports_deprecated_action_field(tmp_path) -> None:
+    policy_file = tmp_path / "legacy_rules.yaml"
+    policy_file.write_text(
+        """
+- id: legacy_rule
+  description: old
+  severity: low
+  inviolable: false
+  action: approve_vendor_payment
+  condition:
+    field: amount
+    gt: 5
+  decision: ALLOW
+  reason: ok
+""".strip()
+        + "\n"
+    )
+
+    rules = parse_policy_file(policy_file)
+    assert rules[0].applies_to == ["approve_vendor_payment"]

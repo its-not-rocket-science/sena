@@ -14,6 +14,8 @@ We are prioritizing depth to move from alpha toward enterprise-credible pilots:
 
 See the opinionated implementation plan: [`docs/TECHNICAL_MATURITY_PLAN.md`](docs/TECHNICAL_MATURITY_PLAN.md).
 
+Policy schema evolution and migration guidance: [`docs/POLICY_SCHEMA_EVOLUTION.md`](docs/POLICY_SCHEMA_EVOLUTION.md).
+
 ## Version
 
 Current package/API version: `0.3.0` (single source: `src/sena/__init__.py`).
@@ -80,6 +82,14 @@ PYTHONPATH=src python -m sena.cli.main policy validate --policy-dir ./my-policy-
 
 # Run expected-outcome tests
 PYTHONPATH=src python -m sena.cli.main policy test   --policy-dir ./my-policy-bundle   --test-file ./my-policy-bundle/tests/policy_tests.json
+
+# Inspect schema version and compatibility
+PYTHONPATH=src python -m sena.cli.main policy schema-version --policy-dir ./my-policy-bundle
+PYTHONPATH=src python -m sena.cli.main policy verify-compatibility --policy-dir ./my-policy-bundle
+
+# Preview and apply deterministic schema migration
+PYTHONPATH=src python -m sena.cli.main policy migrate --policy-dir ./my-policy-bundle --dry-run
+PYTHONPATH=src python -m sena.cli.main policy migrate --policy-dir ./my-policy-bundle
 ```
 
 Generated templates include:
