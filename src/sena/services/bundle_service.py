@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
 from sena.api.schemas import BundleInfo, BundlePromoteRequest, BundleRegisterRequest, BundleRollbackRequest
+from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import load_policy_bundle
 
@@ -60,9 +62,45 @@ class BundleService:
         if stored_bundle is None:
             raise ValueError("bundle_not_found")
         source_rules = stored_bundle.rules
+        current_active = None
         if payload.target_lifecycle == "active":
             current_active = self.policy_repo.get_active_bundle(stored_bundle.metadata.bundle_name)
             source_rules = current_active.rules if current_active is not None else []
+        source_metadata = current_active.metadata if (payload.target_lifecycle == "active" and current_active is not None) else stored_bundle.metadata
+
+        policy_diff = diff_rule_sets(source_rules, stored_bundle.rules).__dict__
+        simulation_report: dict[str, Any] | None = payload.simulation_result
+        if payload.target_lifecycle == "active" and simulation_report is None and payload.simulation_scenarios:
+            scenarios = {
+                scenario.scenario_id: SimulationScenario(
+                    action_type=scenario.action_type,
+                    request_id=scenario.request_id,
+                    actor_id=scenario.actor_id,
+                    attributes=scenario.attributes,
+                    facts=scenario.facts,
+                    source_system=scenario.source_system,
+                    workflow_stage=scenario.workflow_stage,
+                    risk_category=scenario.risk_category,
+                )
+                for scenario in payload.simulation_scenarios
+            }
+            simulation_report = simulate_bundle_impact(
+                scenarios,
+                source_rules,
+                stored_bundle.rules,
+                source_metadata,
+                stored_bundle.metadata,
+            )
+
+        threshold_errors: list[str] = []
+        if payload.target_lifecycle == "active" and not payload.break_glass:
+            if not payload.validation_artifact and simulation_report is None:
+                threshold_errors.append(
+                    "promotion to active requires simulation_result, simulation_scenarios, or validation_artifact unless break_glass=true"
+                )
+            threshold_errors.extend(self._evaluate_thresholds(simulation_report, payload.thresholds))
+        if payload.break_glass and payload.target_lifecycle == "active" and not payload.break_glass_reason:
+            threshold_errors.append("break_glass_reason is required when break_glass=true for active promotion")
 
         validation = validate_promotion(
             stored_bundle.metadata.lifecycle,
@@ -73,21 +111,81 @@ class BundleService:
             signature_verified=stored_bundle.signature_verified,
             signature_verification_strict=stored_bundle.signature_verification_strict,
         )
-        if not validation.valid:
-            raise RuntimeError("promotion_validation_failed:" + "; ".join(validation.errors))
+        errors = [*validation.errors, *threshold_errors]
+        if errors and not payload.break_glass:
+            raise RuntimeError("promotion_validation_failed:" + "; ".join(errors))
 
         self.policy_repo.transition_bundle(
             payload.bundle_id,
             payload.target_lifecycle,
             promoted_by=payload.promoted_by,
-            promotion_reason=payload.promotion_reason,
+            promotion_reason=payload.promotion_reason if not payload.break_glass else f"[BREAK_GLASS] {payload.promotion_reason}",
             validation_artifact=payload.validation_artifact,
+            policy_diff_summary=json.dumps(policy_diff, sort_keys=True),
+            evidence_json=json.dumps(
+                {
+                    "simulation_report": simulation_report,
+                    "thresholds": payload.thresholds.model_dump() if payload.thresholds else {},
+                    "threshold_errors": errors,
+                    "break_glass_reason": payload.break_glass_reason,
+                },
+                sort_keys=True,
+            ),
+            break_glass=payload.break_glass,
+            audit_marker="break_glass_promotion" if payload.break_glass else "promotion",
+            action="promote_break_glass" if payload.break_glass else "promote",
         )
         active = self.policy_repo.get_active_bundle(self.settings.bundle_name)
         if active is not None:
             self.state.rules = active.rules
             self.state.metadata = active.metadata
         return {"status": "ok", "bundle_id": payload.bundle_id, "lifecycle": payload.target_lifecycle}
+
+    def _evaluate_thresholds(
+        self,
+        simulation_report: dict[str, Any] | None,
+        thresholds: BundlePromoteRequest.PromotionThresholds | None,
+    ) -> list[str]:
+        if simulation_report is None or thresholds is None:
+            return []
+        errors: list[str] = []
+        changed_scenarios = int(simulation_report.get("changed_scenarios", 0))
+        if thresholds.max_changed_outcomes is not None and changed_scenarios > thresholds.max_changed_outcomes:
+            errors.append(
+                f"changed outcomes {changed_scenarios} exceeds threshold {thresholds.max_changed_outcomes}"
+            )
+        block_to_approve = sum(
+            1
+            for item in simulation_report.get("changes", [])
+            if item.get("before_outcome") == "BLOCKED" and item.get("after_outcome") == "APPROVED"
+        )
+        if (
+            thresholds.max_block_to_approve_regressions is not None
+            and block_to_approve > thresholds.max_block_to_approve_regressions
+        ):
+            errors.append(
+                "block->approve regressions "
+                f"{block_to_approve} exceeds threshold {thresholds.max_block_to_approve_regressions}"
+            )
+        risk_changes = simulation_report.get("grouped_changes", {}).get("risk_category", {})
+        for risk_category, max_changed in thresholds.max_changed_risk_categories.items():
+            observed = int(risk_changes.get(risk_category, {}).get("changed", 0))
+            if observed > max_changed:
+                errors.append(
+                    f"risk category '{risk_category}' changed outcomes {observed} exceeds threshold {max_changed}"
+                )
+        covered_categories = set(risk_changes.keys())
+        required = {item for item in thresholds.required_risk_categories if item}
+        missing = sorted(required - covered_categories)
+        if (
+            thresholds.max_missing_scenario_coverage is not None
+            and len(missing) > thresholds.max_missing_scenario_coverage
+        ):
+            errors.append(
+                "missing scenario coverage "
+                f"{len(missing)} exceeds threshold {thresholds.max_missing_scenario_coverage}: {missing}"
+            )
+        return errors
 
     def rollback_bundle(self, payload: BundleRollbackRequest) -> dict[str, Any]:
         self.policy_repo.rollback_bundle(

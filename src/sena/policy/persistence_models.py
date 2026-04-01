@@ -40,4 +40,8 @@ class BundleHistoryRow:
     reason: str
     replaced_bundle_id: int | None
     validation_artifact: str | None
+    policy_diff_summary: str | None
+    evidence_json: str | None
+    break_glass: bool
+    audit_marker: str | None
     created_at: str

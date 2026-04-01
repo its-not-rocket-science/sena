@@ -158,7 +158,7 @@ def test_legacy_storage_state_fixture_migrates_forward(tmp_path: Path) -> None:
         migration_versions = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
 
     assert {"release_manifest_path", "signature_verified", "created_by", "integrity_digest"}.issubset(columns)
-    assert migration_versions == {1, 2, 3, 4}
+    assert migration_versions == {1, 2, 3, 4, 5}
 
 
 def test_legacy_bundle_fixture_can_be_loaded_and_diffed() -> None:
