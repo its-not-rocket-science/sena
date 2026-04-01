@@ -1,0 +1,26 @@
+providers:
+  stripe:
+    payment_intent.created:
+      action_type: approve_vendor_payment
+      payload_path: data.object
+      request_id_path: id
+      actor_id_path: data.object.metadata.requested_by
+      attributes:
+        amount: amount
+        currency: currency
+        vendor_verified: metadata.vendor_verified
+        requester_role: metadata.requester_role
+      static_attributes:
+        source_system: stripe
+  jira:
+    issue_created:
+      action_type: approve_customer_data_export
+      payload_path: issue.fields
+      request_id_path: issue.key
+      actor_id_path: user.accountId
+      attributes:
+        ticket_key: summary
+        requester_role: customfield_requester_role
+        target_system: customfield_target_system
+      static_attributes:
+        source_system: jira

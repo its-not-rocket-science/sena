@@ -16,6 +16,7 @@ from sena.api.schemas import (
     BundleRegisterRequest,
     EvaluateRequest,
     HealthResponse,
+    WebhookEvaluateRequest,
     ReadinessResponse,
     SimulationRequest,
 )
@@ -23,6 +24,11 @@ from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig, PolicyBundleMetadata
 from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
+from sena.integrations.webhook import (
+    WebhookMappingError,
+    WebhookPayloadMapper,
+    load_webhook_mapping_config,
+)
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.store import SQLitePolicyBundleRepository
@@ -61,6 +67,7 @@ class _EngineState:
         self.rules = rules
         self.metadata = metadata
         self.policy_repo = policy_repo
+        self.webhook_mapper: WebhookPayloadMapper | None = None
 
 
 def _parse_default_decision(raw: str) -> DecisionOutcome:
@@ -111,6 +118,9 @@ def create_app(settings: ApiSettings | None = None):
 
     app = FastAPI(title="SENA Compliance Engine API", version=SENA_VERSION)
     state = _EngineState(runtime_settings, rules, metadata, policy_repo)
+    if runtime_settings.webhook_mapping_config_path:
+        mapping_config = load_webhook_mapping_config(runtime_settings.webhook_mapping_config_path)
+        state.webhook_mapper = WebhookPayloadMapper(mapping_config)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -264,6 +274,44 @@ def create_app(settings: ApiSettings | None = None):
             return payload
         except Exception as exc:  # pragma: no cover
             raise HTTPException(status_code=400, detail=f"Evaluation error: {exc}") from exc
+
+
+    @api_v1.post("/integrations/webhook")
+    def integrations_webhook(req: WebhookEvaluateRequest, request: Request) -> dict[str, Any]:
+        if state.webhook_mapper is None:
+            raise HTTPException(status_code=400, detail="webhook mapping config is not set")
+        try:
+            proposal = state.webhook_mapper.map_payload(
+                provider=req.provider,
+                event_type=req.event_type,
+                payload=req.payload,
+                default_request_id=request.state.request_id,
+            )
+            evaluator = PolicyEvaluator(
+                state.rules,
+                policy_bundle=state.metadata,
+                config=EvaluatorConfig(
+                    default_decision=_parse_default_decision(req.default_decision),
+                    require_allow_match=req.strict_require_allow,
+                ),
+            )
+            trace = evaluator.evaluate(proposal, req.facts)
+            return {
+                "provider": req.provider,
+                "event_type": req.event_type,
+                "mapped_action_proposal": {
+                    "action_type": proposal.action_type,
+                    "request_id": proposal.request_id,
+                    "actor_id": proposal.actor_id,
+                    "attributes": proposal.attributes,
+                },
+                "decision": trace.to_dict(),
+                "reasoning": trace.reasoning.__dict__ if trace.reasoning else None,
+            }
+        except WebhookMappingError as exc:
+            raise HTTPException(status_code=400, detail=f"Webhook mapping error: {exc}") from exc
+        except Exception as exc:  # pragma: no cover
+            raise HTTPException(status_code=400, detail=f"Webhook evaluation error: {exc}") from exc
 
     @api_v1.post("/evaluate/batch")
     def evaluate_batch(req: BatchEvaluateRequest, request: Request) -> dict[str, Any]:
