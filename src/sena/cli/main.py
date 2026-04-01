@@ -16,6 +16,7 @@ from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.explain import format_trace
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
+from sena.evidence_pack import build_evidence_pack, stable_zip_dir
 from sena.examples import DEFAULT_POLICY_DIR
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
@@ -593,6 +594,18 @@ def _run_production_check(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def _run_evidence_pack(args: argparse.Namespace) -> None:
+    result = build_evidence_pack(
+        reference_root=args.reference_root,
+        output_dir=args.output_dir,
+        clean=args.clean,
+    )
+    if args.output_zip:
+        stable_zip_dir(args.output_dir, args.output_zip)
+        result["output_zip"] = str(args.output_zip)
+    print(json.dumps(result, indent=2, sort_keys=True))
+
+
 def _build_evaluate_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -853,6 +866,17 @@ def _build_audit_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_evidence_pack_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="SENA policy release evidence pack commands")
+    default_reference = Path(__file__).resolve().parents[3] / "examples" / "design_partner_reference"
+    parser.add_argument("--reference-root", type=Path, default=default_reference)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--output-zip", type=Path)
+    parser.add_argument("--clean", action="store_true", help="Delete existing output directory before generating")
+    parser.set_defaults(handler=_run_evidence_pack)
+    return parser
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "production-check":
         parser = argparse.ArgumentParser(description="SENA production-readiness validation")
@@ -882,6 +906,11 @@ def main() -> None:
         return
     if len(sys.argv) > 1 and sys.argv[1] == "audit":
         parser = _build_audit_parser()
+        args = parser.parse_args(sys.argv[2:])
+        args.handler(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "evidence-pack":
+        parser = _build_evidence_pack_parser()
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return
