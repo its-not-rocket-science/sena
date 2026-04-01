@@ -19,6 +19,9 @@ Application versioning: package and FastAPI app version are sourced from `sena._
 - `SENA_POLICY_DIR`: policy bundle directory (defaults to `src/sena/examples/policies`)
 - `SENA_BUNDLE_NAME`, `SENA_BUNDLE_VERSION`: metadata override fallback (default demo bundle metadata)
 - `SENA_API_KEY_ENABLED=true` + `SENA_API_KEY=<value>`: enables shared-key auth middleware
+- `SENA_RATE_LIMIT_REQUESTS`, `SENA_RATE_LIMIT_WINDOW_SECONDS`: fixed-window request budget (per API key when provided, otherwise per client host)
+- `SENA_REQUEST_MAX_BYTES`: maximum request payload size in bytes (`413` when exceeded)
+- `SENA_REQUEST_TIMEOUT_SECONDS`: request processing timeout in seconds (`504` when exceeded)
 - `SENA_AUDIT_SINK_JSONL`: optional file path for JSONL audit append sink
 - `SENA_LOG_LEVEL`: standard Python logging level
 

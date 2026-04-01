@@ -25,6 +25,10 @@ class ApiSettings:
     webhook_mapping_config_path: str | None = None
     slack_bot_token: str | None = None
     slack_channel: str | None = None
+    rate_limit_requests: int = 120
+    rate_limit_window_seconds: int = 60
+    request_max_bytes: int = 1_048_576
+    request_timeout_seconds: float = 15.0
 
 
 
@@ -39,6 +43,12 @@ def _parse_int(raw: str | None, *, default: int) -> int:
     if raw is None:
         return default
     return int(raw)
+
+
+def _parse_float(raw: str | None, *, default: float) -> float:
+    if raw is None:
+        return default
+    return float(raw)
 
 
 
@@ -61,4 +71,12 @@ def load_settings_from_env() -> ApiSettings:
         webhook_mapping_config_path=os.getenv("SENA_WEBHOOK_MAPPING_CONFIG"),
         slack_bot_token=os.getenv("SENA_SLACK_BOT_TOKEN"),
         slack_channel=os.getenv("SENA_SLACK_CHANNEL"),
+        rate_limit_requests=_parse_int(os.getenv("SENA_RATE_LIMIT_REQUESTS"), default=120),
+        rate_limit_window_seconds=_parse_int(
+            os.getenv("SENA_RATE_LIMIT_WINDOW_SECONDS"), default=60
+        ),
+        request_max_bytes=_parse_int(os.getenv("SENA_REQUEST_MAX_BYTES"), default=1_048_576),
+        request_timeout_seconds=_parse_float(
+            os.getenv("SENA_REQUEST_TIMEOUT_SECONDS"), default=15.0
+        ),
     )
