@@ -168,6 +168,8 @@ Standard error codes:
 
 You can optionally run the API against a DB-backed policy registry instead of filesystem bundles.
 
+The persistence layer now uses an explicit repository abstraction and versioned migration ledger designed to keep SQLite reliable today while enabling a PostgreSQL adapter without policy-lifecycle rewrites. See `docs/PERSISTENCE_ARCHITECTURE.md` for details.
+
 ```bash
 # 1) Initialize schema
 PYTHONPATH=src python scripts/migrate_policy_registry.py --sqlite-path ./.data/policy_registry.db

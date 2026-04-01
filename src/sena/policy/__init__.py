@@ -1,3 +1,13 @@
-from sena.policy.store import SQLitePolicyBundleRepository, StoredBundle
+from sena.policy.store import (
+    PolicyBundleRepository,
+    PostgresPolicyBundleRepository,
+    SQLitePolicyBundleRepository,
+    StoredBundle,
+)
 
-__all__ = ["SQLitePolicyBundleRepository", "StoredBundle"]
+__all__ = [
+    "SQLitePolicyBundleRepository",
+    "PostgresPolicyBundleRepository",
+    "PolicyBundleRepository",
+    "StoredBundle",
+]
