@@ -1,8 +1,47 @@
 services:
   sena-api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sena-api:local
     env_file:
       - .env.example
+    environment:
+      SENA_POLICY_STORE_BACKEND: ${SENA_POLICY_STORE_BACKEND:-filesystem}
+      SENA_POLICY_STORE_SQLITE_PATH: ${SENA_POLICY_STORE_SQLITE_PATH:-/data/policy_registry.db}
+      SENA_API_HOST: ${SENA_API_HOST:-0.0.0.0}
+      SENA_API_PORT: ${SENA_API_PORT:-8000}
     ports:
-      - "8000:8000"
-    command: python -m uvicorn sena.api.app:app --host 0.0.0.0 --port 8000
+      - "${SENA_API_PORT:-8000}:8000"
+    volumes:
+      - sena_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/v1/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  sena-db:
+    image: postgres:16-alpine
+    profiles: ["db"]
+    environment:
+      POSTGRES_DB: ${SENA_DB_NAME:-sena}
+      POSTGRES_USER: ${SENA_DB_USER:-sena}
+      POSTGRES_PASSWORD: ${SENA_DB_PASSWORD:-sena_dev_password}
+    ports:
+      - "${SENA_DB_PORT:-5432}:5432"
+    volumes:
+      - sena_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SENA_DB_USER:-sena} -d ${SENA_DB_NAME:-sena}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  sena_data:
+  sena_db:
