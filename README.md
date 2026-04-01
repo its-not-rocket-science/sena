@@ -212,7 +212,9 @@ docker compose up --build
 
 ## Security and governance baseline (alpha)
 
-- Optional shared API key middleware (`SENA_API_KEY_ENABLED=true`, `SENA_API_KEY=...`).
+- Optional API key RBAC middleware:
+  - single key: `SENA_API_KEY_ENABLED=true`, `SENA_API_KEY=...` (implicit `admin` role)
+  - multi-key RBAC: `SENA_API_KEYS=admin_key:admin,author_key:policy_author,eval_key:evaluator`
 - Per-key fixed-window rate limiting (`SENA_RATE_LIMIT_REQUESTS`, `SENA_RATE_LIMIT_WINDOW_SECONDS`).
 - Request payload size cap (`SENA_REQUEST_MAX_BYTES`) with explicit `413` failure.
 - Request timeout guardrail (`SENA_REQUEST_TIMEOUT_SECONDS`) with explicit `504` failure.

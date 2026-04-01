@@ -20,6 +20,7 @@ class ApiSettings:
     log_level: str = "INFO"
     enable_api_key_auth: bool = False
     api_key: str | None = None
+    api_keys: tuple[tuple[str, str], ...] = ()
     audit_sink_jsonl: str | None = None
     policy_store_backend: str = "filesystem"
     policy_store_sqlite_path: str | None = None
@@ -32,12 +33,29 @@ class ApiSettings:
     request_timeout_seconds: float = 15.0
 
 
+def _parse_api_keys(raw: str | None) -> tuple[tuple[str, str], ...]:
+    if not raw:
+        return ()
+    pairs: list[tuple[str, str]] = []
+    for item in raw.split(","):
+        entry = item.strip()
+        if not entry:
+            continue
+        key, sep, role = entry.partition(":")
+        if not sep:
+            raise ValueError("SENA_API_KEYS entries must use key:role format")
+        normalized_key = key.strip()
+        normalized_role = role.strip()
+        if not normalized_key or not normalized_role:
+            raise ValueError("SENA_API_KEYS entries must include both key and role")
+        pairs.append((normalized_key, normalized_role))
+    return tuple(pairs)
+
 
 def _parse_bool(raw: str | None, *, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in TRUE_VALUES
-
 
 
 def _parse_int(raw: str | None, *, default: int) -> int:
@@ -50,7 +68,6 @@ def _parse_float(raw: str | None, *, default: float) -> float:
     if raw is None:
         return default
     return float(raw)
-
 
 
 def load_settings_from_env() -> ApiSettings:
@@ -67,6 +84,7 @@ def load_settings_from_env() -> ApiSettings:
         log_level=os.getenv("SENA_LOG_LEVEL", "INFO").upper(),
         enable_api_key_auth=_parse_bool(os.getenv("SENA_API_KEY_ENABLED"), default=False),
         api_key=os.getenv("SENA_API_KEY"),
+        api_keys=_parse_api_keys(os.getenv("SENA_API_KEYS")),
         audit_sink_jsonl=os.getenv("SENA_AUDIT_SINK_JSONL"),
         policy_store_backend=os.getenv("SENA_POLICY_STORE_BACKEND", "filesystem"),
         policy_store_sqlite_path=os.getenv("SENA_POLICY_STORE_SQLITE_PATH"),

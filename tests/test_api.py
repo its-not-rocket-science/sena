@@ -17,6 +17,7 @@ def _settings(**kwargs):
         "bundle_version": "2026.03",
         "enable_api_key_auth": False,
         "api_key": None,
+        "api_keys": (),
         "audit_sink_jsonl": None,
         "rate_limit_requests": 120,
         "rate_limit_window_seconds": 60,
@@ -98,6 +99,34 @@ def test_api_key_auth_allows_authorized_request() -> None:
         json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
     )
     assert response.status_code == 200
+
+
+def test_api_key_role_evaluator_cannot_promote_bundle() -> None:
+    app = create_app(_settings(enable_api_key_auth=True, api_keys=(("eval-key", "evaluator"),)))
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/bundle/promote",
+        headers={"x-api-key": "eval-key"},
+        json={"bundle_id": 1, "target_lifecycle": "active"},
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "forbidden"
+
+
+def test_api_key_role_policy_author_cannot_evaluate() -> None:
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_keys=(("author-key", "policy_author"),))
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/evaluate",
+        headers={"x-api-key": "author-key"},
+        json={"action_type": "approve_vendor_payment"},
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "forbidden"
 
 
 
@@ -428,3 +457,8 @@ def test_startup_fails_when_api_key_set_but_disabled() -> None:
 def test_startup_fails_in_production_without_api_key_auth() -> None:
     with pytest.raises(RuntimeError, match="SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true"):
         create_app(_settings(runtime_mode="production", enable_api_key_auth=False))
+
+
+def test_startup_fails_when_api_keys_has_invalid_role() -> None:
+    with pytest.raises(RuntimeError, match="unsupported role"):
+        create_app(_settings(enable_api_key_auth=True, api_keys=(("key-1", "reader"),)))
