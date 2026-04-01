@@ -4,6 +4,16 @@ SENA is an **alpha deterministic policy-enforcement engine for AI-assisted enter
 
 It evaluates high-risk workflow actions against structured policy bundles and returns an auditable decision (`APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`) with reasoning and machine-readable traces.
 
+## Why centralizing control in SENA beats embedded per-tool rules
+
+SENA is explicitly designed to outperform embedding approval rules directly inside Jira workflows, ServiceNow Flow Designer, or GRC-specific rule engines:
+
+- **Cross-system normalization:** both Jira and ServiceNow events are normalized into one approval model before policy evaluation.
+- **Portable policy packs:** one bundle can govern multiple source systems with only mapping-layer changes.
+- **Deterministic simulation:** compare baseline vs candidate bundle and see exactly which historical scenarios change, grouped by source system/workflow/risk category.
+- **Risk/compliance explainability:** every decision includes reviewer-focused rationale, matched control details, and provenance (bundle version + decision hash + input fingerprint).
+- **Portable provenance:** the same bundle/control logic can be evidenced across systems with stable audit artifacts.
+
 ## Current maturity focus
 
 We are prioritizing depth to move from alpha toward enterprise-credible pilots:
@@ -297,6 +307,11 @@ PYTHONPATH=src python -m sena.cli.main \
   --json
 ```
 
+Simulation output includes `grouped_changes` by:
+- `source_system`
+- `workflow_stage`
+- `risk_category`
+
 ### Docker
 
 ```bash
@@ -328,12 +343,15 @@ The API image is production-oriented: slim base image, dedicated non-root user, 
 - Audit sink controls: append-only mode, file rotation, and retention policies for enterprise governance.
 - Bundle manifest lifecycle states (`draft` / `candidate` / `active` / `deprecated`) and promotion validation tooling.
 - Bundle-to-bundle simulation and impact analysis via API and CLI.
+- Grouped simulation change reports by source system/workflow/risk category for policy-release evidence.
 - Signed release manifests for bundles with CLI generation/sign/verification and strict promotion gates (see `docs/BUNDLE_SIGNING.md`).
 - Deterministic DSL extensions (`starts_with`, `ends_with`, `matches_regex`, `exists`, `between`) and optional context schema checks.
 
 ## Documentation
 
 - Architecture: `docs/ARCHITECTURE.md`
+- Normalized approval contract: `docs/NORMALIZED_APPROVAL_MODEL.md`
+- Portable pack example (Jira + ServiceNow): `docs/examples/portable_policy_pack_jira_servicenow.md`
 - Control plane capabilities and alpha boundaries: `docs/CONTROL_PLANE.md`
 - Operations/deployment: `docs/OPERATIONS.md`
 - Legacy migration boundary: `docs/MIGRATION.md`

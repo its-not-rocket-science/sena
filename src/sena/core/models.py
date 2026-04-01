@@ -63,6 +63,11 @@ class EvaluatorConfig:
 class DecisionReasoning:
     precedence_explanation: str
     summary: str
+    outcome_rationale: list[str] = field(default_factory=list)
+    matched_controls: list[dict[str, Any]] = field(default_factory=list)
+    risk_summary: dict[str, Any] = field(default_factory=dict)
+    reviewer_guidance: list[str] = field(default_factory=list)
+    provenance: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

@@ -79,14 +79,20 @@ def test_simulation_impact_changes_are_reported() -> None:
             action_type="approve_vendor_payment",
             request_id="r-small",
             actor_id="u-1",
-            attributes={"amount": 10, "vendor_verified": True},
+            source_system="jira",
+            workflow_stage="pending_approval",
+            risk_category="vendor_payment",
+            attributes={"amount": 10, "vendor_verified": True, "source_system": "jira"},
             facts={},
         ),
         "large": SimulationScenario(
             action_type="approve_vendor_payment",
             request_id="r-large",
             actor_id="u-2",
-            attributes={"amount": 90000, "vendor_verified": False},
+            source_system="servicenow",
+            workflow_stage="requested",
+            risk_category="change_governance",
+            attributes={"amount": 90000, "vendor_verified": False, "source_system": "servicenow"},
             facts={},
         ),
     }
@@ -94,4 +100,6 @@ def test_simulation_impact_changes_are_reported() -> None:
     report = simulate_bundle_impact(scenarios, rules_a, rules_a, meta_a, meta_b)
     assert report["total_scenarios"] == 2
     assert report["changed_scenarios"] == 0
+    assert report["grouped_changes"]["source_system"]["jira"]["total"] == 1
+    assert report["grouped_changes"]["source_system"]["servicenow"]["total"] == 1
     assert json.dumps(report)

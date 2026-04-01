@@ -57,6 +57,9 @@ class SimulationScenarioRequest(BaseModel):
     actor_id: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
     facts: dict[str, Any] = Field(default_factory=dict)
+    source_system: str | None = None
+    workflow_stage: str | None = None
+    risk_category: str | None = None
 
 
 class SimulationRequest(BaseModel):
@@ -124,4 +127,3 @@ class BundleRollbackRequest(BaseModel):
 
 class BundleHistoryQuery(BaseModel):
     bundle_name: NonEmptyStr
-

@@ -90,3 +90,13 @@ This model shifts the product narrative from "we have rules" to:
 - **Extensible**: new integrations add route mappings without rewriting evaluator semantics.
 
 In practice, SENA becomes the approval control plane that organizations can standardize on while keeping their existing workflow tools.
+
+## Portable policy pack pattern
+
+See `src/sena/examples/policy_packs/portable_vendor_approvals` for a concrete portable pack that runs against both Jira and ServiceNow mappings without rewriting policy logic.
+
+Pair this with `src/sena/examples/scenarios/simulation_scenarios.json` to compare bundle changes and inspect grouped impact by:
+
+- source system,
+- workflow stage,
+- risk category.

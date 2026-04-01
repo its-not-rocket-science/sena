@@ -1,0 +1,43 @@
+- id: inviolable_block_unverified_high_value
+  description: Block high-value approvals when vendor verification is false.
+  severity: critical
+  inviolable: true
+  applies_to: [approve_vendor_payment]
+  condition:
+    all:
+      - field: amount
+        gte: 10000
+      - field: vendor_verified
+        eq: false
+  decision: BLOCK
+  reason: Unverified vendor for high-value transaction
+
+- id: escalate_change_emergency
+  description: Escalate emergency workflow stages for human CAB review.
+  severity: high
+  inviolable: false
+  applies_to: [approve_vendor_payment]
+  condition:
+    all:
+      - field: source_system
+        eq: servicenow
+      - field: workflow_stage
+        eq: requested
+      - field: emergency_change
+        eq: true
+  decision: ESCALATE
+  reason: Emergency change requires human governance review
+
+- id: allow_low_value_verified
+  description: Allow low-value verified vendor approvals.
+  severity: low
+  inviolable: false
+  applies_to: [approve_vendor_payment]
+  condition:
+    all:
+      - field: amount
+        lt: 1000
+      - field: vendor_verified
+        eq: true
+  decision: ALLOW
+  reason: Low-risk verified payment

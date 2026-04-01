@@ -1,23 +1,53 @@
 {
-  "vendor-small": {
+  "jira-vendor-small": {
     "action_type": "approve_vendor_payment",
-    "request_id": "sim-1",
-    "actor_id": "analyst-1",
+    "request_id": "RISK-101",
+    "actor_id": "jira-analyst-1",
+    "source_system": "jira",
+    "workflow_stage": "pending_approval",
+    "risk_category": "vendor_payment",
     "attributes": {
       "amount": 250,
       "vendor_verified": true,
-      "requester_role": "finance_analyst"
+      "requester_role": "finance_analyst",
+      "source_system": "jira",
+      "workflow_stage": "pending_approval",
+      "risk_category": "vendor_payment"
     },
     "facts": {}
   },
-  "vendor-large-unverified": {
+  "jira-vendor-large-unverified": {
     "action_type": "approve_vendor_payment",
-    "request_id": "sim-2",
-    "actor_id": "analyst-2",
+    "request_id": "RISK-102",
+    "actor_id": "jira-analyst-2",
+    "source_system": "jira",
+    "workflow_stage": "pending_approval",
+    "risk_category": "vendor_payment",
     "attributes": {
       "amount": 12000,
       "vendor_verified": false,
-      "requester_role": "finance_analyst"
+      "requester_role": "finance_analyst",
+      "source_system": "jira",
+      "workflow_stage": "pending_approval",
+      "risk_category": "vendor_payment"
+    },
+    "facts": {}
+  },
+  "servicenow-emergency-change": {
+    "action_type": "approve_vendor_payment",
+    "request_id": "CHG0091005",
+    "actor_id": "sn-change-manager",
+    "source_system": "servicenow",
+    "workflow_stage": "requested",
+    "risk_category": "change_governance",
+    "attributes": {
+      "amount": 4500,
+      "vendor_verified": true,
+      "emergency_change": true,
+      "risk_level": "high",
+      "source_system": "servicenow",
+      "workflow_stage": "requested",
+      "risk_category": "change_governance"
     },
     "facts": {}
   }
