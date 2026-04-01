@@ -50,7 +50,7 @@ Application versioning: package and FastAPI app version are sourced from `sena._
 RBAC endpoint groups when `SENA_API_KEYS` is used:
 - `admin`: all endpoints
 - `policy_author`: `POST /v1/bundle/register`, `POST /v1/bundle/promote`, `POST /v1/bundle/diff`, `POST /v1/bundle/promotion/validate`
-- `evaluator`: `POST /v1/evaluate`, `POST /v1/evaluate/batch`, `POST /v1/simulation`, `POST /v1/integrations/webhook`, `POST /v1/integrations/slack/interactions`
+- `evaluator`: `POST /v1/evaluate`, `POST /v1/evaluate/batch`, `POST /v1/simulation`, `POST /v1/integrations/webhook`, `POST /v1/integrations/jira/webhook`, `POST /v1/integrations/slack/interactions`
 
 ## Deployment
 ### Docker

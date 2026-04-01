@@ -1,0 +1,34 @@
+routes:
+  jira:issue_updated:
+    action_type: approve_vendor_payment
+    actor_id_path: user.accountId
+    request_id_path: issue.key
+    required_fields:
+      - issue.id
+      - issue.key
+      - user.accountId
+      - issue.fields.customfield_approval_amount
+    attributes:
+      amount: issue.fields.customfield_approval_amount
+      requester_role: issue.fields.customfield_requester_role
+      vendor_verified: issue.fields.customfield_vendor_verified
+      jira_transition: changelog.items
+    static_attributes:
+      source_system: jira
+      approval_workflow: finance
+    policy_bundle: enterprise-demo
+  jira:issue_created:
+    action_type: export_customer_data
+    actor_id_path: user.accountId
+    required_fields:
+      - issue.id
+      - issue.key
+      - user.accountId
+    attributes:
+      requested_fields: issue.fields.customfield_requested_fields
+      legal_basis: issue.fields.customfield_legal_basis
+      dpo_approved: issue.fields.customfield_dpo_approved
+    static_attributes:
+      source_system: jira
+outbound:
+  mode: both

@@ -361,6 +361,115 @@ def test_webhook_endpoint_requires_mapping_config() -> None:
     assert response.json()["error"]["code"] == "webhook_mapping_not_configured"
 
 
+def test_jira_webhook_happy_path_returns_machine_readable_payload() -> None:
+    app = create_app(
+        _settings(jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml")
+    )
+    client = TestClient(app)
+    payload = {
+        "webhookEvent": "jira:issue_updated",
+        "timestamp": 1711982000,
+        "issue": {
+            "id": "10001",
+            "key": "RISK-9",
+            "fields": {
+                "customfield_approval_amount": 25000,
+                "customfield_requester_role": "finance_analyst",
+                "customfield_vendor_verified": False,
+            },
+        },
+        "user": {"accountId": "acct-99"},
+        "changelog": {"items": [{"field": "status", "toString": "Pending Approval"}]},
+    }
+
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        json=payload,
+        headers={"x-atlassian-webhook-identifier": "jira-delivery-1"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "evaluated"
+    assert body["mapped_action_proposal"]["request_id"] == "RISK-9"
+    assert body["decision"]["decision_id"].startswith("dec_")
+
+
+def test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response() -> None:
+    app = create_app(
+        _settings(jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml")
+    )
+    client = TestClient(app)
+    payload = {
+        "webhookEvent": "jira:issue_updated",
+        "timestamp": 1711982000,
+        "issue": {
+            "id": "10001",
+            "key": "RISK-9",
+            "fields": {
+                "customfield_approval_amount": 25000,
+                "customfield_requester_role": "finance_analyst",
+                "customfield_vendor_verified": False,
+            },
+        },
+        "user": {"accountId": "acct-99"},
+        "changelog": {"items": [{"field": "status", "toString": "Pending Approval"}]},
+    }
+    headers = {"x-atlassian-webhook-identifier": "jira-delivery-dup"}
+
+    first = client.post("/v1/integrations/jira/webhook", json=payload, headers=headers)
+    second = client.post("/v1/integrations/jira/webhook", json=payload, headers=headers)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["status"] == "duplicate_ignored"
+    assert second.json()["error"]["code"] == "jira_duplicate_delivery"
+
+
+def test_jira_webhook_missing_actor_identity_returns_deterministic_error() -> None:
+    app = create_app(
+        _settings(jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml")
+    )
+    client = TestClient(app)
+    payload = {
+        "webhookEvent": "jira:issue_updated",
+        "timestamp": 1711982000,
+        "issue": {
+            "id": "10001",
+            "key": "RISK-9",
+            "fields": {
+                "customfield_approval_amount": 25000,
+                "customfield_requester_role": "finance_analyst",
+                "customfield_vendor_verified": False,
+            },
+        },
+        "user": {"displayName": "No account id"},
+        "changelog": {"items": [{"field": "status", "toString": "Pending Approval"}]},
+    }
+
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        json=payload,
+        headers={"x-atlassian-webhook-identifier": "jira-delivery-actor-missing"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "jira_missing_required_fields"
+
+
+def test_jira_webhook_unsupported_event_returns_deterministic_error() -> None:
+    app = create_app(
+        _settings(jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml")
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        json={"webhookEvent": "jira:comment_created", "issue": {"id": "100", "key": "RISK-2"}},
+        headers={"x-atlassian-webhook-identifier": "jira-delivery-unsupported"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "jira_unsupported_event_type"
+
+
 def test_rate_limiting_per_api_key() -> None:
     app = create_app(
         _settings(enable_api_key_auth=True, api_key="secret", rate_limit_requests=1, rate_limit_window_seconds=60)

@@ -7,7 +7,7 @@ It evaluates high-risk workflow actions against structured policy bundles and re
 ## Current maturity focus
 
 We are prioritizing depth to move from alpha toward enterprise-credible pilots:
-- 1–2 killer integrations (Stripe webhook decisioning + Slack human escalation loop),
+- 1–2 killer integrations (Stripe webhook decisioning, Jira approval-gating webhook, + Slack human escalation loop),
 - a defensible policy lifecycle (diff/simulation/promotion gates),
 - failure-mode and migration testing,
 - durable audit + persistence guarantees.
@@ -103,6 +103,7 @@ Versioned endpoints:
 - `POST /v1/evaluate`
 - `POST /v1/integrations/webhook`
 - `POST /v1/integrations/slack/interactions`
+- `POST /v1/integrations/jira/webhook`
 - `POST /v1/evaluate/batch`
 - `POST /v1/simulation`
 - `POST /v1/bundle/diff`
@@ -156,6 +157,9 @@ Standard error codes:
 - `webhook_mapping_not_configured` (400)
 - `webhook_mapping_error` (400)
 - `webhook_evaluation_error` (400)
+- `jira_unsupported_event_type` (400)
+- `jira_missing_required_fields` (400)
+- `jira_duplicate_delivery` (200)
 - `slack_interaction_error` (400)
 - `audit_sink_not_configured` (400)
 
@@ -213,6 +217,16 @@ curl -X POST http://127.0.0.1:8000/v1/integrations/webhook \
     }
   }'
 ```
+
+### Jira approval-gating integration
+
+SENA supports a first-class Jira integration for deterministic approval workflows. Jira issue webhook events are normalized into `ActionProposal` objects, evaluated, and can be written back as comments/status payloads.
+
+- Endpoint: `POST /v1/integrations/jira/webhook`
+- Mapping config env: `SENA_JIRA_MAPPING_CONFIG`
+- Webhook authenticity contract: pluggable verifier (`SENA_JIRA_WEBHOOK_SECRET` for shared-secret mode)
+- Example mapping: `src/sena/examples/integrations/jira_mappings.yaml`
+- Full runbook: `docs/integrations/JIRA.md`
 
 ### Slack human-escalation integration
 

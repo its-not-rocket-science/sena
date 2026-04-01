@@ -31,6 +31,15 @@ ERROR_CODE_CATALOG: dict[str, ErrorCatalogEntry] = {
     "webhook_mapping_not_configured": ErrorCatalogEntry(400, "Webhook mapping config is not set."),
     "webhook_mapping_error": ErrorCatalogEntry(400, "Webhook mapping failed."),
     "webhook_evaluation_error": ErrorCatalogEntry(400, "Webhook evaluation failed."),
+    "jira_mapping_not_configured": ErrorCatalogEntry(400, "Jira mapping config is not set."),
+    "jira_authentication_failed": ErrorCatalogEntry(401, "Jira webhook authenticity check failed."),
+    "jira_unsupported_event_type": ErrorCatalogEntry(400, "Unsupported Jira event type."),
+    "jira_missing_required_fields": ErrorCatalogEntry(400, "Jira payload missing required fields."),
+    "jira_invalid_mapping": ErrorCatalogEntry(400, "Jira mapping is invalid."),
+    "jira_duplicate_delivery": ErrorCatalogEntry(200, "Duplicate Jira delivery ignored."),
+    "jira_policy_bundle_not_found": ErrorCatalogEntry(404, "Mapped Jira policy bundle was not found."),
+    "jira_evaluation_error": ErrorCatalogEntry(400, "Jira evaluation failed."),
+    "jira_outbound_delivery_failed": ErrorCatalogEntry(502, "Jira decision delivery failed."),
     "slack_interaction_error": ErrorCatalogEntry(400, "Slack interaction failed."),
     "audit_sink_not_configured": ErrorCatalogEntry(400, "Audit sink not configured."),
 }
@@ -50,4 +59,3 @@ def raise_api_error(
     if details is not None:
         detail["details"] = details
     raise HTTPException(status_code=resolved_status, detail=detail)
-
