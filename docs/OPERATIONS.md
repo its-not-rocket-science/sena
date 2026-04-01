@@ -1,74 +1,125 @@
-# SENA Operations Guide (alpha)
+# SENA Operations Guide
 
 Application versioning: package and FastAPI app version are sourced from `sena.__version__` in `src/sena/__init__.py`.
 
-## Run locally
-1. Install dependencies:
-   - `pip install -e .[api,dev]`
-2. Optionally export runtime settings (defaults shown):
-   - `export SENA_API_HOST=0.0.0.0`
-   - `export SENA_API_PORT=8000`
-   - `export SENA_POLICY_DIR=src/sena/examples/policies`
-   - `export SENA_BUNDLE_NAME=enterprise-compliance-controls`
-   - `export SENA_BUNDLE_VERSION=2026.03`
-3. Start API:
-   - `python -m uvicorn sena.api.app:app --host 0.0.0.0 --port 8000`
+## 1) Operating principles
 
-## API configuration via environment
-- `SENA_API_HOST`, `SENA_API_PORT`: host/port binding for deployment wrappers
-- `SENA_POLICY_DIR`: policy bundle directory (defaults to `src/sena/examples/policies`)
-- `SENA_BUNDLE_NAME`, `SENA_BUNDLE_VERSION`: metadata override fallback (default demo bundle metadata)
-- `SENA_API_KEY_ENABLED=true` + one of:
-  - `SENA_API_KEY=<value>` (single-key mode; key role defaults to `admin`)
-  - `SENA_API_KEYS=<key:role,...>` (RBAC mode; roles: `admin`, `policy_author`, `evaluator`)
-- Startup fails fast on misconfiguration:
-  - `SENA_POLICY_DIR` must exist when `SENA_POLICY_STORE_BACKEND=filesystem`
-  - loaded bundle must resolve to a non-empty rule set
-  - `SENA_API_KEY` cannot be set unless `SENA_API_KEY_ENABLED=true`
-  - `SENA_API_KEYS` cannot be set unless `SENA_API_KEY_ENABLED=true`
-  - `SENA_API_KEY` and `SENA_API_KEYS` are mutually exclusive
-  - `SENA_RUNTIME_MODE=production` requires `SENA_API_KEY_ENABLED=true`
-- `SENA_RATE_LIMIT_REQUESTS`, `SENA_RATE_LIMIT_WINDOW_SECONDS`: fixed-window request budget (per API key when provided, otherwise per client host)
-- `SENA_REQUEST_MAX_BYTES`: maximum request payload size in bytes (`413` when exceeded)
-- `SENA_REQUEST_TIMEOUT_SECONDS`: request processing timeout in seconds (`504` when exceeded)
-- `SENA_AUDIT_SINK_JSONL`: optional file path for JSONL audit append sink
-- `SENA_LOG_LEVEL`: standard Python logging level
+- **Fail closed on startup**: SENA validates deployment-critical settings and aborts startup when unsafe or ambiguous.
+- **Deterministic mode contracts**: `SENA_RUNTIME_MODE` governs stricter controls (`development`, `pilot`, `production`).
+- **Explicit integrations**: each integration requires complete config; partial config is rejected.
+- **Auditability first**: production mode requires a configured audit sink and strict release-signature enforcement.
 
-## Health model
-- `GET /v1/health`: liveness + loaded bundle metadata
-- `GET /v1/ready`: readiness contract (bundle loaded)
-- `GET /v1/bundle`: loaded bundle metadata
-- `GET /v1/bundle/inspect`: bundle/rule coverage summary
-- `POST /v1/evaluate`: single evaluation
-- `POST /v1/evaluate/batch`: batch evaluation
-- `POST /v1/simulation`: baseline/candidate scenario simulation
-- `POST /v1/bundle/diff`: rule-set diff
-- `POST /v1/bundle/promotion/validate`: lifecycle promotion checks
-- `GET /v1/audit/verify`: tamper-evident audit verification (chain, gaps, malformed records, missing segments)
-- `GET /metrics`: Prometheus metrics (`request_count`, `decision_outcome_count`, `evaluation_latency`)
+## 2) Runtime modes
 
-RBAC endpoint groups when `SENA_API_KEYS` is used:
-- `admin`: all endpoints
-- `policy_author`: `POST /v1/bundle/register`, `POST /v1/bundle/promote`, `POST /v1/bundle/diff`, `POST /v1/bundle/promotion/validate`
-- `evaluator`: `POST /v1/evaluate`, `POST /v1/evaluate/batch`, `POST /v1/simulation`, `POST /v1/integrations/webhook`, `POST /v1/integrations/jira/webhook`, `POST /v1/integrations/servicenow/webhook`, `POST /v1/integrations/slack/interactions`
+| Mode | Intent | Key behavior |
+|---|---|---|
+| `development` | local dev and tests | permissive defaults, optional auth and integrations |
+| `pilot` | enterprise pilot pre-prod | same code-path as prod candidates, recommended strict auth/signing/audit |
+| `production` | hardened runtime | mandatory auth, audit sink, strict signature verification, keyring, Jira secret when Jira webhook enabled |
 
+## 3) Startup validation (fail-fast)
 
-## Audit operations
-- Local JSONL sink writes are append-focused with file locking and per-record chain metadata.
-- Rotation is supported via `JsonlFileAuditSink(rotation=RotationPolicy(...))` and creates segment files plus `<audit>.manifest.json`.
-- Verification spans rotated segments and reports missing segments, malformed records, sequence gaps, and hash-chain inconsistencies.
-- Retention deletion is only allowed when append-only mode is disabled (`append_only=False`).
-- See `docs/AUDIT_GUARANTEES.md` for explicit guarantees and limits.
+SENA startup now fails for the following classes of misconfiguration:
 
-## Deployment
-### Docker
-- `docker build -t sena-api:local .`
-- `docker run -e SENA_POLICY_DIR=src/sena/examples/policies -p 8000:8000 sena-api:local`
+- invalid `SENA_RUNTIME_MODE`
+- invalid `SENA_POLICY_STORE_BACKEND`
+- filesystem backend with missing/non-directory `SENA_POLICY_DIR`
+- sqlite backend without `SENA_POLICY_STORE_SQLITE_PATH`
+- sqlite backend with non-existent parent directory for sqlite file
+- ambiguous API auth setup (e.g., key present but auth disabled, or both `SENA_API_KEY` and `SENA_API_KEYS` set)
+- invalid API key role values
+- partially configured Slack integration (`SENA_SLACK_BOT_TOKEN` without `SENA_SLACK_CHANNEL`, or inverse)
+- missing mapping config files for webhook/Jira/ServiceNow when env vars are set
+- production mode missing required controls:
+  - `SENA_API_KEY_ENABLED=true` + keys
+  - `SENA_AUDIT_SINK_JSONL`
+  - `SENA_BUNDLE_SIGNATURE_STRICT=true`
+  - `SENA_BUNDLE_SIGNATURE_KEYRING_DIR` existing directory
+  - `SENA_JIRA_WEBHOOK_SECRET` when Jira mapping is enabled
 
-### Docker Compose
-- `docker compose up --build`
+## 4) Environment configuration reference
 
-## Supported and unsupported boundaries
+### Core runtime
+
+- `SENA_RUNTIME_MODE`: `development` | `pilot` | `production`
+- `SENA_API_HOST`, `SENA_API_PORT`: bind address/port
+- `SENA_LOG_LEVEL`: Python logging level
+
+### Policy source
+
+- `SENA_POLICY_STORE_BACKEND`: `filesystem` (default) or `sqlite`
+- `SENA_POLICY_DIR`: required directory when backend is `filesystem`
+- `SENA_POLICY_STORE_SQLITE_PATH`: required when backend is `sqlite`
+- `SENA_BUNDLE_NAME`, `SENA_BUNDLE_VERSION`: selection defaults
+
+### API authentication and RBAC
+
+- `SENA_API_KEY_ENABLED`: enable API key auth
+- `SENA_API_KEY`: single admin key mode
+- `SENA_API_KEYS`: `key:role,key2:role2` mode
+  - roles: `admin`, `policy_author`, `evaluator`
+
+### Request safety controls
+
+- `SENA_RATE_LIMIT_REQUESTS`
+- `SENA_RATE_LIMIT_WINDOW_SECONDS`
+- `SENA_REQUEST_MAX_BYTES`
+- `SENA_REQUEST_TIMEOUT_SECONDS`
+
+### Release signing and integrity
+
+- `SENA_BUNDLE_RELEASE_MANIFEST_FILENAME` (default: `release-manifest.json`)
+- `SENA_BUNDLE_SIGNATURE_STRICT`: require manifest verification
+- `SENA_BUNDLE_SIGNATURE_KEYRING_DIR`: keyring directory for verification
+
+### Audit sink
+
+- `SENA_AUDIT_SINK_JSONL`: file path to append audit records
+
+### Integrations
+
+- `SENA_WEBHOOK_MAPPING_CONFIG`
+- `SENA_JIRA_MAPPING_CONFIG`
+- `SENA_JIRA_WEBHOOK_SECRET`
+- `SENA_SERVICENOW_MAPPING_CONFIG`
+- `SENA_SLACK_BOT_TOKEN`
+- `SENA_SLACK_CHANNEL`
+
+## 5) Health and readiness semantics
+
+- `GET /v1/health`: liveness + loaded bundle metadata (`status=ok`)
+- `GET /v1/ready`: startup-contract readiness (`status=ready`) with checks:
+  - `policy_bundle_loaded`
+  - `auth_config_valid`
+  - `policy_store_reachable`
+  - `production_guardrails_enforced` (production mode only)
+
+Because SENA fails startup on invalid critical settings, readiness reflects a **post-validation healthy process** rather than a best-effort degraded state.
+
+## 6) Secure integration and secret handling guidance
+
+- Keep all secrets out of repo and image layers.
+- Inject secrets at runtime via env-injection mechanisms (Kubernetes Secrets, Vault agent templates, ECS task secrets, etc.).
+- Rotate API keys and webhook shared secrets regularly.
+- Use distinct secrets per environment (`dev`, `pilot`, `prod`).
+- Ensure file permissions on audit sinks and keyring directories are restricted to the service account.
+
+## 7) Operational examples
+
+See `docs/DEPLOYMENT_PROFILES.md` for full deployment profiles and copy-paste examples for:
+
+- local development
+- containerized runtime
+- enterprise pilot
+- stricter production-like mode
+
+## 8) API surface reminders
+
+- versioned API endpoints under `/v1/*`
+- unversioned compatibility routes are removed and return deprecation error payloads.
+
+## 9) Boundaries
+
 Supported product path:
 - `src/sena/policy/*`
 - `src/sena/engine/*`
@@ -77,8 +128,3 @@ Supported product path:
 
 Legacy/historical path (not supported for enterprise use):
 - `src/sena/legacy/*`
-
-## What enterprise-ready still does NOT mean (alpha honesty)
-- No built-in HA, tenant isolation, or distributed coordinator.
-- No native SSO/OIDC and no policy authoring governance UI.
-- No formal certification/compliance attestation claims.

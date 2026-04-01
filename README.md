@@ -354,6 +354,7 @@ The API image is production-oriented: slim base image, dedicated non-root user, 
 - Portable pack example (Jira + ServiceNow): `docs/examples/portable_policy_pack_jira_servicenow.md`
 - Control plane capabilities and alpha boundaries: `docs/CONTROL_PLANE.md`
 - Operations/deployment: `docs/OPERATIONS.md`
+- Deployment profiles (dev/pilot/production-like): `docs/DEPLOYMENT_PROFILES.md`
 - Legacy migration boundary: `docs/MIGRATION.md`
 - Gap analysis: `ENTERPRISE_GAP_ANALYSIS.md`
 - Changelog: `CHANGELOG.md`

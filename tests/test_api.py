@@ -81,6 +81,7 @@ def test_readiness_endpoint() -> None:
     response = client.get("/v1/ready")
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
+    assert response.json()["mode"] == "development"
 
 
 
@@ -742,6 +743,85 @@ def test_startup_fails_in_production_without_api_key_auth() -> None:
 def test_startup_fails_when_api_keys_has_invalid_role() -> None:
     with pytest.raises(RuntimeError, match="unsupported role"):
         create_app(_settings(enable_api_key_auth=True, api_keys=(("key-1", "reader"),)))
+
+
+def test_startup_fails_when_runtime_mode_is_invalid() -> None:
+    with pytest.raises(RuntimeError, match="SENA_RUNTIME_MODE must be one of"):
+        create_app(_settings(runtime_mode="prod"))
+
+
+def test_startup_fails_when_sqlite_store_path_missing() -> None:
+    with pytest.raises(RuntimeError, match="SENA_POLICY_STORE_SQLITE_PATH is required"):
+        create_app(_settings(policy_store_backend="sqlite", policy_store_sqlite_path=None))
+
+
+def test_startup_fails_when_slack_is_partially_configured() -> None:
+    with pytest.raises(RuntimeError, match="must be set together"):
+        create_app(_settings(slack_bot_token="xoxb-test", slack_channel=None))
+
+
+def test_startup_fails_when_integration_mapping_path_missing() -> None:
+    with pytest.raises(RuntimeError, match="SENA_JIRA_MAPPING_CONFIG must point to an existing file"):
+        create_app(_settings(jira_mapping_config_path="does/not/exist.yaml"))
+
+
+def test_startup_fails_in_production_without_audit_sink() -> None:
+    with pytest.raises(RuntimeError, match="requires SENA_AUDIT_SINK_JSONL"):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+            )
+        )
+
+
+def test_startup_fails_in_production_without_signature_strictness(tmp_path) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(RuntimeError, match="requires SENA_BUNDLE_SIGNATURE_STRICT=true"):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=False,
+                bundle_signature_keyring_dir=str(keyring_dir),
+            )
+        )
+
+
+def test_startup_fails_in_production_without_jira_secret(tmp_path) -> None:
+    mapping_path = tmp_path / "jira-mapping.json"
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "routes": {
+                    "jira:issue_updated": {
+                        "action_type": "approve_vendor_payment",
+                        "actor_id_path": "user.accountId",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(RuntimeError, match="requires SENA_JIRA_WEBHOOK_SECRET"):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                jira_mapping_config_path=str(mapping_path),
+                jira_webhook_secret=None,
+            )
+        )
 
 def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
     from sena.policy.parser import load_policy_bundle
