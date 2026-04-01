@@ -1,5 +1,7 @@
 # SENA Operations Guide (alpha)
 
+Application versioning: package and FastAPI app version are sourced from `sena.__version__` in `src/sena/__init__.py`.
+
 ## Run locally
 1. Install dependencies:
    - `pip install -e .[api,dev]`
