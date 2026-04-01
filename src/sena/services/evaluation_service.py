@@ -6,7 +6,9 @@ from typing import Any
 from sena.core.models import ActionProposal, EvaluatorConfig
 from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.review_package import build_decision_review_package
+from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.integrations.base import DecisionPayload
+from sena.policy.parser import load_policy_bundle
 from sena.services.audit_service import AuditService
 
 
@@ -96,3 +98,33 @@ class EvaluationService:
             trace = evaluator.evaluate(proposal, facts)
         self.state.metrics.observe_decision_outcome(endpoint=endpoint, outcome=trace.outcome.value)
         return build_decision_review_package(trace)
+
+    @staticmethod
+    def simulate_policy_change(
+        *,
+        baseline_policy_dir: str,
+        candidate_policy_dir: str,
+        scenarios: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        baseline_rules, baseline_meta = load_policy_bundle(baseline_policy_dir)
+        candidate_rules, candidate_meta = load_policy_bundle(candidate_policy_dir)
+        scenario_map = {
+            item["scenario_id"]: SimulationScenario(
+                action_type=item["action_type"],
+                request_id=item["request_id"],
+                actor_id=item.get("actor_id"),
+                attributes=item.get("attributes", {}),
+                facts=item["facts"],
+                source_system=item.get("source_system", "api"),
+                workflow_stage=item.get("workflow_stage"),
+                risk_category=item.get("risk_category"),
+            )
+            for item in scenarios
+        }
+        return simulate_bundle_impact(
+            scenario_map,
+            baseline_rules,
+            candidate_rules,
+            baseline_meta,
+            candidate_meta,
+        )

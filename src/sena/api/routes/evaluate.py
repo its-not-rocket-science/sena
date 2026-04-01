@@ -5,8 +5,6 @@ from fastapi import APIRouter, Request
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, parse_default_decision
 from sena.api.schemas import BatchEvaluateRequest, EvaluateRequest, SimulationRequest
-from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
-from sena.policy.parser import load_policy_bundle
 from sena.services.audit_service import AuditService
 from sena.services.evaluation_service import EvaluationService
 
@@ -66,23 +64,10 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
 
     @router.post("/simulation")
     def simulation(req: SimulationRequest) -> dict:
-        baseline_rules, baseline_meta = load_policy_bundle(req.baseline_policy_dir)
-        candidate_rules, candidate_meta = load_policy_bundle(req.candidate_policy_dir)
-        scenarios = {
-            item.scenario_id: SimulationScenario(
-                action_type=item.action_type,
-                request_id=item.request_id,
-                actor_id=item.actor_id,
-                attributes=item.attributes,
-                facts=item.facts,
-                source_system=item.source_system,
-                workflow_stage=item.workflow_stage,
-                risk_category=item.risk_category,
-            )
-            for item in req.scenarios
-        }
-        return simulate_bundle_impact(
-            scenarios, baseline_rules, candidate_rules, baseline_meta, candidate_meta
+        return evaluation_service.simulate_policy_change(
+            baseline_policy_dir=req.baseline_policy_dir,
+            candidate_policy_dir=req.candidate_policy_dir,
+            scenarios=[item.model_dump() for item in req.scenarios],
         )
 
     return router
