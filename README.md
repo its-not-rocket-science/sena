@@ -217,7 +217,9 @@ docker compose up --build
 - Request payload size cap (`SENA_REQUEST_MAX_BYTES`) with explicit `413` failure.
 - Request timeout guardrail (`SENA_REQUEST_TIMEOUT_SECONDS`) with explicit `504` failure.
 - Request ID propagation (`x-request-id`) for traceability.
+- Pluggable audit sinks via `sena.audit.sinks` with JSONL file and S3-compatible backends.
 - Optional JSONL audit sink (`SENA_AUDIT_SINK_JSONL=/path/to/audit.jsonl`) with tamper-evident hash chaining + verification endpoint/CLI.
+- Audit sink controls: append-only mode, file rotation, and retention policies for enterprise governance.
 - Bundle manifest lifecycle states (`draft` / `candidate` / `active` / `deprecated`) and promotion validation tooling.
 - Bundle-to-bundle simulation and impact analysis via API and CLI.
 - Deterministic DSL extensions (`starts_with`, `ends_with`, `matches_regex`, `exists`, `between`) and optional context schema checks.
