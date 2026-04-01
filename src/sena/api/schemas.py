@@ -21,6 +21,18 @@ class EvaluateRequest(BaseModel):
     strict_require_allow: bool = False
 
 
+
+
+class WebhookEvaluateRequest(BaseModel):
+    provider: NonEmptyStr
+    event_type: NonEmptyStr
+    payload: dict[str, Any] = Field(default_factory=dict)
+    facts: dict[str, Any] = Field(default_factory=dict)
+    default_decision: Literal["APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"] = (
+        "APPROVED"
+    )
+    strict_require_allow: bool = False
+
 class BatchEvaluateRequest(BaseModel):
     items: list[EvaluateRequest] = Field(min_length=1, max_length=500)
 

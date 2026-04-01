@@ -22,6 +22,7 @@ class ApiSettings:
     audit_sink_jsonl: str | None = None
     policy_store_backend: str = "filesystem"
     policy_store_sqlite_path: str | None = None
+    webhook_mapping_config_path: str | None = None
 
 
 
@@ -55,4 +56,5 @@ def load_settings_from_env() -> ApiSettings:
         audit_sink_jsonl=os.getenv("SENA_AUDIT_SINK_JSONL"),
         policy_store_backend=os.getenv("SENA_POLICY_STORE_BACKEND", "filesystem"),
         policy_store_sqlite_path=os.getenv("SENA_POLICY_STORE_SQLITE_PATH"),
+        webhook_mapping_config_path=os.getenv("SENA_WEBHOOK_MAPPING_CONFIG"),
     )

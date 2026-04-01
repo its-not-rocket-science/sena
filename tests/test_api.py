@@ -228,3 +228,55 @@ def test_bundle_promote_endpoint_enforces_transition_order(tmp_path) -> None:
         json={"bundle_id": bundle_id, "target_lifecycle": "candidate"},
     )
     assert to_candidate.status_code == 200
+
+
+def test_webhook_endpoint_maps_payload_and_returns_reasoning() -> None:
+    app = create_app(
+        _settings(
+            webhook_mapping_config_path="src/sena/examples/integrations/webhook_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/integrations/webhook",
+        json={
+            "provider": "stripe",
+            "event_type": "payment_intent.created",
+            "payload": {
+                "id": "evt_123",
+                "data": {
+                    "object": {
+                        "amount": 25000,
+                        "currency": "usd",
+                        "metadata": {
+                            "vendor_verified": False,
+                            "requester_role": "finance_analyst",
+                            "requested_by": "user_9"
+                        }
+                    }
+                }
+            },
+            "facts": {},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "stripe"
+    assert body["mapped_action_proposal"]["action_type"] == "approve_vendor_payment"
+    assert body["mapped_action_proposal"]["attributes"]["source_system"] == "stripe"
+    assert body["decision"]["outcome"] == "BLOCKED"
+    assert body["reasoning"]["summary"]
+
+
+def test_webhook_endpoint_requires_mapping_config() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/integrations/webhook",
+        json={"provider": "stripe", "event_type": "payment_intent.created", "payload": {}},
+    )
+
+    assert response.status_code == 400

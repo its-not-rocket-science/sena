@@ -89,6 +89,7 @@ Versioned endpoints:
 - `GET /v1/bundle`
 - `GET /v1/bundle/inspect`
 - `POST /v1/evaluate`
+- `POST /v1/integrations/webhook`
 - `POST /v1/evaluate/batch`
 - `POST /v1/simulation`
 - `POST /v1/bundle/diff`
@@ -128,6 +129,30 @@ curl -X POST http://127.0.0.1:8000/v1/bundle/promote \
 
 # 4) Inspect currently active bundle
 curl http://127.0.0.1:8000/v1/bundles/active
+```
+
+
+### Webhook integration layer
+
+Use `POST /v1/integrations/webhook` to ingest external events (for example Stripe, Jira, or payment gateways), map them to an `ActionProposal`, and receive SENA decision output plus reasoning in one call.
+
+Configure webhook mappings with `SENA_WEBHOOK_MAPPING_CONFIG` pointing to a JSON file.
+
+Example mapping config: `src/sena/examples/integrations/webhook_mappings.yaml`
+
+Stripe payment approval example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/integrations/webhook \
+  -H 'content-type: application/json' \
+  -d '{
+    "provider":"stripe",
+    "event_type":"payment_intent.created",
+    "payload":{
+      "id":"evt_123",
+      "data":{"object":{"amount":25000,"currency":"usd","metadata":{"vendor_verified":false,"requester_role":"finance_analyst","requested_by":"user_9"}}}
+    }
+  }'
 ```
 
 ### Quickstart (guaranteed working)
