@@ -69,6 +69,8 @@ class DecisionReasoning:
 class AuditRecord:
     decision_id: str
     timestamp: datetime
+    write_timestamp: datetime | None
+    event_type: str
     action_type: str
     request_id: str | None
     actor_id: str | None
@@ -82,6 +84,10 @@ class AuditRecord:
     input_fingerprint: str
     decision_hash: str
     source_metadata: dict[str, Any] = field(default_factory=dict)
+    request_correlation_id: str | None = None
+    evaluator_version: str | None = None
+    policy_bundle_release_id: str | None = None
+    storage_sequence_number: int | None = None
     chain_hash: str | None = None
     previous_chain_hash: str | None = None
 

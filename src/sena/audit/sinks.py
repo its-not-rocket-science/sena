@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -39,44 +40,188 @@ class JsonlFileAuditSink:
     retention: RetentionPolicy | None = None
     rotation: RotationPolicy | None = None
 
-    def load_records(self) -> list[dict[str, Any]]:
-        sink = Path(self.path)
-        if not sink.parent.exists():
-            return []
+    def _sink_path(self) -> Path:
+        return Path(self.path)
 
-        candidates = sorted(
-            sink.parent.glob(f"{sink.name}*"),
-            key=lambda file: (file == sink, file.name),
-        )
+    def _lock_path(self) -> Path:
+        sink = self._sink_path()
+        return sink.with_name(f"{sink.name}.lock")
+
+    def _manifest_path(self) -> Path:
+        sink = self._sink_path()
+        return sink.with_name(f"{sink.name}.manifest.json")
+
+    def _acquire_lock(self):
+        import fcntl
+
+        lock = self._lock_path()
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        handle = lock.open("a+", encoding="utf-8")
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        return handle
+
+    def _read_manifest(self) -> dict[str, Any]:
+        path = self._manifest_path()
+        if not path.exists():
+            return {"schema_version": "1", "segments": [], "head_hash": None, "next_sequence": 1}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise AuditSinkError(f"Malformed audit manifest: {path}") from exc
+        if not isinstance(payload, dict):
+            raise AuditSinkError(f"Malformed audit manifest root object: {path}")
+        payload.setdefault("schema_version", "1")
+        payload.setdefault("segments", [])
+        payload.setdefault("head_hash", None)
+        payload.setdefault("next_sequence", 1)
+        return payload
+
+    def _write_manifest(self, payload: dict[str, Any]) -> None:
+        path = self._manifest_path()
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, sort_keys=True, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+
+    def _segment_name(self, seq: int) -> str:
+        sink = self._sink_path()
+        return f"{sink.name}.seg-{seq:06d}.jsonl"
+
+    def _read_lines(self, file: Path) -> tuple[list[dict[str, Any]], list[str]]:
         records: list[dict[str, Any]] = []
-        for candidate in candidates:
-            if not candidate.is_file():
+        malformed: list[str] = []
+        with file.open("r", encoding="utf-8") as handle:
+            for idx, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    malformed.append(f"{file.name}:{idx}")
+                    continue
+                if not isinstance(payload, dict):
+                    malformed.append(f"{file.name}:{idx}")
+                    continue
+                records.append(payload)
+        return records, malformed
+
+    def load_records_detailed(self) -> dict[str, Any]:
+        sink = self._sink_path()
+        if not sink.parent.exists():
+            return {"records": [], "issues": [], "segments": []}
+
+        manifest = self._read_manifest()
+        issues: list[str] = []
+        segments_meta: list[dict[str, Any]] = []
+        records: list[dict[str, Any]] = []
+
+        for segment in manifest.get("segments", []):
+            file = sink.parent / segment["file"]
+            if not file.exists():
+                issues.append(f"missing_segment:{segment['file']}")
                 continue
-            with candidate.open("r", encoding="utf-8") as handle:
-                for line in handle:
-                    if line.strip():
-                        records.append(json.loads(line))
-        return records
+            segment_records, malformed = self._read_lines(file)
+            if malformed:
+                issues.extend([f"malformed_record:{item}" for item in malformed])
+            records.extend(segment_records)
+            segments_meta.append({"file": segment["file"], "records": len(segment_records), "rotated": True})
+
+        if sink.exists():
+            active_records, malformed = self._read_lines(sink)
+            if malformed:
+                issues.extend([f"malformed_record:{item}" for item in malformed])
+            records.extend(active_records)
+            segments_meta.append({"file": sink.name, "records": len(active_records), "rotated": False})
+
+        return {"records": records, "issues": issues, "segments": segments_meta, "manifest": manifest}
+
+    def load_records(self) -> list[dict[str, Any]]:
+        return self.load_records_detailed()["records"]
 
     def append(self, payload: dict[str, Any]) -> None:
-        sink = Path(self.path)
+        sink = self._sink_path()
         sink.parent.mkdir(parents=True, exist_ok=True)
+        lock_handle = self._acquire_lock()
+        try:
+            encoded = (json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str) + "\n").encode(
+                "utf-8"
+            )
+            if self.rotation and self.rotation.max_file_bytes and sink.exists():
+                next_size = sink.stat().st_size + len(encoded)
+                if next_size > self.rotation.max_file_bytes:
+                    self._rotate_file(sink)
 
-        line = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str) + "\n"
-        next_size = (sink.stat().st_size if sink.exists() else 0) + len(line.encode("utf-8"))
-        if self.rotation and self.rotation.max_file_bytes and sink.exists():
-            if next_size > self.rotation.max_file_bytes:
-                self._rotate_file(sink)
+            fd = os.open(str(sink), os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
+            try:
+                os.write(fd, encoded)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
 
-        with sink.open("a", encoding="utf-8") as handle:
-            handle.write(line)
+            self._enforce_retention()
+        finally:
+            lock_handle.close()
 
-        self._enforce_retention()
+    def append_chained(self, payload: dict[str, Any], compute_hash) -> dict[str, Any]:
+        sink = self._sink_path()
+        sink.parent.mkdir(parents=True, exist_ok=True)
+        lock_handle = self._acquire_lock()
+        try:
+            manifest = self._read_manifest()
+            previous_chain_hash = manifest.get("head_hash")
+            seq = int(manifest.get("next_sequence", 1))
+            line_payload = dict(payload)
+            line_payload["storage_sequence_number"] = seq
+            line_payload["write_timestamp"] = datetime.now(tz=timezone.utc).isoformat()
+            line_payload["previous_chain_hash"] = previous_chain_hash
+            record_for_hash = {
+                k: v
+                for k, v in line_payload.items()
+                if k not in {"chain_hash"}
+            }
+            line_payload["chain_hash"] = compute_hash(record_for_hash, previous_chain_hash)
+
+            encoded = (json.dumps(line_payload, sort_keys=True, separators=(",", ":"), default=str) + "\n").encode(
+                "utf-8"
+            )
+            if self.rotation and self.rotation.max_file_bytes and sink.exists():
+                next_size = sink.stat().st_size + len(encoded)
+                if next_size > self.rotation.max_file_bytes:
+                    self._rotate_file(sink)
+                    manifest = self._read_manifest()
+
+            fd = os.open(str(sink), os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
+            try:
+                os.write(fd, encoded)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+
+            manifest["head_hash"] = line_payload["chain_hash"]
+            manifest["next_sequence"] = seq + 1
+            self._write_manifest(manifest)
+            self._enforce_retention()
+            return line_payload
+        finally:
+            lock_handle.close()
 
     def _rotate_file(self, sink: Path) -> None:
-        timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d%H%M%S")
-        rotated = sink.with_suffix(f"{sink.suffix}.{timestamp}.rotated")
-        sink.rename(rotated)
+        manifest = self._read_manifest()
+        seq = len(manifest.get("segments", [])) + 1
+        rotated = sink.with_name(self._segment_name(seq))
+        os.replace(sink, rotated)
+        records, malformed = self._read_lines(rotated)
+        entry = {
+            "file": rotated.name,
+            "rotated_at": datetime.now(tz=timezone.utc).isoformat(),
+            "record_count": len(records),
+            "first_sequence": records[0].get("storage_sequence_number") if records else None,
+            "last_sequence": records[-1].get("storage_sequence_number") if records else None,
+            "first_chain_hash": records[0].get("chain_hash") if records else None,
+            "last_chain_hash": records[-1].get("chain_hash") if records else None,
+            "malformed_records": malformed,
+        }
+        manifest.setdefault("segments", []).append(entry)
+        self._write_manifest(manifest)
 
     def _enforce_retention(self) -> None:
         if self.retention is None:
@@ -86,7 +231,7 @@ class JsonlFileAuditSink:
                 "retention policy requires append_only=False because old records/files may be deleted"
             )
 
-        sink = Path(self.path)
+        sink = self._sink_path()
         if not sink.parent.exists():
             return
 

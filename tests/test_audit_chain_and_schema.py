@@ -96,4 +96,8 @@ def test_audit_record_captures_integration_source_metadata() -> None:
     assert trace.audit_record.source_metadata["source_system"] == "servicenow"
     assert trace.audit_record.source_metadata["source_event_type"] == "change_approval.requested"
     assert trace.audit_record.source_metadata["servicenow_change_number"] == "CHG0001"
+    assert trace.audit_record.event_type == "change_approval.requested"
+    assert trace.audit_record.request_correlation_id == "CHG0001"
+    assert trace.audit_record.evaluator_version
+    assert trace.audit_record.policy_bundle_release_id == "1"
 

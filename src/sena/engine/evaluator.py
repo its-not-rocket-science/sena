@@ -5,6 +5,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+from sena import __version__ as SENA_VERSION
 from sena.core.enums import DecisionOutcome, RuleDecision
 from sena.core.models import (
     ActionProposal,
@@ -207,10 +208,13 @@ class PolicyEvaluator:
             for key, value in proposal.attributes.items()
             if key.startswith("source_") or key.startswith("servicenow_") or key.startswith("jira_")
         }
+        event_type = str(source_metadata.get("source_event_type") or "decision.evaluated")
 
         audit_record = AuditRecord(
             decision_id=decision_id,
             timestamp=decision_timestamp,
+            write_timestamp=None,
+            event_type=event_type,
             action_type=proposal.action_type,
             request_id=proposal.request_id,
             actor_id=proposal.actor_id,
@@ -224,6 +228,9 @@ class PolicyEvaluator:
             input_fingerprint=input_fingerprint,
             decision_hash=decision_hash,
             source_metadata=source_metadata,
+            request_correlation_id=proposal.request_id,
+            evaluator_version=SENA_VERSION,
+            policy_bundle_release_id=self.policy_bundle.version,
         )
 
         trace = EvaluationTrace(
