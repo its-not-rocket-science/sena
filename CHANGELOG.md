@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a release helper script (`scripts/bump_version.py`) for deterministic version bumps.
 
 ### Changed
+- Repositioned product documentation (README, control plane, architecture) around deterministic governance claims and added explicit alpha maturity boundaries.
 - Standardized project version declarations to `0.3.0`.
 
 ## [0.3.0] - 2026-03-31
