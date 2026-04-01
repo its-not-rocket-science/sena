@@ -209,8 +209,19 @@ PYTHONPATH=src python -m sena.cli.main \
 ### Docker
 
 ```bash
-docker compose up --build
+# API only (default)
+docker compose up --build sena-api
+
+# API + optional postgres sidecar (profile: db)
+docker compose --profile db up --build
 ```
+
+The API image is production-oriented: slim base image, dedicated non-root user, and a built-in `/v1/health` container health check.
+
+`docker-compose.yml` also includes:
+- API health check (`/v1/health`)
+- Optional Postgres service (`sena-db`) behind the `db` profile with `pg_isready` health checks
+- A persisted `/data` volume for SQLite-backed policy registry mode
 
 ## Security and governance baseline (alpha)
 
