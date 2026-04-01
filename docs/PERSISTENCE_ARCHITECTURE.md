@@ -20,10 +20,16 @@ The SQLite repository guarantees:
 2. **Lifecycle safety**
    - Supported transitions are explicit (`draft -> candidate -> active -> deprecated`).
    - Promotion to `active` requires a validation artifact.
+   - Lifecycle-changing operations execute inside explicit `BEGIN IMMEDIATE` transactions so writers serialize deterministically.
+   - A unique partial index enforces at most one `active` bundle per bundle name.
 3. **Complete lifecycle history**
    - Register, promote, auto-deprecate, and rollback transitions are all persisted in `bundle_history`.
 4. **Release metadata durability**
    - Release manifest path, signature strictness/result, key id, and verification timestamp are stored in `bundles`.
+5. **Startup integrity checks**
+   - SQLite `PRAGMA integrity_check` and bundle lifecycle invariants are validated during repository initialization.
+6. **Typed repository failures**
+   - Conflict, missing bundle, invalid transition, and integrity failures are surfaced with dedicated exception types.
 
 ## Schema evolution model
 
@@ -57,7 +63,7 @@ Planned implementation path:
 
 1. Implement shared SQL-friendly repository tests against an adapter fixture.
 2. Add Postgres DDL migrations aligned to SQLite schema semantics.
-3. Implement transactional writes for register/promote/rollback with the same lifecycle guarantees.
+3. Preserve lifecycle and error-semantics parity (transaction boundaries, conflict behavior, invariant checks) in the Postgres implementation.
 4. Validate behavior parity via contract tests run on both backends.
 
 ## Design constraints

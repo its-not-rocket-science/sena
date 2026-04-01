@@ -37,7 +37,7 @@ def test_sqlite_migration_initialize_is_idempotent(tmp_path) -> None:
     repo.initialize()
     with sqlite3.connect(db_path) as conn:
         count = conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
-    assert count == 3
+    assert count == 4
 
 
 def test_repository_contract_register_promote_and_history(tmp_path) -> None:
