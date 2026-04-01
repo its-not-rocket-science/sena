@@ -1,0 +1,111 @@
+{
+  "package_schema_version": "1.0",
+  "package_type": "sena.decision_review_package",
+  "package_generated_at": "<timestamp>",
+  "decision_summary": {
+    "decision_id": "<decision_id>",
+    "decision": "ESCALATE_FOR_HUMAN_REVIEW",
+    "outcome": "ESCALATE_FOR_HUMAN_REVIEW",
+    "action_type": "export_customer_data",
+    "summary": "Decision <decision_id>: ESCALATE_FOR_HUMAN_REVIEW for rule(s) (export_escalate_sensitive_fields_without_dpo).",
+    "decision_timestamp": "<timestamp>"
+  },
+  "rules": {
+    "matched": [
+      {
+        "rule_id": "export_escalate_sensitive_fields_without_dpo",
+        "matched": true,
+        "decision": "ESCALATE",
+        "inviolable": false,
+        "reason": "Sensitive export requires DPO approval."
+      }
+    ],
+    "applicable": [
+      {
+        "rule_id": "export_block_ssn_without_consent",
+        "matched": false,
+        "decision": null,
+        "inviolable": true,
+        "reason": null
+      },
+      {
+        "rule_id": "export_escalate_sensitive_fields_without_dpo",
+        "matched": true,
+        "decision": "ESCALATE",
+        "inviolable": false,
+        "reason": "Sensitive export requires DPO approval."
+      }
+    ],
+    "evaluated": [
+      {
+        "rule_id": "export_block_ssn_without_consent",
+        "matched": false,
+        "decision": null,
+        "inviolable": true,
+        "reason": null
+      },
+      {
+        "rule_id": "export_escalate_sensitive_fields_without_dpo",
+        "matched": true,
+        "decision": "ESCALATE",
+        "inviolable": false,
+        "reason": "Sensitive export requires DPO approval."
+      }
+    ],
+    "conflicting_rule_ids": []
+  },
+  "precedence": {
+    "explanation": "No BLOCK rules matched. One or more ESCALATE rules matched, so manual review is required before execution.",
+    "outcome_rationale": [
+      "Outcome resolved to ESCALATE_FOR_HUMAN_REVIEW using deterministic precedence.",
+      "No BLOCK rules matched. One or more ESCALATE rules matched, so manual review is required before execution."
+    ],
+    "reviewer_guidance": [
+      "Verify matched controls align with control owner expectations.",
+      "Retain decision hash and input fingerprint for audit replay.",
+      "Manual approval is required before action execution."
+    ]
+  },
+  "facts_and_actor": {
+    "actor": {
+      "actor_id": "actor-2",
+      "actor_role": "privacy_analyst"
+    },
+    "facts": {
+      "action_type": "export_customer_data",
+      "request_id": "req-review-escalate",
+      "actor_id": "actor-2",
+      "actor_role": "privacy_analyst",
+      "requested_fields": [
+        "date_of_birth"
+      ],
+      "dpo_approved": false
+    },
+    "missing_fields": [
+      "legal_basis"
+    ]
+  },
+  "policy_bundle_metadata": {
+    "bundle_name": "enterprise-compliance-controls",
+    "version": "2026.03",
+    "lifecycle": "candidate",
+    "schema_version": "1",
+    "integrity_sha256": "f24b9d5ba96b035a6c27747cf55e61d89e510798bada4f243ae87937de8c5dd0",
+    "loaded_from": "/workspace/sena/src/sena/examples/policies"
+  },
+  "audit_identifiers": {
+    "request_id": "req-review-escalate",
+    "decision_hash": "<decision_hash>",
+    "input_fingerprint": "<input_fingerprint>",
+    "chain_hash": null,
+    "previous_chain_hash": null,
+    "storage_sequence_number": null
+  },
+  "normalized_source_system_references": [
+    {
+      "source_system": "unknown",
+      "reference_type": "request_correlation_id",
+      "reference_value": "req-review-escalate"
+    }
+  ]
+}

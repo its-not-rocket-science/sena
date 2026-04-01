@@ -111,6 +111,30 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
 
 
 
+
+
+def test_evaluate_review_package_endpoint_returns_durable_artifact() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/evaluate/review-package",
+        json={
+            "action_type": "approve_vendor_payment",
+            "request_id": "req-api-review",
+            "actor_id": "actor-api",
+            "actor_role": "finance_analyst",
+            "attributes": {"amount": 15000, "vendor_verified": False, "requester_role": "finance_analyst"},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["package_type"] == "sena.decision_review_package"
+    assert body["decision_summary"]["outcome"] == "BLOCKED"
+    assert body["precedence"]["explanation"]
+    assert body["policy_bundle_metadata"]["bundle_name"] == "enterprise-demo"
+
 def test_api_key_auth_blocks_unauthorized_request() -> None:
     app = create_app(_settings(enable_api_key_auth=True, api_key="secret"))
     client = TestClient(app)

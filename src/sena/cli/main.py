@@ -12,6 +12,7 @@ from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig
 from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.explain import format_trace
+from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.examples import DEFAULT_POLICY_DIR
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
@@ -144,7 +145,9 @@ def _run_evaluate(args: argparse.Namespace) -> None:
     )
     trace = evaluator.evaluate(proposal, facts)
 
-    if args.json:
+    if args.review_package:
+        print(json.dumps(build_decision_review_package(trace), indent=2, default=str))
+    elif args.json:
         print(json.dumps(trace.to_dict(), indent=2, default=str))
     else:
         print(format_trace(trace))
@@ -503,6 +506,11 @@ def _build_evaluate_parser() -> argparse.ArgumentParser:
         help="Version string for the policy bundle metadata in output",
     )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output")
+    parser.add_argument(
+        "--review-package",
+        action="store_true",
+        help="Output durable decision review package JSON artefact",
+    )
     parser.add_argument(
         "--default-decision",
         choices=[outcome.value for outcome in DecisionOutcome] + ["ESCALATE"],

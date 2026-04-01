@@ -1,0 +1,117 @@
+{
+  "package_schema_version": "1.0",
+  "package_type": "sena.decision_review_package",
+  "package_generated_at": "<timestamp>",
+  "decision_summary": {
+    "decision_id": "<decision_id>",
+    "decision": "BLOCKED",
+    "outcome": "BLOCKED",
+    "action_type": "approve_vendor_payment",
+    "summary": "Decision <decision_id>: BLOCKED due to inviolable policy constraints (payment_block_unverified_vendor).",
+    "decision_timestamp": "<timestamp>"
+  },
+  "rules": {
+    "matched": [
+      {
+        "rule_id": "payment_block_unverified_vendor",
+        "matched": true,
+        "decision": "BLOCK",
+        "inviolable": true,
+        "reason": "Payment blocked because vendor verification is required before disbursement."
+      },
+      {
+        "rule_id": "payment_escalate_high_amount_non_director",
+        "matched": true,
+        "decision": "ESCALATE",
+        "inviolable": false,
+        "reason": "High-value payments require finance director review."
+      }
+    ],
+    "applicable": [
+      {
+        "rule_id": "payment_block_unverified_vendor",
+        "matched": true,
+        "decision": "BLOCK",
+        "inviolable": true,
+        "reason": "Payment blocked because vendor verification is required before disbursement."
+      },
+      {
+        "rule_id": "payment_escalate_high_amount_non_director",
+        "matched": true,
+        "decision": "ESCALATE",
+        "inviolable": false,
+        "reason": "High-value payments require finance director review."
+      }
+    ],
+    "evaluated": [
+      {
+        "rule_id": "payment_block_unverified_vendor",
+        "matched": true,
+        "decision": "BLOCK",
+        "inviolable": true,
+        "reason": "Payment blocked because vendor verification is required before disbursement."
+      },
+      {
+        "rule_id": "payment_escalate_high_amount_non_director",
+        "matched": true,
+        "decision": "ESCALATE",
+        "inviolable": false,
+        "reason": "High-value payments require finance director review."
+      }
+    ],
+    "conflicting_rule_ids": [
+      "payment_escalate_high_amount_non_director"
+    ]
+  },
+  "precedence": {
+    "explanation": "One or more inviolable BLOCK rules matched. Inviolable BLOCK has highest precedence and overrides all other matches. Multiple conflicting rules matched; BLOCK takes precedence over ESCALATE and ALLOW.",
+    "outcome_rationale": [
+      "Outcome resolved to BLOCKED using deterministic precedence.",
+      "One or more inviolable BLOCK rules matched. Inviolable BLOCK has highest precedence and overrides all other matches. Multiple conflicting rules matched; BLOCK takes precedence over ESCALATE and ALLOW."
+    ],
+    "reviewer_guidance": [
+      "Verify matched controls align with control owner expectations.",
+      "Retain decision hash and input fingerprint for audit replay.",
+      "Treat as control failure until remediating evidence is attached."
+    ]
+  },
+  "facts_and_actor": {
+    "actor": {
+      "actor_id": "actor-1",
+      "actor_role": "finance_analyst"
+    },
+    "facts": {
+      "action_type": "approve_vendor_payment",
+      "request_id": "req-review-block",
+      "actor_id": "actor-1",
+      "actor_role": "finance_analyst",
+      "amount": 15000,
+      "vendor_verified": false,
+      "requester_role": "finance_analyst"
+    },
+    "missing_fields": []
+  },
+  "policy_bundle_metadata": {
+    "bundle_name": "enterprise-compliance-controls",
+    "version": "2026.03",
+    "lifecycle": "candidate",
+    "schema_version": "1",
+    "integrity_sha256": "f24b9d5ba96b035a6c27747cf55e61d89e510798bada4f243ae87937de8c5dd0",
+    "loaded_from": "/workspace/sena/src/sena/examples/policies"
+  },
+  "audit_identifiers": {
+    "request_id": "req-review-block",
+    "decision_hash": "<decision_hash>",
+    "input_fingerprint": "<input_fingerprint>",
+    "chain_hash": null,
+    "previous_chain_hash": null,
+    "storage_sequence_number": null
+  },
+  "normalized_source_system_references": [
+    {
+      "source_system": "unknown",
+      "reference_type": "request_correlation_id",
+      "reference_value": "req-review-block"
+    }
+  ]
+}
