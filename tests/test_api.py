@@ -384,3 +384,27 @@ def test_request_id_header_is_preserved_across_evaluate_flow() -> None:
     body = response.json()
     assert response.headers["x-request-id"] == "req-correlation-123"
     assert body["request_id"] == "req-correlation-123"
+
+
+def test_startup_fails_when_policy_dir_missing() -> None:
+    with pytest.raises(RuntimeError, match="SENA_POLICY_DIR must point to an existing directory"):
+        create_app(_settings(policy_dir="does/not/exist"))
+
+
+def test_startup_fails_when_bundle_has_no_rules(tmp_path) -> None:
+    policy_dir = tmp_path / "empty_bundle"
+    policy_dir.mkdir()
+    (policy_dir / "bundle.yaml").write_text("bundle_name: enterprise-demo\nversion: 2026.03\n")
+
+    with pytest.raises(RuntimeError, match="Failed to load policy bundle: no policy files were found"):
+        create_app(_settings(policy_dir=str(policy_dir)))
+
+
+def test_startup_fails_when_api_key_set_but_disabled() -> None:
+    with pytest.raises(RuntimeError, match="SENA_API_KEY is set but SENA_API_KEY_ENABLED is not true"):
+        create_app(_settings(enable_api_key_auth=False, api_key="secret"))
+
+
+def test_startup_fails_in_production_without_api_key_auth() -> None:
+    with pytest.raises(RuntimeError, match="SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true"):
+        create_app(_settings(runtime_mode="production", enable_api_key_auth=False))
