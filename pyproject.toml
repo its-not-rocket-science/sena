@@ -57,3 +57,11 @@ minversion = "8.0"
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
+
+
+[tool.coverage.run]
+source = ["src/sena"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
