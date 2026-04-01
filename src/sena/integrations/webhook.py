@@ -6,6 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from sena.core.models import ActionProposal
+from sena.integrations.approval import (
+    ApprovalEventRoute,
+    NormalizedApprovalEvent,
+    build_normalized_approval_event,
+    resolve_path,
+    to_action_proposal,
+)
 from sena.integrations.base import Connector, DecisionPayload, IntegrationError
 
 try:
@@ -18,14 +25,7 @@ class WebhookMappingError(IntegrationError):
     """Raised when webhook payloads cannot be mapped deterministically."""
 
 
-@dataclass(frozen=True)
-class WebhookRoute:
-    action_type: str
-    payload_path: str | None = None
-    request_id_path: str | None = None
-    actor_id_path: str | None = None
-    attributes: dict[str, str] | None = None
-    static_attributes: dict[str, Any] | None = None
+WebhookRoute = ApprovalEventRoute
 
 
 @dataclass(frozen=True)
@@ -33,16 +33,8 @@ class WebhookMappingConfig:
     providers: dict[str, dict[str, WebhookRoute]]
 
 
-
 def _resolve_path(payload: dict[str, Any], path: str) -> Any:
-    current: Any = payload
-    for part in path.split("."):
-        if isinstance(current, dict) and part in current:
-            current = current[part]
-            continue
-        raise WebhookMappingError(f"Missing payload path '{path}'")
-    return current
-
+    return resolve_path(payload, path, error_cls=WebhookMappingError)
 
 
 def load_webhook_mapping_config(path: str | Path) -> WebhookMappingConfig:
@@ -67,13 +59,31 @@ def load_webhook_mapping_config(path: str | Path) -> WebhookMappingConfig:
                     f"Mapping for provider '{provider}' event '{event_name}' must be an object"
                 )
             try:
+                attrs = route.get("attributes", {}) or {}
+                if not isinstance(attrs, dict):
+                    raise WebhookMappingError(
+                        f"Provider '{provider}' event '{event_name}' attributes must be an object"
+                    )
                 routes[event_name] = WebhookRoute(
                     action_type=route["action_type"],
+                    actor_id_path=route["actor_id_path"],
+                    attributes={str(k): str(v) for k, v in attrs.items()},
+                    required_fields=[str(item) for item in route.get("required_fields", [])],
+                    static_attributes=route.get("static_attributes", {}) or {},
                     payload_path=route.get("payload_path"),
                     request_id_path=route.get("request_id_path"),
-                    actor_id_path=route.get("actor_id_path"),
-                    attributes=route.get("attributes"),
-                    static_attributes=route.get("static_attributes"),
+                    actor_role_path=route.get("actor_role_path"),
+                    source_record_id_path=route.get("source_record_id_path"),
+                    source_object_type_path=route.get("source_object_type_path"),
+                    workflow_stage_path=route.get("workflow_stage_path"),
+                    requested_action_path=route.get("requested_action_path"),
+                    correlation_key_path=route.get("correlation_key_path"),
+                    idempotency_key_path=route.get("idempotency_key_path"),
+                    risk_attributes={str(k): str(v) for k, v in (route.get("risk_attributes", {}) or {}).items()},
+                    evidence_references_path=route.get("evidence_references_path"),
+                    static_source_object_type=route.get("static_source_object_type"),
+                    static_workflow_stage=route.get("static_workflow_stage"),
+                    static_requested_action=route.get("static_requested_action"),
                 )
             except KeyError as exc:
                 raise WebhookMappingError(
@@ -85,6 +95,7 @@ def load_webhook_mapping_config(path: str | Path) -> WebhookMappingConfig:
 
 class WebhookPayloadMapper(Connector):
     name = "webhook"
+
     def __init__(self, config: WebhookMappingConfig):
         self._config = config
 
@@ -102,30 +113,26 @@ class WebhookPayloadMapper(Connector):
         if not default_request_id:
             raise WebhookMappingError("Webhook default_request_id must be non-empty")
 
-        proposal = self.map_payload(
+        normalized = self.normalize_event(
             provider=provider,
             event_type=event_type,
             payload=payload,
             default_request_id=default_request_id,
         )
-        return {
-            "action_type": proposal.action_type,
-            "request_id": proposal.request_id,
-            "actor_id": proposal.actor_id,
-            "attributes": proposal.attributes,
-        }
+        proposal = self.map_to_proposal(provider=provider, event=normalized)
+        return {"normalized_event": normalized.model_dump(), "action_proposal": proposal}
 
     def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:
         raise WebhookMappingError("Webhook connector does not support outbound decision delivery")
 
-    def map_payload(
+    def normalize_event(
         self,
         *,
         provider: str,
         event_type: str,
         payload: dict[str, Any],
         default_request_id: str,
-    ) -> ActionProposal:
+    ) -> NormalizedApprovalEvent:
         provider_map = self._config.providers.get(provider)
         if provider_map is None:
             raise WebhookMappingError(f"Unknown webhook provider '{provider}'")
@@ -142,23 +149,23 @@ class WebhookPayloadMapper(Connector):
                 f"payload_path for provider '{provider}' event '{event_type}' must resolve to object"
             )
 
-        request_id = default_request_id
-        if route.request_id_path:
-            resolved_request_id = _resolve_path(payload, route.request_id_path)
-            request_id = str(resolved_request_id)
-
-        actor_id = None
-        if route.actor_id_path:
-            actor_id = str(_resolve_path(payload, route.actor_id_path))
-
-        attributes: dict[str, Any] = {}
-        for out_key, in_path in (route.attributes or {}).items():
-            attributes[out_key] = _resolve_path(source, in_path)
-        attributes.update(route.static_attributes or {})
-
-        return ActionProposal(
-            action_type=route.action_type,
-            request_id=request_id,
-            actor_id=actor_id,
-            attributes=attributes,
+        source_id = str(payload.get("id") or default_request_id)
+        return build_normalized_approval_event(
+            payload=source,
+            route=route,
+            source_event_type=event_type,
+            idempotency_key=f"{provider}:{event_type}:{source_id}",
+            source_system=provider,
+            default_request_id=default_request_id,
+            default_source_record_id=source_id,
+            error_cls=WebhookMappingError,
+            source_metadata={"provider": provider},
+            default_source_object_type=f"{provider}_object",
+            default_workflow_stage="intake",
+            default_requested_action=route.action_type,
+            default_correlation_key=default_request_id,
         )
+
+    def map_to_proposal(self, *, provider: str, event: NormalizedApprovalEvent) -> ActionProposal:
+        route = self._config.providers[provider][event.source_event_type]
+        return to_action_proposal(event, route)

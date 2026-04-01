@@ -98,10 +98,21 @@ def load_jira_mapping_config(path: str) -> JiraMappingConfig:
             attributes={str(k): str(v) for k, v in attrs.items()},
             required_fields=[str(item) for item in required_fields],
             static_attributes=route.get("static_attributes", {}) or {},
+            payload_path=route.get("payload_path"),
             request_id_path=route.get("request_id_path"),
             actor_role_path=route.get("actor_role_path"),
             source_record_id_path=route.get("source_record_id_path"),
             policy_bundle=route.get("policy_bundle"),
+            source_object_type_path=route.get("source_object_type_path"),
+            workflow_stage_path=route.get("workflow_stage_path"),
+            requested_action_path=route.get("requested_action_path"),
+            correlation_key_path=route.get("correlation_key_path"),
+            idempotency_key_path=route.get("idempotency_key_path"),
+            risk_attributes={str(k): str(v) for k, v in (route.get("risk_attributes", {}) or {}).items()},
+            evidence_references_path=route.get("evidence_references_path"),
+            static_source_object_type=route.get("static_source_object_type"),
+            static_workflow_stage=route.get("static_workflow_stage"),
+            static_requested_action=route.get("static_requested_action"),
         )
     outbound_raw = raw.get("outbound", {}) or {}
     mode = str(outbound_raw.get("mode", "comment"))
@@ -209,17 +220,21 @@ class JiraConnector(Connector):
         return build_normalized_approval_event(
             payload=payload,
             route=route,
-            event_type=event_type,
-            delivery_id=delivery_id,
+            source_event_type=event_type,
+            idempotency_key=delivery_id,
             source_system="jira",
             default_request_id=str(resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)),
             default_source_record_id=issue_id,
             error_cls=JiraIntegrationError,
+            default_source_object_type="jira_issue",
+            default_workflow_stage="pending_approval",
+            default_requested_action=route.action_type,
+            default_correlation_key=str(resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)),
             source_metadata={"jira_issue_key": str(resolve_path(payload, "issue.key", error_cls=JiraIntegrationError))},
         )
 
     def map_to_proposal(self, event: NormalizedJiraEvent):
-        route = self._config.routes[event.event_type]
+        route = self._config.routes[event.source_event_type]
         return to_action_proposal(event, route)
 
     def route_for_event_type(self, event_type: str) -> JiraEventRoute | None:

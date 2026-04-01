@@ -5,6 +5,10 @@ routes:
     actor_role_path: requested_by.role
     request_id_path: change_request.number
     source_record_id_path: change_request.sys_id
+    static_source_object_type: change_request
+    static_workflow_stage: requested
+    static_requested_action: approve_vendor_payment
+    correlation_key_path: change_request.number
     required_fields:
       - change_request.number
       - change_request.sys_id
@@ -28,8 +32,13 @@ routes:
       cab_review_missing: cab_review_missing
       requested_start: schedule.start
       requested_end: schedule.end
+    risk_attributes:
+      risk_level: risk.level
+      emergency_change: flags.emergency
+      privileged_change: flags.privileged
+      out_of_hours_change: flags.out_of_hours
+    evidence_references_path: cab_review.evidence_id
     static_attributes:
-      source_system: servicenow
       approval_workflow: enterprise_change
       governance_model: cab_and_role_chain
     policy_bundle: enterprise-demo
