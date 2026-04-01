@@ -1,0 +1,17 @@
+{
+  "fixture_version": "1",
+  "event_type": "change_approval.requested",
+  "table": "change_request",
+  "change_request": {"sys_id": "d0f1e2a3b7", "number": "CHG0091004"},
+  "requested_by": {"user_id": "sn.user.004", "role": "release_engineer"},
+  "classification": "normal",
+  "environment": "production",
+  "risk": {"level": "high"},
+  "schedule": {"window": "business_hours", "start": "2026-04-02T15:00:00Z", "end": "2026-04-02T16:00:00Z"},
+  "flags": {"emergency": false, "privileged": false, "out_of_hours": false},
+  "approver_chain": [],
+  "approver_chain_missing": true,
+  "cab_review": {"evidence_id": "CAB-2026-0045"},
+  "cab_review_missing": false,
+  "updated_at": "2026-04-01T09:00:00Z"
+}

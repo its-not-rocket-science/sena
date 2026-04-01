@@ -202,6 +202,12 @@ class PolicyEvaluator:
             ).encode("utf-8")
         ).hexdigest()
 
+        source_metadata = {
+            key: value
+            for key, value in proposal.attributes.items()
+            if key.startswith("source_") or key.startswith("servicenow_") or key.startswith("jira_")
+        }
+
         audit_record = AuditRecord(
             decision_id=decision_id,
             timestamp=decision_timestamp,
@@ -217,6 +223,7 @@ class PolicyEvaluator:
             precedence_explanation=precedence_explanation,
             input_fingerprint=input_fingerprint,
             decision_hash=decision_hash,
+            source_metadata=source_metadata,
         )
 
         trace = EvaluationTrace(

@@ -104,6 +104,7 @@ Versioned endpoints:
 - `POST /v1/integrations/webhook`
 - `POST /v1/integrations/slack/interactions`
 - `POST /v1/integrations/jira/webhook`
+- `POST /v1/integrations/servicenow/webhook`
 - `POST /v1/evaluate/batch`
 - `POST /v1/simulation`
 - `POST /v1/bundle/diff`
@@ -227,6 +228,15 @@ SENA supports a first-class Jira integration for deterministic approval workflow
 - Webhook authenticity contract: pluggable verifier (`SENA_JIRA_WEBHOOK_SECRET` for shared-secret mode)
 - Example mapping: `src/sena/examples/integrations/jira_mappings.yaml`
 - Full runbook: `docs/integrations/JIRA.md`
+
+### ServiceNow change approval integration
+
+SENA supports a first-class ServiceNow change approval integration for enterprise governance workflows. ServiceNow events are normalized into the same approval-event model used by Jira, mapped into `ActionProposal`, and evaluated with deterministic callback payloads for workflow consumption.
+
+- Endpoint: `POST /v1/integrations/servicenow/webhook`
+- Mapping config env: `SENA_SERVICENOW_MAPPING_CONFIG`
+- Example mapping: `src/sena/examples/integrations/servicenow_mappings.yaml`
+- Full runbook: `docs/integrations/SERVICENOW.md`
 
 ### Slack human-escalation integration
 

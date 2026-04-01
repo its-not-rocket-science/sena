@@ -81,6 +81,7 @@ class AuditRecord:
     precedence_explanation: str
     input_fingerprint: str
     decision_hash: str
+    source_metadata: dict[str, Any] = field(default_factory=dict)
     chain_hash: str | None = None
     previous_chain_hash: str | None = None
 

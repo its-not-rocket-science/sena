@@ -60,3 +60,40 @@ def test_extended_dsl_validation_and_context_schema_block() -> None:
     )
     assert trace.outcome == DecisionOutcome.BLOCKED
     assert "schema" in trace.reasoning.precedence_explanation.lower()
+
+
+def test_audit_record_captures_integration_source_metadata() -> None:
+    rule = PolicyRule(
+        id="escalate_privileged_change",
+        description="escalate",
+        severity=Severity.HIGH,
+        inviolable=False,
+        applies_to=["approve_vendor_payment"],
+        condition={"field": "privileged_change", "eq": True},
+        decision=RuleDecision.ESCALATE,
+        reason="privileged path",
+    )
+    bundle = PolicyBundleMetadata(bundle_name="b", version="1", loaded_from="tmp")
+    evaluator = PolicyEvaluator([rule], policy_bundle=bundle)
+
+    trace = evaluator.evaluate(
+        ActionProposal(
+            action_type="approve_vendor_payment",
+            request_id="CHG0001",
+            actor_id="sn.user.1",
+            attributes={
+                "privileged_change": True,
+                "source_system": "servicenow",
+                "source_event_type": "change_approval.requested",
+                "source_delivery_id": "sn-delivery-1",
+                "servicenow_change_number": "CHG0001",
+            },
+        ),
+        facts={},
+    )
+
+    assert trace.audit_record is not None
+    assert trace.audit_record.source_metadata["source_system"] == "servicenow"
+    assert trace.audit_record.source_metadata["source_event_type"] == "change_approval.requested"
+    assert trace.audit_record.source_metadata["servicenow_change_number"] == "CHG0001"
+

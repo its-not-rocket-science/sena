@@ -40,6 +40,13 @@ ERROR_CODE_CATALOG: dict[str, ErrorCatalogEntry] = {
     "jira_policy_bundle_not_found": ErrorCatalogEntry(404, "Mapped Jira policy bundle was not found."),
     "jira_evaluation_error": ErrorCatalogEntry(400, "Jira evaluation failed."),
     "jira_outbound_delivery_failed": ErrorCatalogEntry(502, "Jira decision delivery failed."),
+    "servicenow_mapping_not_configured": ErrorCatalogEntry(400, "ServiceNow mapping config is not set."),
+    "servicenow_unsupported_event_type": ErrorCatalogEntry(400, "Unsupported ServiceNow event type."),
+    "servicenow_missing_required_fields": ErrorCatalogEntry(400, "ServiceNow payload missing required fields."),
+    "servicenow_invalid_mapping": ErrorCatalogEntry(400, "ServiceNow mapping is invalid."),
+    "servicenow_duplicate_delivery": ErrorCatalogEntry(200, "Duplicate ServiceNow delivery ignored."),
+    "servicenow_policy_bundle_not_found": ErrorCatalogEntry(404, "Mapped ServiceNow policy bundle was not found."),
+    "servicenow_evaluation_error": ErrorCatalogEntry(400, "ServiceNow evaluation failed."),
     "slack_interaction_error": ErrorCatalogEntry(400, "Slack interaction failed."),
     "audit_sink_not_configured": ErrorCatalogEntry(400, "Audit sink not configured."),
 }

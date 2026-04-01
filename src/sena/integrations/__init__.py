@@ -13,6 +13,15 @@ from sena.integrations.jira import (
     SharedSecretJiraWebhookVerifier,
     load_jira_mapping_config,
 )
+from sena.integrations.servicenow import (
+    InMemoryServiceNowIdempotencyStore,
+    ServiceNowConnector,
+    ServiceNowEventRoute,
+    ServiceNowIntegrationError,
+    ServiceNowMappingConfig,
+    ServiceNowOutboundConfig,
+    load_servicenow_mapping_config,
+)
 from sena.integrations.slack import (
     SlackClient,
     SlackEscalationMessage,
@@ -45,6 +54,13 @@ __all__ = [
     "WebhookMappingError",
     "WebhookPayloadMapper",
     "load_webhook_mapping_config",
+    "ServiceNowConnector",
+    "ServiceNowIntegrationError",
+    "ServiceNowMappingConfig",
+    "ServiceNowOutboundConfig",
+    "ServiceNowEventRoute",
+    "load_servicenow_mapping_config",
+    "InMemoryServiceNowIdempotencyStore",
     "SlackClient",
     "SlackEscalationMessage",
     "SlackIntegrationError",
