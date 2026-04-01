@@ -13,6 +13,7 @@ from typing import Any
 from sena import __version__ as SENA_VERSION
 from sena.audit.chain import append_audit_record, verify_audit_chain
 from sena.api.config import ApiSettings, load_settings_from_env
+from sena.api.errors import ERROR_CODE_CATALOG, raise_api_error
 from sena.api.logging import configure_logging
 from sena.api.metrics import ApiMetrics
 from sena.api.schemas import (
@@ -313,16 +314,31 @@ def create_app(settings: ApiSettings | None = None):
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(request: Request, exc: RequestValidationError):
+        payload = _error_payload(
+            "validation_error",
+            ERROR_CODE_CATALOG["validation_error"].message,
+            request.state.request_id,
+        )
+        payload["error"]["details"] = exc.errors()
         return JSONResponse(
             status_code=422,
-            content=_error_payload("validation_error", str(exc), request.state.request_id),
+            content=payload,
         )
 
     @app.exception_handler(HTTPException)
     async def handle_http_exception(request: Request, exc: HTTPException):
+        detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+        code = detail.get("code", "http_internal_error")
+        default_message = ERROR_CODE_CATALOG.get(
+            code, ERROR_CODE_CATALOG["http_internal_error"]
+        ).message
+        message = detail.get("message", default_message)
+        payload = _error_payload(code, message, request.state.request_id)
+        if "details" in detail:
+            payload["error"]["details"] = detail["details"]
         return JSONResponse(
             status_code=exc.status_code,
-            content=_error_payload("http_error", str(exc.detail), request.state.request_id),
+            content=payload,
         )
 
     api_v1 = APIRouter(prefix="/v1")
@@ -354,7 +370,7 @@ def create_app(settings: ApiSettings | None = None):
     @api_v1.post("/bundle/register")
     def register_bundle(payload: BundleRegisterRequest) -> dict[str, Any]:
         if state.policy_repo is None:
-            raise HTTPException(status_code=400, detail="policy store backend is not sqlite")
+            raise_api_error("policy_store_unavailable")
 
         policy_dir = payload.policy_dir or state.settings.policy_dir
         rules, metadata = load_policy_bundle(
@@ -369,11 +385,11 @@ def create_app(settings: ApiSettings | None = None):
     @api_v1.post("/bundle/promote")
     def promote_bundle(payload: BundlePromoteRequest) -> dict[str, Any]:
         if state.policy_repo is None:
-            raise HTTPException(status_code=400, detail="policy store backend is not sqlite")
+            raise_api_error("policy_store_unavailable")
 
         stored_bundle = state.policy_repo.get_bundle(payload.bundle_id)
         if stored_bundle is None:
-            raise HTTPException(status_code=404, detail=f"bundle id '{payload.bundle_id}' not found")
+            raise_api_error("bundle_not_found", details={"bundle_id": payload.bundle_id})
 
         source_rules = stored_bundle.rules
         if payload.target_lifecycle == "active":
@@ -387,7 +403,7 @@ def create_app(settings: ApiSettings | None = None):
             stored_bundle.rules,
         )
         if not validation.valid:
-            raise HTTPException(status_code=400, detail={"errors": validation.errors})
+            raise_api_error("promotion_validation_failed", details={"errors": validation.errors})
 
         state.policy_repo.set_bundle_lifecycle(payload.bundle_id, payload.target_lifecycle)
         active = state.policy_repo.get_active_bundle(state.settings.bundle_name)
@@ -399,11 +415,11 @@ def create_app(settings: ApiSettings | None = None):
     @api_v1.get("/bundles/active")
     def get_active_bundle(bundle_name: str | None = None) -> dict[str, Any]:
         if state.policy_repo is None:
-            raise HTTPException(status_code=400, detail="policy store backend is not sqlite")
+            raise_api_error("policy_store_unavailable")
         name = bundle_name or state.settings.bundle_name
         active = state.policy_repo.get_active_bundle(name)
         if active is None:
-            raise HTTPException(status_code=404, detail=f"No active bundle found for '{name}'")
+            raise_api_error("active_bundle_not_found", details={"bundle_name": name})
         return {
             "bundle_id": active.id,
             "bundle": BundleInfo.model_validate(active.metadata.__dict__),
@@ -453,13 +469,13 @@ def create_app(settings: ApiSettings | None = None):
                 )
             return payload
         except Exception as exc:  # pragma: no cover
-            raise HTTPException(status_code=400, detail=f"Evaluation error: {exc}") from exc
+            raise_api_error("evaluation_error", details={"reason": str(exc)})
 
 
     @api_v1.post("/integrations/webhook")
     def integrations_webhook(req: WebhookEvaluateRequest, request: Request) -> dict[str, Any]:
         if state.webhook_mapper is None:
-            raise HTTPException(status_code=400, detail="webhook mapping config is not set")
+            raise_api_error("webhook_mapping_not_configured")
         try:
             mapped = state.connector_registry.get("webhook").handle_event(
                 {
@@ -515,9 +531,9 @@ def create_app(settings: ApiSettings | None = None):
                 "reasoning": trace.reasoning.__dict__ if trace.reasoning else None,
             }
         except WebhookMappingError as exc:
-            raise HTTPException(status_code=400, detail=f"Webhook mapping error: {exc}") from exc
+            raise_api_error("webhook_mapping_error", details={"reason": str(exc)})
         except Exception as exc:  # pragma: no cover
-            raise HTTPException(status_code=400, detail=f"Webhook evaluation error: {exc}") from exc
+            raise_api_error("webhook_evaluation_error", details={"reason": str(exc)})
 
     @api_v1.post("/integrations/slack/interactions")
     async def slack_interactions(request: Request) -> dict[str, Any]:
@@ -534,9 +550,9 @@ def create_app(settings: ApiSettings | None = None):
                 "reviewer": interaction["reviewer"],
             }
         except SlackIntegrationError as exc:
-            raise HTTPException(status_code=400, detail=f"Slack interaction error: {exc}") from exc
+            raise_api_error("slack_interaction_error", details={"reason": str(exc)})
         except Exception as exc:  # pragma: no cover
-            raise HTTPException(status_code=400, detail=f"Slack interaction error: {exc}") from exc
+            raise_api_error("slack_interaction_error", details={"reason": str(exc)})
 
     @api_v1.post("/evaluate/batch")
     def evaluate_batch(req: BatchEvaluateRequest, request: Request) -> dict[str, Any]:
@@ -584,7 +600,7 @@ def create_app(settings: ApiSettings | None = None):
     @api_v1.get("/audit/verify")
     def audit_verify() -> dict[str, Any]:
         if not state.settings.audit_sink_jsonl:
-            raise HTTPException(status_code=400, detail="audit sink not configured")
+            raise_api_error("audit_sink_not_configured")
         return verify_audit_chain(state.settings.audit_sink_jsonl)
 
     @app.get("/metrics")

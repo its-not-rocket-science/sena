@@ -104,6 +104,42 @@ Versioned endpoints:
 
 Backward-compatible aliases still exist at `/health`, `/bundle`, `/evaluate`.
 
+### API error contract and code catalog
+
+All API errors now return a consistent envelope:
+
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "Request validation failed.",
+    "request_id": "req_abcd1234",
+    "timestamp": "2026-04-01T00:00:00+00:00",
+    "details": []
+  }
+}
+```
+
+Standard error codes:
+
+- `validation_error` (422)
+- `invalid_content_length` (400)
+- `payload_too_large` (413)
+- `unauthorized` (401)
+- `forbidden` (403)
+- `rate_limited` (429)
+- `timeout` (504)
+- `policy_store_unavailable` (400)
+- `bundle_not_found` (404)
+- `active_bundle_not_found` (404)
+- `promotion_validation_failed` (400)
+- `evaluation_error` (400)
+- `webhook_mapping_not_configured` (400)
+- `webhook_mapping_error` (400)
+- `webhook_evaluation_error` (400)
+- `slack_interaction_error` (400)
+- `audit_sink_not_configured` (400)
+
 ### Persistent policy registry (SQLite)
 
 You can optionally run the API against a DB-backed policy registry instead of filesystem bundles.
