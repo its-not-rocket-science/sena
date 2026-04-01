@@ -32,6 +32,11 @@ from sena.policy.release_signing import (
     verify_release_manifest,
     write_release_manifest,
 )
+from sena.policy.disaster_recovery import (
+    DisasterRecoveryError,
+    create_policy_registry_backup,
+    restore_policy_registry_backup,
+)
 from sena.policy.store import SQLitePolicyBundleRepository
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
 
@@ -481,6 +486,42 @@ def _run_registry_fetch(args: argparse.Namespace) -> None:
     if bundle is None:
         raise SystemExit("Bundle not found")
     print(json.dumps({"bundle_id": bundle.id, "bundle_name": bundle.metadata.bundle_name, "version": bundle.metadata.version, "lifecycle": bundle.metadata.lifecycle}, indent=2))
+
+
+def _run_registry_backup(args: argparse.Namespace) -> None:
+    artifacts = create_policy_registry_backup(
+        sqlite_path=args.sqlite_path,
+        output_db_path=args.output_db,
+        audit_chain_path=args.audit_chain,
+        output_manifest_path=args.output_manifest,
+    )
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "backup_db_path": str(artifacts.backup_db_path),
+                "backup_manifest_path": str(artifacts.backup_manifest_path),
+                "backup_audit_path": str(artifacts.backup_audit_path) if artifacts.backup_audit_path else None,
+            },
+            indent=2,
+        )
+    )
+
+
+def _run_registry_restore(args: argparse.Namespace) -> None:
+    try:
+        result = restore_policy_registry_backup(
+            backup_db_path=args.backup_db,
+            restore_db_path=args.restore_db,
+            backup_manifest_path=args.backup_manifest,
+            backup_audit_path=args.backup_audit,
+            restore_audit_path=args.restore_audit,
+            policy_dir=args.policy_dir,
+            keyring_dir=args.keyring_dir,
+        )
+    except DisasterRecoveryError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(json.dumps({"status": "ok", "checks": result.checks}, indent=2))
 def _build_evaluate_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -666,6 +707,22 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     fetch.add_argument("--bundle-name")
     fetch.add_argument("--version")
     fetch.set_defaults(handler=_run_registry_fetch)
+
+    backup = sub.add_parser("backup")
+    backup.add_argument("--output-db", type=Path, required=True)
+    backup.add_argument("--audit-chain", type=Path)
+    backup.add_argument("--output-manifest", type=Path)
+    backup.set_defaults(handler=_run_registry_backup)
+
+    restore = sub.add_parser("restore")
+    restore.add_argument("--backup-db", type=Path, required=True)
+    restore.add_argument("--restore-db", type=Path, required=True)
+    restore.add_argument("--backup-manifest", type=Path)
+    restore.add_argument("--backup-audit", type=Path)
+    restore.add_argument("--restore-audit", type=Path)
+    restore.add_argument("--policy-dir", type=Path)
+    restore.add_argument("--keyring-dir", type=Path)
+    restore.set_defaults(handler=_run_registry_restore)
 
     return parser
 

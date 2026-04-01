@@ -133,3 +133,65 @@ Legacy/historical path (not supported for enterprise use):
 Experimental integration surfaces (evaluation-only, no compatibility guarantees):
 - `/v1/integrations/webhook`
 - `/v1/integrations/slack/interactions`
+
+## 10) Policy registry backup, restore, and disaster recovery runbook
+
+Use this runbook for sqlite-backed policy registry deployments (`SENA_POLICY_STORE_BACKEND=sqlite`) and JSONL audit chains.
+
+### Backup workflow (machine-readable artifacts)
+
+Create a backup bundle containing:
+- sqlite snapshot (`*.db`)
+- manifest with backup checksum + sqlite `integrity_check`
+- optional audit-chain snapshot (`*.audit.jsonl`)
+
+```bash
+python scripts/backup_policy_registry.py \
+  --sqlite-path /var/lib/sena/policy-registry.db \
+  --output-db /var/backups/sena/policy-registry-$(date -u +%Y%m%dT%H%M%SZ).db \
+  --audit-chain /var/log/sena/audit.jsonl
+```
+
+Equivalent CLI wiring:
+
+```bash
+python -m sena.cli.main registry \
+  --sqlite-path /var/lib/sena/policy-registry.db \
+  backup \
+  --output-db /var/backups/sena/policy-registry-$(date -u +%Y%m%dT%H%M%SZ).db \
+  --audit-chain /var/log/sena/audit.jsonl
+```
+
+### Restore + verification workflow
+
+Restore is fail-closed and machine-checks all required outcomes:
+1. **DB backup integrity check** (`PRAGMA integrity_check` on backup before restore).
+2. **Post-restore active bundle validation** (active bundle exists, includes rules, and rule hashes/digests match).
+3. **Audit chain verification** (`verify_audit_chain` on restored audit file).
+4. **Bundle signature verification where configured**:
+   - always checks that `signature_verification_strict=true` bundles are marked verified;
+   - optionally runs full manifest cryptographic verification when `--policy-dir` and `--keyring-dir` are provided.
+
+```bash
+python scripts/restore_policy_registry.py \
+  --backup-db /var/backups/sena/policy-registry-20260401T000000Z.db \
+  --backup-manifest /var/backups/sena/policy-registry-20260401T000000Z.db.manifest.json \
+  --backup-audit /var/backups/sena/policy-registry-20260401T000000Z.db.audit.jsonl \
+  --restore-db /var/lib/sena/policy-registry.db \
+  --restore-audit /var/log/sena/audit.jsonl \
+  --policy-dir /srv/sena/policies \
+  --keyring-dir /srv/sena/keyring
+```
+
+Equivalent CLI wiring:
+
+```bash
+python -m sena.cli.main registry --sqlite-path /var/lib/sena/policy-registry.db restore \
+  --backup-db /var/backups/sena/policy-registry-20260401T000000Z.db \
+  --backup-manifest /var/backups/sena/policy-registry-20260401T000000Z.db.manifest.json \
+  --backup-audit /var/backups/sena/policy-registry-20260401T000000Z.db.audit.jsonl \
+  --restore-db /var/lib/sena/policy-registry.db \
+  --restore-audit /var/log/sena/audit.jsonl
+```
+
+On any verification failure, restore exits non-zero and includes machine-parseable check output.
