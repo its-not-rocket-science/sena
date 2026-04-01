@@ -49,6 +49,8 @@ pip install -e .[api,dev]  # optional API + test tooling
 pytest
 ```
 
+Coverage report target is configured at **80%** for the `sena` package via Coverage.py settings (`tool.coverage.report.fail_under`).
+
 ## CLI quickstart
 
 ```bash
