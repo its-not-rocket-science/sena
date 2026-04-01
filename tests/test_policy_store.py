@@ -1,9 +1,14 @@
+import sqlite3
+import threading
+
+import pytest
+
 from sena.core.models import PolicyBundleMetadata
 from sena.policy.parser import load_policy_bundle
 from sena.policy.store import SQLitePolicyBundleRepository
 
 
-def test_sqlite_repository_register_activate_and_fetch(tmp_path) -> None:
+def test_sqlite_repository_register_activate_history_and_fetch(tmp_path) -> None:
     db_path = tmp_path / "registry.db"
     repo = SQLitePolicyBundleRepository(str(db_path))
     repo.initialize()
@@ -11,16 +16,111 @@ def test_sqlite_repository_register_activate_and_fetch(tmp_path) -> None:
     rules, metadata = load_policy_bundle("src/sena/examples/policies")
     metadata = PolicyBundleMetadata(
         bundle_name=metadata.bundle_name,
-        version=metadata.version,
+        version="2026.03.1",
         loaded_from=metadata.loaded_from,
-        lifecycle="candidate",
+        lifecycle="draft",
     )
 
-    bundle_id = repo.register_bundle(metadata, rules)
-    repo.set_bundle_lifecycle(bundle_id, "active")
+    bundle_id = repo.register_bundle(metadata, rules, created_by="alice", creation_reason="initial")
+    repo.transition_bundle(bundle_id, "candidate", promoted_by="alice", promotion_reason="ready")
+    repo.transition_bundle(
+        bundle_id,
+        "active",
+        promoted_by="bob",
+        promotion_reason="cab approved",
+        validation_artifact="CAB-1",
+    )
 
     active = repo.get_active_bundle(metadata.bundle_name)
     assert active is not None
     assert active.id == bundle_id
-    assert active.metadata.lifecycle == "active"
-    assert len(active.rules) == len(rules)
+    assert active.promoted_by == "bob"
+    assert active.validation_artifact == "CAB-1"
+    history = repo.get_history(metadata.bundle_name)
+    assert {item["action"] for item in history} >= {"register", "promote"}
+
+
+def test_duplicate_registration_rejected(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    metadata.lifecycle = "draft"
+    repo.register_bundle(metadata, rules)
+    with pytest.raises(ValueError, match="same name and version"):
+        repo.register_bundle(metadata, rules)
+
+
+def test_invalid_transition_and_active_validation_artifact_required(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    metadata.lifecycle = "draft"
+    bundle_id = repo.register_bundle(metadata, rules)
+
+    with pytest.raises(ValueError, match="invalid lifecycle transition"):
+        repo.transition_bundle(bundle_id, "active", promoted_by="x", promotion_reason="skip")
+
+    repo.transition_bundle(bundle_id, "candidate", promoted_by="x", promotion_reason="ok")
+    with pytest.raises(ValueError, match="validation_artifact"):
+        repo.transition_bundle(bundle_id, "active", promoted_by="x", promotion_reason="no artifact")
+
+
+def test_rollback_to_previous_active(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, meta = load_policy_bundle("src/sena/examples/policies")
+
+    first = PolicyBundleMetadata(bundle_name=meta.bundle_name, version="1.0.0", loaded_from=meta.loaded_from, lifecycle="draft")
+    second = PolicyBundleMetadata(bundle_name=meta.bundle_name, version="1.1.0", loaded_from=meta.loaded_from, lifecycle="draft")
+
+    id1 = repo.register_bundle(first, rules)
+    repo.transition_bundle(id1, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(id1, "active", promoted_by="ops", promotion_reason="go", validation_artifact="CAB-1")
+
+    id2 = repo.register_bundle(second, rules)
+    repo.transition_bundle(id2, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(id2, "active", promoted_by="ops", promotion_reason="go", validation_artifact="CAB-2")
+
+    repo.rollback_bundle(meta.bundle_name, id1, promoted_by="ops", promotion_reason="incident", validation_artifact="INC-1")
+    active = repo.get_active_bundle(meta.bundle_name)
+    assert active is not None and active.id == id1
+
+
+def test_migration_tables_exist(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    with sqlite3.connect(db_path) as conn:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "bundle_history" in tables
+    assert "schema_migrations" in tables
+
+
+def test_concurrency_registration_unique(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, meta = load_policy_bundle("src/sena/examples/policies")
+
+    errors: list[str] = []
+
+    def worker(version: str) -> None:
+        try:
+            local_repo = SQLitePolicyBundleRepository(str(db_path))
+            local_repo.initialize()
+            local_repo.register_bundle(
+                PolicyBundleMetadata(bundle_name=meta.bundle_name, version=version, loaded_from=meta.loaded_from, lifecycle="draft"),
+                rules,
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    threads = [threading.Thread(target=worker, args=("same",)) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(errors) == 1

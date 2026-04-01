@@ -65,3 +65,65 @@ def test_policy_validate_returns_human_readable_error(tmp_path) -> None:
     result = _run_cli(["policy", "validate", "--policy-dir", str(bundle_dir)])
     assert result.returncode != 0
     assert "Policy validation failed:" in result.stderr or "Policy validation failed:" in result.stdout
+
+def test_registry_lifecycle_commands(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    base = ["registry", "--sqlite-path", str(db_path)]
+
+    register = _run_cli(
+        base
+        + [
+            "register",
+            "--policy-dir",
+            "src/sena/examples/policies",
+            "--bundle-name",
+            "enterprise-compliance-controls",
+            "--bundle-version",
+            "2026.05",
+            "--created-by",
+            "ops",
+        ]
+    )
+    register.check_returncode()
+    bundle_id = json.loads(register.stdout)["bundle_id"]
+
+    validate = _run_cli(base + ["validate-promotion", "--bundle-id", str(bundle_id), "--target-lifecycle", "candidate"])
+    validate.check_returncode()
+
+    to_candidate = _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "candidate",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "ready",
+        ]
+    )
+    to_candidate.check_returncode()
+
+    to_active = _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "active",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "go",
+            "--validation-artifact",
+            "CAB-123",
+        ]
+    )
+    to_active.check_returncode()
+
+    history = _run_cli(base + ["inspect-history", "--bundle-name", "enterprise-compliance-controls"])
+    history.check_returncode()
+    assert json.loads(history.stdout)["history"]
