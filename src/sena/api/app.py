@@ -54,6 +54,22 @@ except ModuleNotFoundError:  # pragma: no cover
 
 
 logger = logging.getLogger(__name__)
+VALID_API_ROLES = {"admin", "policy_author", "evaluator"}
+ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
+    "policy_author": {
+        ("POST", "/v1/bundle/register"),
+        ("POST", "/v1/bundle/promote"),
+        ("POST", "/v1/bundle/diff"),
+        ("POST", "/v1/bundle/promotion/validate"),
+    },
+    "evaluator": {
+        ("POST", "/v1/evaluate"),
+        ("POST", "/v1/evaluate/batch"),
+        ("POST", "/v1/integrations/webhook"),
+        ("POST", "/v1/integrations/slack/interactions"),
+        ("POST", "/v1/simulation"),
+    },
+}
 
 
 def _error_payload(code: str, message: str, request_id: str | None = None) -> dict[str, Any]:
@@ -156,12 +172,33 @@ def _validate_startup_settings(runtime_settings: ApiSettings) -> None:
                 f"SENA_POLICY_DIR must point to an existing directory: {runtime_settings.policy_dir}"
             )
 
-    if runtime_settings.enable_api_key_auth and not runtime_settings.api_key:
-        raise RuntimeError("SENA_API_KEY_ENABLED=true requires SENA_API_KEY to be set")
     if runtime_settings.api_key and not runtime_settings.enable_api_key_auth:
         raise RuntimeError("SENA_API_KEY is set but SENA_API_KEY_ENABLED is not true")
     if runtime_settings.runtime_mode == "production" and not runtime_settings.enable_api_key_auth:
         raise RuntimeError("SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true")
+    if runtime_settings.api_keys and runtime_settings.api_key:
+        raise RuntimeError("Set only one of SENA_API_KEY or SENA_API_KEYS")
+    if runtime_settings.enable_api_key_auth and not runtime_settings.api_key and not runtime_settings.api_keys:
+        raise RuntimeError("SENA_API_KEY_ENABLED=true requires SENA_API_KEY or SENA_API_KEYS to be set")
+    for _, role in runtime_settings.api_keys:
+        if role not in VALID_API_ROLES:
+            raise RuntimeError(
+                f"SENA_API_KEYS contains unsupported role '{role}'. Expected one of: {sorted(VALID_API_ROLES)}"
+            )
+
+
+def _build_api_key_roles(settings: ApiSettings) -> dict[str, str]:
+    if settings.api_keys:
+        return dict(settings.api_keys)
+    if settings.api_key:
+        return {settings.api_key: "admin"}
+    return {}
+
+
+def _is_role_allowed(role: str, method: str, path: str) -> bool:
+    if role == "admin":
+        return True
+    return (method, path) in ROLE_ALLOWED_ENDPOINTS.get(role, set())
 
 
 def create_app(settings: ApiSettings | None = None):
@@ -181,6 +218,7 @@ def create_app(settings: ApiSettings | None = None):
 
     app = FastAPI(title="SENA Compliance Engine API", version=SENA_VERSION)
     state = _EngineState(runtime_settings, rules, metadata, policy_repo)
+    api_key_roles = _build_api_key_roles(runtime_settings)
     rate_limiter = _FixedWindowRateLimiter(
         max_requests=runtime_settings.rate_limit_requests,
         window_seconds=runtime_settings.rate_limit_window_seconds,
@@ -239,9 +277,13 @@ def create_app(settings: ApiSettings | None = None):
 
         if state.settings.enable_api_key_auth:
             provided = request.headers.get("x-api-key")
-            if provided != state.settings.api_key:
+            role = api_key_roles.get(provided or "")
+            if role is None:
                 return _json_error(401, "unauthorized", "Missing or invalid API key")
             client_key = provided
+            request.state.api_role = role
+            if not _is_role_allowed(role, request.method, request.url.path):
+                return _json_error(403, "forbidden", "API key role is not authorized for this endpoint")
 
         if not rate_limiter.allow(client_key, time.monotonic()):
             return _json_error(429, "rate_limited", "Rate limit exceeded")

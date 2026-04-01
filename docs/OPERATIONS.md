@@ -18,11 +18,15 @@ Application versioning: package and FastAPI app version are sourced from `sena._
 - `SENA_API_HOST`, `SENA_API_PORT`: host/port binding for deployment wrappers
 - `SENA_POLICY_DIR`: policy bundle directory (defaults to `src/sena/examples/policies`)
 - `SENA_BUNDLE_NAME`, `SENA_BUNDLE_VERSION`: metadata override fallback (default demo bundle metadata)
-- `SENA_API_KEY_ENABLED=true` + `SENA_API_KEY=<value>`: enables shared-key auth middleware
+- `SENA_API_KEY_ENABLED=true` + one of:
+  - `SENA_API_KEY=<value>` (single-key mode; key role defaults to `admin`)
+  - `SENA_API_KEYS=<key:role,...>` (RBAC mode; roles: `admin`, `policy_author`, `evaluator`)
 - Startup fails fast on misconfiguration:
   - `SENA_POLICY_DIR` must exist when `SENA_POLICY_STORE_BACKEND=filesystem`
   - loaded bundle must resolve to a non-empty rule set
   - `SENA_API_KEY` cannot be set unless `SENA_API_KEY_ENABLED=true`
+  - `SENA_API_KEYS` cannot be set unless `SENA_API_KEY_ENABLED=true`
+  - `SENA_API_KEY` and `SENA_API_KEYS` are mutually exclusive
   - `SENA_RUNTIME_MODE=production` requires `SENA_API_KEY_ENABLED=true`
 - `SENA_RATE_LIMIT_REQUESTS`, `SENA_RATE_LIMIT_WINDOW_SECONDS`: fixed-window request budget (per API key when provided, otherwise per client host)
 - `SENA_REQUEST_MAX_BYTES`: maximum request payload size in bytes (`413` when exceeded)
@@ -42,6 +46,11 @@ Application versioning: package and FastAPI app version are sourced from `sena._
 - `POST /v1/bundle/promotion/validate`: lifecycle promotion checks
 - `GET /v1/audit/verify`: tamper-evident audit verification
 - `GET /metrics`: Prometheus metrics (`request_count`, `decision_outcome_count`, `evaluation_latency`)
+
+RBAC endpoint groups when `SENA_API_KEYS` is used:
+- `admin`: all endpoints
+- `policy_author`: `POST /v1/bundle/register`, `POST /v1/bundle/promote`, `POST /v1/bundle/diff`, `POST /v1/bundle/promotion/validate`
+- `evaluator`: `POST /v1/evaluate`, `POST /v1/evaluate/batch`, `POST /v1/simulation`, `POST /v1/integrations/webhook`, `POST /v1/integrations/slack/interactions`
 
 ## Deployment
 ### Docker
