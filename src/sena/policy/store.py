@@ -37,6 +37,12 @@ class StoredBundle:
     release_notes: str | None
     migration_notes: str | None
     validation_artifact: str | None
+    release_manifest_path: str | None
+    signature_verification_strict: bool
+    signature_verified: bool
+    signature_error: str | None
+    signature_key_id: str | None
+    signature_verified_at: str | None
 
 
 class PolicyBundleRepository(Protocol):
@@ -93,6 +99,12 @@ class SQLitePolicyBundleRepository:
         compatibility_notes: str | None = None,
         release_notes: str | None = None,
         migration_notes: str | None = None,
+        release_manifest_path: str | None = None,
+        signature_verification_strict: bool = False,
+        signature_verified: bool = False,
+        signature_error: str | None = None,
+        signature_key_id: str | None = None,
+        signature_verified_at: str | None = None,
     ) -> int:
         created_at = datetime.now(timezone.utc).isoformat()
         digest = self._bundle_digest(rules)
@@ -104,8 +116,10 @@ class SQLitePolicyBundleRepository:
                     INSERT INTO bundles (
                         name, version, release_id, lifecycle, created_at, created_by, creation_reason,
                         source_bundle_id, integrity_digest, compatibility_notes, release_notes, migration_notes
+                        , release_manifest_path, signature_verification_strict, signature_verified,
+                        signature_error, signature_key_id, signature_verified_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         metadata.bundle_name,
@@ -120,6 +134,12 @@ class SQLitePolicyBundleRepository:
                         compatibility_notes,
                         release_notes,
                         migration_notes,
+                        release_manifest_path,
+                        int(signature_verification_strict),
+                        int(signature_verified),
+                        signature_error,
+                        signature_key_id,
+                        signature_verified_at,
                     ),
                 )
             except sqlite3.IntegrityError as exc:
@@ -353,6 +373,12 @@ class SQLitePolicyBundleRepository:
             release_notes=row["release_notes"],
             migration_notes=row["migration_notes"],
             validation_artifact=row["validation_artifact"],
+            release_manifest_path=row["release_manifest_path"],
+            signature_verification_strict=bool(row["signature_verification_strict"]),
+            signature_verified=bool(row["signature_verified"]),
+            signature_error=row["signature_error"],
+            signature_key_id=row["signature_key_id"],
+            signature_verified_at=row["signature_verified_at"],
         )
 
     def _insert_history(

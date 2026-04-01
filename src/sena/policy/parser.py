@@ -126,6 +126,8 @@ def load_policy_bundle(
         for policy_file in sorted(base.glob(pattern)):
             if policy_file.name in {"bundle.yaml", "bundle.yml", "bundle.json"}:
                 continue
+            if policy_file.name == "release-manifest.json":
+                continue
             policy_files.append(policy_file)
 
     if not policy_files:

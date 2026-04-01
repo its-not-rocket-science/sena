@@ -57,6 +57,7 @@ from sena.integrations.slack import (
 )
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
+from sena.policy.release_signing import verify_release_manifest
 from sena.policy.store import SQLitePolicyBundleRepository
 
 try:
@@ -121,6 +122,27 @@ class _EngineState:
         self.connector_registry = build_connector_registry()
         self.jira_connector: JiraConnector | None = None
         self.servicenow_connector: ServiceNowConnector | None = None
+
+
+def _verify_bundle_signature(
+    *,
+    policy_dir: str,
+    manifest_filename: str,
+    keyring_dir: str | None,
+    strict: bool,
+) -> tuple[bool, list[str], str]:
+    manifest_path = Path(policy_dir) / manifest_filename
+    if not manifest_path.exists():
+        if strict:
+            return False, [f"release manifest not found: {manifest_path}"], str(manifest_path)
+        return True, [], str(manifest_path)
+    result = verify_release_manifest(
+        Path(policy_dir),
+        manifest_path=manifest_path,
+        keyring_dir=Path(keyring_dir) if keyring_dir else None,
+        strict=strict,
+    )
+    return result.valid, result.errors, str(manifest_path)
 
 
 class _FixedWindowRateLimiter:
@@ -436,6 +458,14 @@ def create_app(settings: ApiSettings | None = None):
             version=payload.bundle_version or state.settings.bundle_version,
         )
         metadata.lifecycle = payload.lifecycle
+        signature_ok, signature_errors, manifest_path = _verify_bundle_signature(
+            policy_dir=policy_dir,
+            manifest_filename=state.settings.bundle_release_manifest_filename,
+            keyring_dir=state.settings.bundle_signature_keyring_dir,
+            strict=state.settings.bundle_signature_strict,
+        )
+        if state.settings.bundle_signature_strict and not signature_ok:
+            raise_api_error("bundle_signature_verification_failed", details={"errors": signature_errors})
         try:
             bundle_id = state.policy_repo.register_bundle(
                 metadata,
@@ -446,11 +476,20 @@ def create_app(settings: ApiSettings | None = None):
                 compatibility_notes=payload.compatibility_notes,
                 release_notes=payload.release_notes,
                 migration_notes=payload.migration_notes,
+                release_manifest_path=manifest_path,
+                signature_verification_strict=state.settings.bundle_signature_strict,
+                signature_verified=signature_ok,
+                signature_error="; ".join(signature_errors) if signature_errors else None,
             )
         except ValueError as exc:
             raise_api_error("http_bad_request", details={"reason": str(exc)})
 
-        return {"bundle_id": bundle_id, "bundle": metadata.__dict__, "rules_total": len(rules)}
+        return {
+            "bundle_id": bundle_id,
+            "bundle": metadata.__dict__,
+            "rules_total": len(rules),
+            "signature": {"verified": signature_ok, "errors": signature_errors},
+        }
 
     @api_v1.post("/bundle/promote")
     def promote_bundle(payload: BundlePromoteRequest) -> dict[str, Any]:
@@ -472,6 +511,8 @@ def create_app(settings: ApiSettings | None = None):
             source_rules,
             stored_bundle.rules,
             validation_artifact=payload.validation_artifact,
+            signature_verified=stored_bundle.signature_verified,
+            signature_verification_strict=stored_bundle.signature_verification_strict,
         )
         if not validation.valid:
             raise_api_error("promotion_validation_failed", details={"errors": validation.errors})
@@ -915,17 +956,34 @@ def create_app(settings: ApiSettings | None = None):
                 source_rules,
                 bundle.rules,
                 validation_artifact=payload.get("validation_artifact"),
+                signature_verified=bundle.signature_verified,
+                signature_verification_strict=bundle.signature_verification_strict,
             )
             return result.__dict__
 
         source_rules, source_meta = load_policy_bundle(payload["source_policy_dir"])
         target_rules, target_meta = load_policy_bundle(payload["target_policy_dir"])
+        signature_verified = True
+        signature_strict = bool(payload.get("signature_strict", False))
+        if signature_strict:
+            manifest_name = payload.get("manifest_filename", state.settings.bundle_release_manifest_filename)
+            verified, errors, _ = _verify_bundle_signature(
+                policy_dir=payload["target_policy_dir"],
+                manifest_filename=manifest_name,
+                keyring_dir=payload.get("keyring_dir") or state.settings.bundle_signature_keyring_dir,
+                strict=True,
+            )
+            signature_verified = verified
+            if errors and not verified:
+                logger.warning("bundle promotion validation signature errors: %s", errors)
         result = validate_promotion(
             payload.get("source_lifecycle", source_meta.lifecycle),
             payload.get("target_lifecycle", target_meta.lifecycle),
             source_rules,
             target_rules,
             validation_artifact=payload.get("validation_artifact"),
+            signature_verified=signature_verified,
+            signature_verification_strict=signature_strict,
         )
         return result.__dict__
 

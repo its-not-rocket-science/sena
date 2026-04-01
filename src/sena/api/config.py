@@ -34,6 +34,9 @@ class ApiSettings:
     rate_limit_window_seconds: int = 60
     request_max_bytes: int = 1_048_576
     request_timeout_seconds: float = 15.0
+    bundle_release_manifest_filename: str = "release-manifest.json"
+    bundle_signature_strict: bool = False
+    bundle_signature_keyring_dir: str | None = None
 
 
 def _parse_api_keys(raw: str | None) -> tuple[tuple[str, str], ...]:
@@ -105,4 +108,11 @@ def load_settings_from_env() -> ApiSettings:
         request_timeout_seconds=_parse_float(
             os.getenv("SENA_REQUEST_TIMEOUT_SECONDS"), default=15.0
         ),
+        bundle_release_manifest_filename=os.getenv(
+            "SENA_BUNDLE_RELEASE_MANIFEST_FILENAME", "release-manifest.json"
+        ),
+        bundle_signature_strict=_parse_bool(
+            os.getenv("SENA_BUNDLE_SIGNATURE_STRICT"), default=False
+        ),
+        bundle_signature_keyring_dir=os.getenv("SENA_BUNDLE_SIGNATURE_KEYRING_DIR"),
     )

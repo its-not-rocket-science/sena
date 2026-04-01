@@ -15,6 +15,13 @@ from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.examples import DEFAULT_POLICY_DIR
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
+from sena.policy.release_signing import (
+    BundleReleaseManifest,
+    generate_release_manifest,
+    sign_release_manifest,
+    verify_release_manifest,
+    write_release_manifest,
+)
 from sena.policy.store import SQLitePolicyBundleRepository
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
 
@@ -237,10 +244,39 @@ def _registry_repo(sqlite_path: Path) -> SQLitePolicyBundleRepository:
     return repo
 
 
+def _resolve_signature_verification(
+    *,
+    policy_dir: Path,
+    manifest_path: Path | None,
+    keyring_dir: Path | None,
+    strict: bool,
+) -> tuple[bool, list[str], str | None]:
+    path = manifest_path or (policy_dir / "release-manifest.json")
+    if not path.exists():
+        if strict:
+            return False, [f"release manifest not found: {path}"], str(path)
+        return True, [], None
+    result = verify_release_manifest(
+        policy_dir,
+        manifest_path=path,
+        keyring_dir=keyring_dir,
+        strict=strict,
+    )
+    return result.valid, result.errors, str(path)
+
+
 def _run_registry_register(args: argparse.Namespace) -> None:
     repo = _registry_repo(args.sqlite_path)
     rules, metadata = load_policy_bundle(args.policy_dir, bundle_name=args.bundle_name, version=args.bundle_version)
     metadata.lifecycle = args.lifecycle
+    signature_ok, signature_errors, manifest_path = _resolve_signature_verification(
+        policy_dir=args.policy_dir,
+        manifest_path=args.manifest_path,
+        keyring_dir=args.keyring_dir,
+        strict=args.signature_strict,
+    )
+    if args.signature_strict and not signature_ok:
+        raise SystemExit(f"Bundle signature verification failed: {', '.join(signature_errors)}")
     bundle_id = repo.register_bundle(
         metadata,
         rules,
@@ -250,8 +286,22 @@ def _run_registry_register(args: argparse.Namespace) -> None:
         compatibility_notes=args.compatibility_notes,
         release_notes=args.release_notes,
         migration_notes=args.migration_notes,
+        release_manifest_path=manifest_path,
+        signature_verification_strict=args.signature_strict,
+        signature_verified=signature_ok,
+        signature_error="; ".join(signature_errors) if signature_errors else None,
     )
-    print(json.dumps({"bundle_id": bundle_id, "bundle_name": metadata.bundle_name, "version": metadata.version}, indent=2))
+    print(
+        json.dumps(
+            {
+                "bundle_id": bundle_id,
+                "bundle_name": metadata.bundle_name,
+                "version": metadata.version,
+                "signature": {"verified": signature_ok, "errors": signature_errors},
+            },
+            indent=2,
+        )
+    )
 
 
 def _run_registry_history(args: argparse.Namespace) -> None:
@@ -285,10 +335,45 @@ def _run_registry_validate(args: argparse.Namespace) -> None:
                 source_rules,
                 bundle.rules,
                 validation_artifact=args.validation_artifact,
+                signature_verified=bundle.signature_verified,
+                signature_verification_strict=bundle.signature_verification_strict,
             ).__dict__,
             indent=2,
         )
     )
+
+
+def _run_release_generate(args: argparse.Namespace) -> None:
+    manifest = generate_release_manifest(
+        args.policy_dir,
+        bundle_name=args.bundle_name,
+        version=args.bundle_version,
+        key_id=args.key_id,
+        signer_name=args.signer_name,
+        compatibility_notes=args.compatibility_notes,
+        migration_notes=args.migration_notes,
+    )
+    write_release_manifest(manifest, args.output)
+    print(json.dumps({"status": "ok", "manifest_path": str(args.output)}, indent=2))
+
+
+def _run_release_sign(args: argparse.Namespace) -> None:
+    manifest = BundleReleaseManifest.model_validate(json.loads(args.manifest_path.read_text()))
+    signed = sign_release_manifest(manifest, key_path=args.key_file)
+    write_release_manifest(signed, args.output or args.manifest_path)
+    print(json.dumps({"status": "ok", "manifest_path": str(args.output or args.manifest_path)}, indent=2))
+
+
+def _run_release_verify(args: argparse.Namespace) -> None:
+    result = verify_release_manifest(
+        args.policy_dir,
+        manifest_path=args.manifest_path,
+        keyring_dir=args.keyring_dir,
+        strict=args.strict,
+    )
+    print(json.dumps({"valid": result.valid, "errors": result.errors}, indent=2))
+    if not result.valid:
+        raise SystemExit("Manifest verification failed")
 
 
 def _run_registry_promote(args: argparse.Namespace) -> None:
@@ -447,6 +532,9 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     register.add_argument("--compatibility-notes")
     register.add_argument("--release-notes")
     register.add_argument("--migration-notes")
+    register.add_argument("--manifest-path", type=Path)
+    register.add_argument("--keyring-dir", type=Path)
+    register.add_argument("--signature-strict", action="store_true")
     register.set_defaults(handler=_run_registry_register)
 
     history = sub.add_parser("inspect-history")
@@ -491,6 +579,36 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     fetch.set_defaults(handler=_run_registry_fetch)
 
     return parser
+
+
+def _build_release_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="SENA bundle release manifest commands")
+    sub = parser.add_subparsers(dest="release_command", required=True)
+
+    generate = sub.add_parser("generate-manifest")
+    generate.add_argument("--policy-dir", type=Path, required=True)
+    generate.add_argument("--output", type=Path, required=True)
+    generate.add_argument("--bundle-name")
+    generate.add_argument("--bundle-version")
+    generate.add_argument("--key-id", default="unsigned")
+    generate.add_argument("--signer-name")
+    generate.add_argument("--compatibility-notes")
+    generate.add_argument("--migration-notes")
+    generate.set_defaults(handler=_run_release_generate)
+
+    sign = sub.add_parser("sign-manifest")
+    sign.add_argument("--manifest-path", type=Path, required=True)
+    sign.add_argument("--key-file", type=Path, required=True)
+    sign.add_argument("--output", type=Path)
+    sign.set_defaults(handler=_run_release_sign)
+
+    verify = sub.add_parser("verify-manifest")
+    verify.add_argument("--policy-dir", type=Path, required=True)
+    verify.add_argument("--manifest-path", type=Path, required=True)
+    verify.add_argument("--keyring-dir", type=Path)
+    verify.add_argument("--strict", action="store_true")
+    verify.set_defaults(handler=_run_release_verify)
+    return parser
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "policy":
         parser = _build_policy_parser()
@@ -499,6 +617,11 @@ def main() -> None:
         return
     if len(sys.argv) > 1 and sys.argv[1] == "registry":
         parser = _build_registry_parser()
+        args = parser.parse_args(sys.argv[2:])
+        args.handler(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "bundle-release":
+        parser = _build_release_parser()
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return

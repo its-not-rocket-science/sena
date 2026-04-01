@@ -69,6 +69,8 @@ def validate_promotion(
     target_rules: list[PolicyRule],
     *,
     validation_artifact: str | None = None,
+    signature_verified: bool | None = None,
+    signature_verification_strict: bool = False,
 ) -> PromotionValidation:
     transition = validate_lifecycle_transition(source_lifecycle, target_lifecycle)
     errors: list[str] = list(transition.errors)
@@ -87,5 +89,7 @@ def validate_promotion(
         blocking_rules = [rule for rule in target_rules if rule.decision == RuleDecision.BLOCK]
         if not blocking_rules:
             errors.append("active bundle must include at least one BLOCK rule")
+    if target_lifecycle == "active" and signature_verification_strict and not signature_verified:
+        errors.append("active promotion requires a valid signed release manifest in strict mode")
 
     return PromotionValidation(valid=not errors, errors=errors)
