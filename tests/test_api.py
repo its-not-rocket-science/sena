@@ -142,3 +142,55 @@ def test_simulation_endpoint() -> None:
     )
     assert response.status_code == 200
     assert response.json()["total_scenarios"] == 1
+
+
+def test_sqlite_policy_store_mode(tmp_path) -> None:
+    db_path = tmp_path / "policy_registry.db"
+
+    seed_app = create_app(
+        _settings(
+            policy_store_backend="filesystem",
+            policy_store_sqlite_path=str(db_path),
+        )
+    )
+    seed_client = TestClient(seed_app)
+
+    response = seed_client.post(
+        "/v1/bundles/register",
+        json={
+            "policy_dir": "src/sena/examples/policies",
+            "bundle_name": "enterprise-compliance-controls",
+            "bundle_version": "2026.03",
+            "lifecycle": "candidate",
+        },
+    )
+    assert response.status_code == 400
+
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    metadata.lifecycle = "candidate"
+    bundle_id = repo.register_bundle(metadata, rules)
+    repo.set_bundle_lifecycle(bundle_id, "active")
+
+    app = create_app(
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name="enterprise-compliance-controls",
+        )
+    )
+    client = TestClient(app)
+
+    active = client.get("/v1/bundles/active")
+    assert active.status_code == 200
+    assert active.json()["bundle"]["lifecycle"] == "active"
+
+    eval_response = client.post(
+        "/v1/evaluate",
+        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+    )
+    assert eval_response.status_code == 200

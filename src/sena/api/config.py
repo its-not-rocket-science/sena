@@ -20,6 +20,8 @@ class ApiSettings:
     enable_api_key_auth: bool = False
     api_key: str | None = None
     audit_sink_jsonl: str | None = None
+    policy_store_backend: str = "filesystem"
+    policy_store_sqlite_path: str | None = None
 
 
 
@@ -51,4 +53,6 @@ def load_settings_from_env() -> ApiSettings:
         enable_api_key_auth=_parse_bool(os.getenv("SENA_API_KEY_ENABLED"), default=False),
         api_key=os.getenv("SENA_API_KEY"),
         audit_sink_jsonl=os.getenv("SENA_AUDIT_SINK_JSONL"),
+        policy_store_backend=os.getenv("SENA_POLICY_STORE_BACKEND", "filesystem"),
+        policy_store_sqlite_path=os.getenv("SENA_POLICY_STORE_SQLITE_PATH"),
     )
