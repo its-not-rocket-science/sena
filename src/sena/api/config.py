@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
+
+from sena.examples import DEFAULT_POLICY_DIR
 
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -12,9 +13,9 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 class ApiSettings:
     host: str = "0.0.0.0"
     port: int = 8000
-    policy_dir: str = str(Path(__file__).resolve().parents[1] / "examples" / "policies")
-    bundle_name: str = "default-bundle"
-    bundle_version: str = "0.1.0-alpha"
+    policy_dir: str = str(DEFAULT_POLICY_DIR)
+    bundle_name: str = "enterprise-compliance-controls"
+    bundle_version: str = "2026.03"
     log_level: str = "INFO"
     enable_api_key_auth: bool = False
     api_key: str | None = None
@@ -42,10 +43,10 @@ def load_settings_from_env() -> ApiSettings:
         port=_parse_int(os.getenv("SENA_API_PORT"), default=8000),
         policy_dir=os.getenv(
             "SENA_POLICY_DIR",
-            str(Path(__file__).resolve().parents[1] / "examples" / "policies"),
+            str(DEFAULT_POLICY_DIR),
         ),
-        bundle_name=os.getenv("SENA_BUNDLE_NAME", "default-bundle"),
-        bundle_version=os.getenv("SENA_BUNDLE_VERSION", "0.1.0-alpha"),
+        bundle_name=os.getenv("SENA_BUNDLE_NAME", "enterprise-compliance-controls"),
+        bundle_version=os.getenv("SENA_BUNDLE_VERSION", "2026.03"),
         log_level=os.getenv("SENA_LOG_LEVEL", "INFO").upper(),
         enable_api_key_auth=_parse_bool(os.getenv("SENA_API_KEY_ENABLED"), default=False),
         api_key=os.getenv("SENA_API_KEY"),

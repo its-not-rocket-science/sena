@@ -11,6 +11,7 @@ from sena.core.models import ActionProposal, EvaluatorConfig
 from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.explain import format_trace
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
+from sena.examples import DEFAULT_POLICY_DIR
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
@@ -33,17 +34,17 @@ def main() -> None:
     parser.add_argument(
         "--policy-dir",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "examples" / "policies",
+        default=DEFAULT_POLICY_DIR,
         help="Directory containing YAML policy files",
     )
     parser.add_argument(
         "--policy-bundle-name",
-        default="default-bundle",
+        default="enterprise-compliance-controls",
         help="Name for the policy bundle metadata in output",
     )
     parser.add_argument(
         "--bundle-version",
-        default="0.1.0-alpha",
+        default="2026.03",
         help="Version string for the policy bundle metadata in output",
     )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output")

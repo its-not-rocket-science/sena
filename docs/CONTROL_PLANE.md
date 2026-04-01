@@ -6,7 +6,7 @@ This repository now includes a deterministic control-plane wedge for AI-assisted
 
 1. **Policy simulation and impact analysis**
    - Compare baseline vs candidate bundles on fixed scenarios.
-   - CLI: `--compare-policy-dir ... --simulate-scenarios examples/simulation_scenarios.json`
+   - CLI: `--compare-policy-dir ... --simulate-scenarios src/sena/examples/scenarios/simulation_scenarios.json`
    - API: `POST /v1/simulation`
 
 2. **Policy lifecycle and promotion validation**

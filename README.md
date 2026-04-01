@@ -34,9 +34,6 @@ pytest
 ```bash
 python -m sena.cli.main \
   src/sena/examples/scenarios/demo_vendor_payment_block_unverified.json \
-  --policy-dir src/sena/examples/policies \
-  --policy-bundle-name enterprise-demo \
-  --bundle-version 2026.03 \
   --json
 ```
 
@@ -45,7 +42,6 @@ python -m sena.cli.main \
 ### Local
 
 ```bash
-cp .env.example .env
 python -m uvicorn sena.api.app:app --reload
 ```
 
@@ -62,6 +58,24 @@ Versioned endpoints:
 - `GET /v1/audit/verify`
 
 Backward-compatible aliases still exist at `/health`, `/bundle`, `/evaluate`.
+
+### Quickstart (guaranteed working)
+
+The commands below were validated against the checked-in example bundle and scenario paths, without requiring optional API dependencies.
+
+```bash
+# 1) Deterministic CLI evaluation using packaged examples
+PYTHONPATH=src python -m sena.cli.main \
+  src/sena/examples/scenarios/demo_vendor_payment_block_unverified.json \
+  --json
+
+# 2) End-to-end compare + simulation flow on known-good scenarios
+PYTHONPATH=src python -m sena.cli.main \
+  src/sena/examples/scenarios/demo_vendor_payment_block_unverified.json \
+  --compare-policy-dir src/sena/examples/policies \
+  --simulate-scenarios src/sena/examples/scenarios/simulation_scenarios.json \
+  --json
+```
 
 ### Docker
 
