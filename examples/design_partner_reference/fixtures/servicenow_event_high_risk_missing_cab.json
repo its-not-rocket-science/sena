@@ -1,0 +1,34 @@
+{
+  "headers": {
+    "X-ServiceNow-Delivery-Id": "sn-delivery-1001"
+  },
+  "payload": {
+    "event_type": "change_approval.requested",
+    "source_system": "servicenow",
+    "requested_action": "approve_change_request",
+    "service_tier": "tier0",
+    "environment": "production",
+    "risk": {
+      "score": 97
+    },
+    "flags": {
+      "privileged": true,
+      "emergency": false
+    },
+    "requested_by": {
+      "user_id": "u.change.001",
+      "role": "site_reliability_engineer"
+    },
+    "change_request": {
+      "number": "CHG0091001",
+      "sys_id": "f4eaf8fb1b552010ba2d55368b4bcbee",
+      "table": "change_request",
+      "stage": "awaiting_approval"
+    },
+    "cab_review": {
+      "evidence_id": null
+    },
+    "approver_chain": null
+  },
+  "raw_body": ""
+}

@@ -1,0 +1,37 @@
+{
+  "headers": {
+    "X-ServiceNow-Delivery-Id": "sn-delivery-1002"
+  },
+  "payload": {
+    "event_type": "change_approval.requested",
+    "source_system": "servicenow",
+    "requested_action": "approve_change_request",
+    "service_tier": "tier2",
+    "environment": "production",
+    "risk": {
+      "score": 40
+    },
+    "flags": {
+      "privileged": false,
+      "emergency": false
+    },
+    "requested_by": {
+      "user_id": "u.change.002",
+      "role": "release_manager"
+    },
+    "change_request": {
+      "number": "CHG0091002",
+      "sys_id": "e11d03f45d9f1010ba2d55368b4bcf77",
+      "table": "change_request",
+      "stage": "awaiting_approval"
+    },
+    "cab_review": {
+      "evidence_id": "CAB-REV-6621"
+    },
+    "approver_chain": [
+      "ops_manager",
+      "security_oncall"
+    ]
+  },
+  "raw_body": ""
+}

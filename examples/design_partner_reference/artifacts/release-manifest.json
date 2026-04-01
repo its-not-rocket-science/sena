@@ -1,0 +1,23 @@
+{
+  "schema_version": "1",
+  "bundle_name": "acme-change-governance",
+  "version": "2026.04.0",
+  "created_at": "2026-04-01T14:51:32.334103+00:00",
+  "file_digests": [
+    {
+      "path": "rules.yaml",
+      "sha256": "d3bfce7f1a837c7850acdf7ca44972f40158e653cb695672ebf8799950f07ab5",
+      "size_bytes": 1687
+    }
+  ],
+  "aggregate_sha256": "e93cd6892690357cf7cc6e694bc61af4653ca7d11894b57ee23234770142ec7d",
+  "signer": {
+    "key_id": "design-partner-ops",
+    "algorithm": "hmac-sha256",
+    "signed_at": "2026-04-01T14:51:32.334593+00:00",
+    "signature": "0eef821afc680e2cfc038cbcbbe58861fa0346dc607434521bf105567acfc187",
+    "signer": "acme-risk-ops"
+  },
+  "compatibility_notes": "Validated against SENA supported schema v1 and runtime compatibility range.",
+  "migration_notes": "Promotion from candidate after simulation gate approval."
+}

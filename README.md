@@ -258,6 +258,16 @@ SENA supports a first-class ServiceNow change approval integration for enterpris
 - Endpoint: `POST /v1/integrations/servicenow/webhook`
 - Mapping config env: `SENA_SERVICENOW_MAPPING_CONFIG`
 - Example mapping: `src/sena/examples/integrations/servicenow_mappings.yaml`
+
+### Design-partner reference implementation (end-to-end)
+
+Run a cohesive, local, depth-first reference scenario that covers integration normalization, policy lifecycle promotion, signed release verification, simulation gates, audit sink output, and decision review package generation:
+
+```bash
+PYTHONPATH=src python examples/design_partner_reference/run_reference.py
+```
+
+Guide: `examples/design_partner_reference/README.md`
 - Full runbook: `docs/integrations/SERVICENOW.md`
 
 ### Slack human-escalation integration
