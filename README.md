@@ -75,6 +75,8 @@ Versioned endpoints:
 - `POST /v1/simulation`
 - `POST /v1/bundle/diff`
 - `POST /v1/bundle/promotion/validate`
+- `POST /v1/bundle/register`
+- `POST /v1/bundle/promote`
 - `GET /v1/audit/verify`
 
 Backward-compatible aliases still exist at `/health`, `/bundle`, `/evaluate`.
@@ -93,12 +95,18 @@ export SENA_POLICY_STORE_SQLITE_PATH=./.data/policy_registry.db
 export SENA_BUNDLE_NAME=enterprise-compliance-controls
 python -m uvicorn sena.api.app:app --reload
 
-# 3) Register and activate a bundle
-curl -X POST http://127.0.0.1:8000/v1/bundles/register \
+# 3) Register and promote a bundle through lifecycle states
+curl -X POST http://127.0.0.1:8000/v1/bundle/register \
   -H 'content-type: application/json' \
-  -d '{"policy_dir":"src/sena/examples/policies","bundle_name":"enterprise-compliance-controls","bundle_version":"2026.03","lifecycle":"candidate"}'
+  -d '{"policy_dir":"src/sena/examples/policies","bundle_name":"enterprise-compliance-controls","bundle_version":"2026.03","lifecycle":"draft"}'
 
-curl -X POST http://127.0.0.1:8000/v1/bundles/1/activate
+curl -X POST http://127.0.0.1:8000/v1/bundle/promote \
+  -H 'content-type: application/json' \
+  -d '{"bundle_id":1,"target_lifecycle":"candidate"}'
+
+curl -X POST http://127.0.0.1:8000/v1/bundle/promote \
+  -H 'content-type: application/json' \
+  -d '{"bundle_id":1,"target_lifecycle":"active"}'
 
 # 4) Inspect currently active bundle
 curl http://127.0.0.1:8000/v1/bundles/active

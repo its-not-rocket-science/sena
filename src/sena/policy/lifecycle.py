@@ -28,6 +28,27 @@ class PromotionValidation:
     errors: list[str]
 
 
+def validate_lifecycle_transition(source_lifecycle: str, target_lifecycle: str) -> PromotionValidation:
+    errors: list[str] = []
+
+    if source_lifecycle not in LIFECYCLE_ORDER:
+        errors.append(f"unsupported source lifecycle '{source_lifecycle}'")
+    if target_lifecycle not in LIFECYCLE_ORDER:
+        errors.append(f"unsupported target lifecycle '{target_lifecycle}'")
+
+    if errors:
+        return PromotionValidation(valid=False, errors=errors)
+
+    if source_lifecycle == target_lifecycle:
+        errors.append("lifecycle transition requires a new target state")
+    elif LIFECYCLE_ORDER[target_lifecycle] < LIFECYCLE_ORDER[source_lifecycle]:
+        errors.append("lifecycle cannot move backwards")
+    elif LIFECYCLE_ORDER[target_lifecycle] - LIFECYCLE_ORDER[source_lifecycle] > 1:
+        errors.append("lifecycle cannot skip states")
+
+    return PromotionValidation(valid=not errors, errors=errors)
+
+
 def _rule_fingerprint(rule: PolicyRule) -> tuple:
     return (
         rule.description,
@@ -60,15 +81,8 @@ def validate_promotion(
     source_rules: list[PolicyRule],
     target_rules: list[PolicyRule],
 ) -> PromotionValidation:
-    errors: list[str] = []
-
-    if source_lifecycle not in LIFECYCLE_ORDER:
-        errors.append(f"unsupported source lifecycle '{source_lifecycle}'")
-    if target_lifecycle not in LIFECYCLE_ORDER:
-        errors.append(f"unsupported target lifecycle '{target_lifecycle}'")
-
-    if not errors and LIFECYCLE_ORDER[target_lifecycle] < LIFECYCLE_ORDER[source_lifecycle]:
-        errors.append("lifecycle cannot move backwards")
+    transition = validate_lifecycle_transition(source_lifecycle, target_lifecycle)
+    errors: list[str] = list(transition.errors)
 
     diff = diff_rule_sets(source_rules, target_rules)
     if target_lifecycle == "active" and not (diff.added_rule_ids or diff.changed_rule_ids):

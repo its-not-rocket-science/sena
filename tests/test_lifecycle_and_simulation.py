@@ -2,7 +2,7 @@ import json
 
 from sena.core.models import PolicyBundleMetadata
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
-from sena.policy.lifecycle import diff_rule_sets, validate_promotion
+from sena.policy.lifecycle import diff_rule_sets, validate_lifecycle_transition, validate_promotion
 from sena.policy.parser import load_policy_bundle
 
 
@@ -16,7 +16,7 @@ def test_diff_and_promotion_validation(tmp_path) -> None:
         "bundle_name: source\nversion: 1\nlifecycle: draft\n"
     )
     target.joinpath("bundle.yaml").write_text(
-        "bundle_name: target\nversion: 2\nlifecycle: active\n"
+        "bundle_name: target\nversion: 2\nlifecycle: candidate\n"
     )
 
     source.joinpath("policy.yaml").write_text(
@@ -59,10 +59,14 @@ def test_diff_and_promotion_validation(tmp_path) -> None:
     assert diff.added_rule_ids == ["block_large"]
     assert diff.changed_rule_ids == ["allow_small"]
 
-    promotion = validate_promotion(
-        source_meta.lifecycle, target_meta.lifecycle, source_rules, target_rules
-    )
+    promotion = validate_promotion(source_meta.lifecycle, target_meta.lifecycle, source_rules, target_rules)
     assert promotion.valid is True
+
+
+def test_lifecycle_transition_disallows_skip_and_backwards() -> None:
+    assert validate_lifecycle_transition("draft", "active").valid is False
+    assert validate_lifecycle_transition("active", "candidate").valid is False
+    assert validate_lifecycle_transition("draft", "candidate").valid is True
 
 
 def test_simulation_impact_changes_are_reported() -> None:

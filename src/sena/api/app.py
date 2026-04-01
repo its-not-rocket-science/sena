@@ -12,6 +12,8 @@ from sena.api.logging import configure_logging
 from sena.api.schemas import (
     BatchEvaluateRequest,
     BundleInfo,
+    BundlePromoteRequest,
+    BundleRegisterRequest,
     EvaluateRequest,
     HealthResponse,
     ReadinessResponse,
@@ -176,39 +178,50 @@ def create_app(settings: ApiSettings | None = None):
             "actions_covered": applies_to,
         }
 
-    @api_v1.post("/bundles/register")
-    def register_bundle(payload: dict[str, Any]) -> dict[str, Any]:
+    @api_v1.post("/bundle/register")
+    def register_bundle(payload: BundleRegisterRequest) -> dict[str, Any]:
         if state.policy_repo is None:
             raise HTTPException(status_code=400, detail="policy store backend is not sqlite")
 
-        policy_dir = payload.get("policy_dir", state.settings.policy_dir)
+        policy_dir = payload.policy_dir or state.settings.policy_dir
         rules, metadata = load_policy_bundle(
             policy_dir,
-            bundle_name=payload.get("bundle_name", state.settings.bundle_name),
-            version=payload.get("bundle_version", state.settings.bundle_version),
+            bundle_name=payload.bundle_name or state.settings.bundle_name,
+            version=payload.bundle_version or state.settings.bundle_version,
         )
-        if "lifecycle" in payload:
-            metadata.lifecycle = payload["lifecycle"]
+        metadata.lifecycle = payload.lifecycle
         bundle_id = state.policy_repo.register_bundle(metadata, rules)
         return {"bundle_id": bundle_id, "bundle": metadata.__dict__, "rules_total": len(rules)}
 
-    @api_v1.post("/bundles/{bundle_id}/activate")
-    def activate_bundle(bundle_id: int) -> dict[str, str]:
+    @api_v1.post("/bundle/promote")
+    def promote_bundle(payload: BundlePromoteRequest) -> dict[str, Any]:
         if state.policy_repo is None:
             raise HTTPException(status_code=400, detail="policy store backend is not sqlite")
-        state.policy_repo.set_bundle_lifecycle(bundle_id, "active")
+
+        stored_bundle = state.policy_repo.get_bundle(payload.bundle_id)
+        if stored_bundle is None:
+            raise HTTPException(status_code=404, detail=f"bundle id '{payload.bundle_id}' not found")
+
+        source_rules = stored_bundle.rules
+        if payload.target_lifecycle == "active":
+            current_active = state.policy_repo.get_active_bundle(stored_bundle.metadata.bundle_name)
+            source_rules = current_active.rules if current_active is not None else []
+
+        validation = validate_promotion(
+            stored_bundle.metadata.lifecycle,
+            payload.target_lifecycle,
+            source_rules,
+            stored_bundle.rules,
+        )
+        if not validation.valid:
+            raise HTTPException(status_code=400, detail={"errors": validation.errors})
+
+        state.policy_repo.set_bundle_lifecycle(payload.bundle_id, payload.target_lifecycle)
         active = state.policy_repo.get_active_bundle(state.settings.bundle_name)
         if active is not None:
             state.rules = active.rules
             state.metadata = active.metadata
-        return {"status": "ok"}
-
-    @api_v1.post("/bundles/{bundle_id}/deprecate")
-    def deprecate_bundle(bundle_id: int) -> dict[str, str]:
-        if state.policy_repo is None:
-            raise HTTPException(status_code=400, detail="policy store backend is not sqlite")
-        state.policy_repo.set_bundle_lifecycle(bundle_id, "deprecated")
-        return {"status": "ok"}
+        return {"status": "ok", "bundle_id": payload.bundle_id, "lifecycle": payload.target_lifecycle}
 
     @api_v1.get("/bundles/active")
     def get_active_bundle(bundle_name: str | None = None) -> dict[str, Any]:
