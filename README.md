@@ -17,8 +17,8 @@ SENA is explicitly designed to outperform embedding approval rules directly insi
 ## Current maturity focus
 
 We are prioritizing depth to move from alpha toward enterprise-credible pilots:
-- 1–2 killer integrations (Stripe webhook decisioning, Jira approval-gating webhook, + Slack human escalation loop),
-- a defensible policy lifecycle (diff/simulation/promotion gates),
+- deterministic policy evaluation + lifecycle controls,
+- cross-system normalization for **Jira + ServiceNow** approval workflows,
 - failure-mode and migration testing,
 - durable audit + persistence guarantees.
 
@@ -121,8 +121,6 @@ Versioned endpoints:
 - `GET /v1/bundle`
 - `GET /v1/bundle/inspect`
 - `POST /v1/evaluate`
-- `POST /v1/integrations/webhook`
-- `POST /v1/integrations/slack/interactions`
 - `POST /v1/integrations/jira/webhook`
 - `POST /v1/integrations/servicenow/webhook`
 - `POST /v1/evaluate/batch`
@@ -133,6 +131,10 @@ Versioned endpoints:
 - `POST /v1/bundle/promote`
 - `GET /v1/audit/verify`
 - `GET /metrics` (Prometheus exposition)
+
+Experimental endpoints (supported for evaluation only; subject to change without backward-compatibility guarantees):
+- `POST /v1/integrations/webhook`
+- `POST /v1/integrations/slack/interactions`
 
 ### API versioning policy
 
@@ -218,9 +220,9 @@ curl http://127.0.0.1:8000/v1/bundles/active
 ```
 
 
-### Webhook integration layer
+### Experimental: generic webhook integration layer
 
-Use `POST /v1/integrations/webhook` to ingest external events (for example Stripe, Jira, or payment gateways), map them to an `ActionProposal`, and receive SENA decision output plus reasoning in one call.
+Use `POST /v1/integrations/webhook` to ingest external events (for example Stripe or payment gateways), map them to an `ActionProposal`, and receive SENA decision output plus reasoning in one call.
 
 Configure webhook mappings with `SENA_WEBHOOK_MAPPING_CONFIG` pointing to a JSON file.
 
@@ -270,7 +272,7 @@ PYTHONPATH=src python examples/design_partner_reference/run_reference.py
 Guide: `examples/design_partner_reference/README.md`
 - Full runbook: `docs/integrations/SERVICENOW.md`
 
-### Slack human-escalation integration
+### Experimental: Slack human-escalation integration
 
 SENA can automatically post Slack approval cards when a policy decision results in `ESCALATE_FOR_HUMAN_REVIEW`.
 
@@ -365,8 +367,10 @@ The API image is production-oriented: slim base image, dedicated non-root user, 
 - Control plane capabilities and alpha boundaries: `docs/CONTROL_PLANE.md`
 - Operations/deployment: `docs/OPERATIONS.md`
 - Deployment profiles (dev/pilot/production-like): `docs/DEPLOYMENT_PROFILES.md`
+- Integration runbooks (supported): `docs/integrations/JIRA.md`, `docs/integrations/SERVICENOW.md`
 - Legacy migration boundary: `docs/MIGRATION.md`
 - Gap analysis: `ENTERPRISE_GAP_ANALYSIS.md`
+- Repo hardening decisions: `docs/REPO_HARDENING_SUMMARY.md`
 - Changelog: `CHANGELOG.md`
 
 ## Alpha honesty

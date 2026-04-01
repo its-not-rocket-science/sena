@@ -125,6 +125,11 @@ Supported product path:
 - `src/sena/engine/*`
 - `src/sena/api/*`
 - `src/sena/cli/*`
+- Integration runbooks in scope: Jira + ServiceNow (`/v1/integrations/jira/webhook`, `/v1/integrations/servicenow/webhook`)
 
 Legacy/historical path (not supported for enterprise use):
 - `src/sena/legacy/*`
+
+Experimental integration surfaces (evaluation-only, no compatibility guarantees):
+- `/v1/integrations/webhook`
+- `/v1/integrations/slack/interactions`

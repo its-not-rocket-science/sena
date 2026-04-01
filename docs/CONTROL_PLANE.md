@@ -10,7 +10,7 @@ This repository now includes a deterministic control-plane wedge for AI-assisted
    - CLI: `--compare-policy-dir ... --simulate-scenarios src/sena/examples/scenarios/simulation_scenarios.json`
    - API: `POST /v1/simulation`
 
-2. **Cross-system normalized approval model + portable policy packs**
+2. **Cross-system normalized approval model + portable policy packs (supported depth)**
    - Jira and ServiceNow connectors normalize events into the same `NormalizedApprovalEvent` contract.
    - Policy bundles target normalized attributes (not vendor-specific payload fields), enabling portability.
    - Example portable pack: `src/sena/examples/policy_packs/portable_vendor_approvals`.
@@ -39,6 +39,16 @@ This repository now includes a deterministic control-plane wedge for AI-assisted
 7. **API hardening and scale wedge**
    - Batch evaluation endpoint: `POST /v1/evaluate/batch` (up to 500 requests).
    - Bundle inspection endpoint: `GET /v1/bundle/inspect`.
+
+## Surface boundaries (hardening pass)
+
+Supported integration depth:
+- `POST /v1/integrations/jira/webhook`
+- `POST /v1/integrations/servicenow/webhook`
+
+Experimental integration endpoints (evaluation-only):
+- `POST /v1/integrations/webhook`
+- `POST /v1/integrations/slack/interactions`
 
 ## Alpha limitations (explicit)
 
