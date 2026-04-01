@@ -1,0 +1,31 @@
+{
+  "schema_version": "1",
+  "source_system": "partner",
+  "source_event_type": "approval.requested",
+  "source_object_type": "ticket",
+  "source_object_id": "T-100",
+  "workflow_stage": "requested",
+  "requested_action": "approve_vendor_payment",
+  "actor": {
+    "actor_id": "user-1",
+    "actor_role": "analyst"
+  },
+  "request_id": "REQ-1",
+  "event_timestamp": "<timestamp>",
+  "attributes": {
+    "amount": 75,
+    "currency": "USD"
+  },
+  "risk_attributes": {
+    "risk_score": 80
+  },
+  "evidence_references": [
+    "doc-1",
+    "doc-2"
+  ],
+  "correlation_key": "T-100",
+  "idempotency_key": "idem-1",
+  "source_metadata": {
+    "source_delivery_id": "delivery-9"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "added_rule_ids": [
+    "new_block"
+  ],
+  "removed_rule_ids": [],
+  "changed_rule_ids": [
+    "stable_allow"
+  ]
+}

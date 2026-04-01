@@ -1,0 +1,7 @@
+bundle_name: enterprise-demo
+version: 2025.09
+lifecycle: candidate
+owner: governance
+schema_version: "1"
+context_schema:
+  amount: int

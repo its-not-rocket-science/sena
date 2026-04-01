@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "Missing or invalid API key",
+    "request_id": "req-golden",
+    "timestamp": "<timestamp>"
+  }
+}
