@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from sena import __version__ as SENA_VERSION
-from sena.audit.chain import verify_audit_chain
+from sena.audit.chain import locate_decision_in_audit, summarize_audit_chain, verify_audit_chain
 from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig
 from sena.engine.evaluator import PolicyEvaluator
@@ -552,6 +552,26 @@ def _run_registry_restore(args: argparse.Namespace) -> None:
     except DisasterRecoveryError as exc:
         raise SystemExit(str(exc)) from exc
     print(json.dumps({"status": "ok", "checks": result.checks}, indent=2))
+
+
+def _run_audit_verify(args: argparse.Namespace) -> None:
+    result = verify_audit_chain(str(args.audit_path))
+    print(json.dumps(result, indent=2))
+    if not result.get("valid", False):
+        raise SystemExit("Audit verification failed")
+
+
+def _run_audit_summarize(args: argparse.Namespace) -> None:
+    print(json.dumps(summarize_audit_chain(str(args.audit_path)), indent=2))
+
+
+def _run_audit_locate_decision(args: argparse.Namespace) -> None:
+    result = locate_decision_in_audit(str(args.audit_path), args.decision_id)
+    print(json.dumps(result, indent=2))
+    if not result.get("found", False):
+        raise SystemExit("Decision not found in audit chain")
+
+
 def _build_evaluate_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -793,6 +813,25 @@ def _build_release_parser() -> argparse.ArgumentParser:
     verify.add_argument("--strict", action="store_true")
     verify.set_defaults(handler=_run_release_verify)
     return parser
+
+
+def _build_audit_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="SENA audit chain operational commands")
+    parser.add_argument("--audit-path", type=Path, required=True, help="Path to active JSONL audit sink")
+    sub = parser.add_subparsers(dest="audit_command", required=True)
+
+    verify = sub.add_parser("verify", help="Verify full chain integrity across rotated segments")
+    verify.set_defaults(handler=_run_audit_verify)
+
+    summarize = sub.add_parser("summarize", help="Summarize chain/manifest status")
+    summarize.set_defaults(handler=_run_audit_summarize)
+
+    locate = sub.add_parser("locate-decision", help="Locate a specific decision id within audit chain")
+    locate.add_argument("decision_id")
+    locate.set_defaults(handler=_run_audit_locate_decision)
+    return parser
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "policy":
         parser = _build_policy_parser()
@@ -806,6 +845,11 @@ def main() -> None:
         return
     if len(sys.argv) > 1 and sys.argv[1] == "bundle-release":
         parser = _build_release_parser()
+        args = parser.parse_args(sys.argv[2:])
+        args.handler(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "audit":
+        parser = _build_audit_parser()
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return

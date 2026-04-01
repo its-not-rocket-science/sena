@@ -75,6 +75,7 @@ SENA startup now fails for the following classes of misconfiguration:
 ### Audit sink
 
 - `SENA_AUDIT_SINK_JSONL`: file path to append audit records
+- `SENA_AUDIT_VERIFY_ON_STARTUP_STRICT`: when `true`, startup runs full chain verification across rotated segments and fails closed on corruption/mismatch
 
 ### Integrations
 
@@ -195,3 +196,19 @@ python -m sena.cli.main registry --sqlite-path /var/lib/sena/policy-registry.db 
 ```
 
 On any verification failure, restore exits non-zero and includes machine-parseable check output.
+
+## 11) Audit operations (pilot-grade)
+
+Use the audit CLI for operator workflows:
+
+```bash
+python -m sena.cli.main audit --audit-path /var/log/sena/audit.jsonl verify
+python -m sena.cli.main audit --audit-path /var/log/sena/audit.jsonl summarize
+python -m sena.cli.main audit --audit-path /var/log/sena/audit.jsonl locate-decision dec_abc123
+```
+
+- `verify`: validates chain continuity, storage sequence continuity, manifest integrity, and rotated-segment consistency.
+- `summarize`: quick status, record counts, head hash, segment count, and first/last decision ids.
+- `locate-decision`: finds the decision id and returns record index, segment location, sequence number, and chain links for rapid incident triage.
+
+Corruption diagnostics are precise and actionable, with record and segment identifiers (for example: malformed record location, missing segment file, manifest sequence mismatch).

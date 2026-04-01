@@ -37,6 +37,7 @@ class ApiSettings:
     bundle_release_manifest_filename: str = "release-manifest.json"
     bundle_signature_strict: bool = False
     bundle_signature_keyring_dir: str | None = None
+    audit_verify_on_startup_strict: bool = False
 
 
 def _parse_api_keys(raw: str | None) -> tuple[tuple[str, str], ...]:
@@ -115,4 +116,7 @@ def load_settings_from_env() -> ApiSettings:
             os.getenv("SENA_BUNDLE_SIGNATURE_STRICT"), default=False
         ),
         bundle_signature_keyring_dir=os.getenv("SENA_BUNDLE_SIGNATURE_KEYRING_DIR"),
+        audit_verify_on_startup_strict=_parse_bool(
+            os.getenv("SENA_AUDIT_VERIFY_ON_STARTUP_STRICT"), default=False
+        ),
     )

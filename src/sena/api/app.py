@@ -38,6 +38,11 @@ def create_app(settings: ApiSettings | None = None):
         raise RuntimeError("SENA_REQUEST_TIMEOUT_SECONDS must be greater than 0")
 
     rules, metadata, policy_repo = load_runtime_bundle(runtime_settings)
+    if runtime_settings.audit_verify_on_startup_strict and runtime_settings.audit_sink_jsonl:
+        verification = verify_audit_chain(runtime_settings.audit_sink_jsonl)
+        if not verification.get("valid", False):
+            detail = "; ".join(verification.get("errors", [])) or verification.get("error", "unknown error")
+            raise RuntimeError(f"Startup audit verification failed for {runtime_settings.audit_sink_jsonl}: {detail}")
 
     app = FastAPI(title="SENA Compliance Engine API", version=SENA_VERSION)
     state = build_runtime_state(runtime_settings, rules, metadata, policy_repo)

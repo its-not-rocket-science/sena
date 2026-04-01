@@ -238,6 +238,33 @@ def test_bundle_release_manifest_commands(tmp_path) -> None:
     verify.check_returncode()
 
 
+def test_audit_commands_verify_summarize_locate(tmp_path) -> None:
+    from sena.audit.chain import append_audit_record
+    from sena.audit.sinks import JsonlFileAuditSink, RotationPolicy
+
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=280))
+    append_audit_record(sink, {"decision_id": "dec-1", "outcome": "APPROVED"})
+    append_audit_record(sink, {"decision_id": "dec-2", "outcome": "BLOCKED"})
+    append_audit_record(sink, {"decision_id": "dec-3", "outcome": "ESCALATE"})
+
+    verify = _run_cli(["audit", "--audit-path", str(tmp_path / "audit.jsonl"), "verify"])
+    verify.check_returncode()
+    verify_payload = json.loads(verify.stdout)
+    assert verify_payload["valid"] is True
+
+    summarize = _run_cli(["audit", "--audit-path", str(tmp_path / "audit.jsonl"), "summarize"])
+    summarize.check_returncode()
+    summary_payload = json.loads(summarize.stdout)
+    assert summary_payload["segment_count"] >= 1
+    assert summary_payload["last_decision_id"] == "dec-3"
+
+    locate = _run_cli(["audit", "--audit-path", str(tmp_path / "audit.jsonl"), "locate-decision", "dec-2"])
+    locate.check_returncode()
+    locate_payload = json.loads(locate.stdout)
+    assert locate_payload["found"] is True
+    assert locate_payload["decision_id"] == "dec-2"
+
+
 def test_policy_schema_migration_commands(tmp_path) -> None:
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()

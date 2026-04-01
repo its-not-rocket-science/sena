@@ -142,3 +142,30 @@ def test_partial_write_line_is_detected(tmp_path) -> None:
     result = verify_audit_chain(sink)
     assert result["valid"] is False
     assert any("malformed_record" in err for err in result["errors"])
+
+
+def test_manifest_next_sequence_mismatch_is_detected(tmp_path) -> None:
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    for i in range(3):
+        append_audit_record(sink, {"decision_id": f"d{i}", "outcome": "APPROVED"})
+
+    manifest = tmp_path / "audit.jsonl.manifest.json"
+    payload = json.loads(manifest.read_text())
+    payload["next_sequence"] = 99
+    manifest.write_text(json.dumps(payload))
+
+    broken = verify_audit_chain(sink)
+    assert broken["valid"] is False
+    assert any("manifest_next_sequence_mismatch" in err for err in broken["errors"])
+
+
+def test_rotation_manifest_contains_archive_metadata(tmp_path) -> None:
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    for i in range(4):
+        append_audit_record(sink, {"decision_id": f"d{i}", "outcome": "APPROVED"})
+
+    manifest = json.loads((tmp_path / "audit.jsonl.manifest.json").read_text())
+    assert manifest["segments"]
+    first_segment = manifest["segments"][0]
+    assert first_segment["archive"]["archive_status"] == "local_rotated"
+    assert first_segment["archive"]["archive_class"] == "warm"

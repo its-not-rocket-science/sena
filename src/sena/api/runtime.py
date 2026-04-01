@@ -203,6 +203,8 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
             raise RuntimeError(
                 "SENA_RUNTIME_MODE=production requires SENA_JIRA_WEBHOOK_SECRET when Jira integration is enabled"
             )
+    if runtime_settings.audit_verify_on_startup_strict and not runtime_settings.audit_sink_jsonl:
+        raise RuntimeError("SENA_AUDIT_VERIFY_ON_STARTUP_STRICT=true requires SENA_AUDIT_SINK_JSONL")
 
 
 def build_runtime_state(
