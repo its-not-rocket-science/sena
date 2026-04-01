@@ -7,8 +7,12 @@ rule evaluation from sena.engine.evaluator.
 from __future__ import annotations
 
 import warnings
+from typing import TYPE_CHECKING
 
 __all__ = ["SENA", "TrainingHistory"]
+
+if TYPE_CHECKING:
+    from sena.legacy.orchestrator.sena import SENA, TrainingHistory
 
 
 def __getattr__(name: str):

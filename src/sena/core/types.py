@@ -8,8 +8,12 @@ path and may be removed in a future release.
 from __future__ import annotations
 
 import warnings
+from typing import TYPE_CHECKING
 
 __all__ = ["Rule", "Trace", "Genome", "WorkingMemory"]
+
+if TYPE_CHECKING:
+    from sena.legacy.core.types import Genome, Rule, Trace, WorkingMemory
 
 
 def __getattr__(name: str):
