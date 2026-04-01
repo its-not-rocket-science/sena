@@ -10,7 +10,8 @@ from typing import Any, Protocol
 
 from sena.core.enums import RuleDecision, Severity
 from sena.core.models import PolicyBundleMetadata, PolicyRule
-
+from sena.policy.migrations import SQLiteMigrationManager
+from sena.policy.persistence_models import BundleHistoryRow, BundleRow
 
 ALLOWED_TRANSITIONS: set[tuple[str, str]] = {
     ("draft", "candidate"),
@@ -46,16 +47,37 @@ class StoredBundle:
 
 
 class PolicyBundleRepository(Protocol):
-    def register_bundle(self, metadata: PolicyBundleMetadata, rules: list[PolicyRule]) -> int: ...
+    def initialize(self) -> None: ...
+
+    def register_bundle(self, metadata: PolicyBundleMetadata, rules: list[PolicyRule], **kwargs: Any) -> int: ...
+
+    def transition_bundle(self, bundle_id: int, target_lifecycle: str, **kwargs: Any) -> None: ...
+
+    def rollback_bundle(
+        self,
+        bundle_name: str,
+        to_bundle_id: int,
+        *,
+        promoted_by: str,
+        promotion_reason: str,
+        validation_artifact: str,
+    ) -> None: ...
 
     def get_active_bundle(self, bundle_name: str) -> StoredBundle | None: ...
 
     def get_bundle(self, bundle_id: int) -> StoredBundle | None: ...
 
+    def get_bundle_by_version(self, bundle_name: str, version: str) -> StoredBundle | None: ...
+
+    def get_history(self, bundle_name: str) -> list[dict[str, Any]]: ...
+
 
 class SQLitePolicyBundleRepository:
     def __init__(self, db_path: str):
         self.db_path = db_path
+        self._migration_manager = SQLiteMigrationManager(
+            Path(__file__).resolve().parents[3] / "scripts" / "migrations"
+        )
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -65,27 +87,24 @@ class SQLitePolicyBundleRepository:
         return conn
 
     def initialize(self) -> None:
-        migrations_dir = Path(__file__).resolve().parents[3] / "scripts" / "migrations"
         with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS schema_migrations (
-                    name TEXT PRIMARY KEY,
-                    applied_at TEXT NOT NULL
-                )
-                """
-            )
-            applied = {
-                row["name"]
-                for row in conn.execute("SELECT name FROM schema_migrations").fetchall()
-            }
-            for migration_path in sorted(migrations_dir.glob("*.sql")):
-                if migration_path.name in applied:
+            self._migration_manager.initialize_table(conn)
+            applied_versions = self._migration_manager.applied_versions(conn)
+            for migration in self._migration_manager.discover():
+                if migration.version in applied_versions:
                     continue
-                conn.executescript(migration_path.read_text())
+                conn.executescript(migration.sql)
                 conn.execute(
-                    "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
-                    (migration_path.name, datetime.now(timezone.utc).isoformat()),
+                    """
+                    INSERT INTO schema_migrations (version, name, checksum, applied_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        migration.version,
+                        migration.name,
+                        migration.checksum,
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
                 )
 
     def register_bundle(
@@ -115,8 +134,8 @@ class SQLitePolicyBundleRepository:
                     """
                     INSERT INTO bundles (
                         name, version, release_id, lifecycle, created_at, created_by, creation_reason,
-                        source_bundle_id, integrity_digest, compatibility_notes, release_notes, migration_notes
-                        , release_manifest_path, signature_verification_strict, signature_verified,
+                        source_bundle_id, integrity_digest, compatibility_notes, release_notes, migration_notes,
+                        release_manifest_path, signature_verification_strict, signature_verified,
                         signature_error, signature_key_id, signature_verified_at
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -162,14 +181,17 @@ class SQLitePolicyBundleRepository:
             )
             self._insert_history(
                 conn,
-                bundle_id=bundle_id,
-                action="register",
-                from_lifecycle=None,
-                to_lifecycle=metadata.lifecycle,
-                actor=created_by,
-                reason=creation_reason or "initial registration",
-                replaced_bundle_id=None,
-                validation_artifact=None,
+                BundleHistoryRow(
+                    bundle_id=bundle_id,
+                    action="register",
+                    from_lifecycle=None,
+                    to_lifecycle=metadata.lifecycle,
+                    actor=created_by,
+                    reason=creation_reason or "initial registration",
+                    replaced_bundle_id=None,
+                    validation_artifact=None,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                ),
             )
             return bundle_id
 
@@ -204,14 +226,17 @@ class SQLitePolicyBundleRepository:
                     conn.execute("UPDATE bundles SET lifecycle = 'deprecated' WHERE id = ?", (replaced_bundle_id,))
                     self._insert_history(
                         conn,
-                        bundle_id=replaced_bundle_id,
-                        action="auto_deprecate",
-                        from_lifecycle="active",
-                        to_lifecycle="deprecated",
-                        actor=promoted_by,
-                        reason=f"Replaced by bundle {bundle_id}",
-                        replaced_bundle_id=bundle_id,
-                        validation_artifact=validation_artifact,
+                        BundleHistoryRow(
+                            bundle_id=replaced_bundle_id,
+                            action="auto_deprecate",
+                            from_lifecycle="active",
+                            to_lifecycle="deprecated",
+                            actor=promoted_by,
+                            reason=f"Replaced by bundle {bundle_id}",
+                            replaced_bundle_id=bundle_id,
+                            validation_artifact=validation_artifact,
+                            created_at=datetime.now(timezone.utc).isoformat(),
+                        ),
                     )
 
             promoted_at = datetime.now(timezone.utc).isoformat()
@@ -225,16 +250,18 @@ class SQLitePolicyBundleRepository:
             )
             self._insert_history(
                 conn,
-                bundle_id=bundle_id,
-                action=action,
-                from_lifecycle=source,
-                to_lifecycle=target_lifecycle,
-                actor=promoted_by,
-                reason=promotion_reason,
-                replaced_bundle_id=replaced_bundle_id,
-                validation_artifact=validation_artifact,
+                BundleHistoryRow(
+                    bundle_id=bundle_id,
+                    action=action,
+                    from_lifecycle=source,
+                    to_lifecycle=target_lifecycle,
+                    actor=promoted_by,
+                    reason=promotion_reason,
+                    replaced_bundle_id=replaced_bundle_id,
+                    validation_artifact=validation_artifact,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                ),
             )
-
 
     def set_bundle_lifecycle(self, bundle_id: int, lifecycle: str) -> None:
         bundle = self.get_bundle(bundle_id)
@@ -277,14 +304,17 @@ class SQLitePolicyBundleRepository:
             conn.execute("UPDATE bundles SET lifecycle = 'deprecated' WHERE id = ?", (current_id,))
             self._insert_history(
                 conn,
-                bundle_id=current_id,
-                action="rollback_deprecate",
-                from_lifecycle="active",
-                to_lifecycle="deprecated",
-                actor=promoted_by,
-                reason=f"Rolled back to bundle {to_bundle_id}",
-                replaced_bundle_id=to_bundle_id,
-                validation_artifact=validation_artifact,
+                BundleHistoryRow(
+                    bundle_id=current_id,
+                    action="rollback_deprecate",
+                    from_lifecycle="active",
+                    to_lifecycle="deprecated",
+                    actor=promoted_by,
+                    reason=f"Rolled back to bundle {to_bundle_id}",
+                    replaced_bundle_id=to_bundle_id,
+                    validation_artifact=validation_artifact,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                ),
             )
             conn.execute(
                 """
@@ -296,14 +326,17 @@ class SQLitePolicyBundleRepository:
             )
             self._insert_history(
                 conn,
-                bundle_id=to_bundle_id,
-                action="rollback",
-                from_lifecycle=target["lifecycle"],
-                to_lifecycle="active",
-                actor=promoted_by,
-                reason=promotion_reason,
-                replaced_bundle_id=current_id,
-                validation_artifact=validation_artifact,
+                BundleHistoryRow(
+                    bundle_id=to_bundle_id,
+                    action="rollback",
+                    from_lifecycle=target["lifecycle"],
+                    to_lifecycle="active",
+                    actor=promoted_by,
+                    reason=promotion_reason,
+                    replaced_bundle_id=current_id,
+                    validation_artifact=validation_artifact,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                ),
             )
 
     def get_bundle(self, bundle_id: int) -> StoredBundle | None:
@@ -343,25 +376,13 @@ class SQLitePolicyBundleRepository:
     def _hydrate_bundle(self, conn: sqlite3.Connection, row: sqlite3.Row | None) -> StoredBundle | None:
         if row is None:
             return None
-        rule_rows = conn.execute(
-            "SELECT content FROM rules WHERE bundle_id = ? ORDER BY rule_id ASC",
-            (int(row["id"]),),
-        ).fetchall()
-        rules = [self._deserialize_rule(json.loads(r["content"])) for r in rule_rows]
-        metadata = PolicyBundleMetadata(
-            bundle_name=row["name"],
-            version=row["version"],
-            loaded_from=f"sqlite://{self.db_path}",
-            lifecycle=row["lifecycle"],
-            integrity_sha256=row["integrity_digest"],
-            policy_file_count=0,
-        )
-        return StoredBundle(
+        record = BundleRow(
             id=int(row["id"]),
-            metadata=metadata,
-            rules=rules,
-            created_at=row["created_at"],
+            name=row["name"],
+            version=row["version"],
             release_id=row["release_id"],
+            lifecycle=row["lifecycle"],
+            created_at=row["created_at"],
             created_by=row["created_by"],
             creation_reason=row["creation_reason"],
             promoted_at=row["promoted_at"],
@@ -380,20 +401,45 @@ class SQLitePolicyBundleRepository:
             signature_key_id=row["signature_key_id"],
             signature_verified_at=row["signature_verified_at"],
         )
+        rule_rows = conn.execute(
+            "SELECT content FROM rules WHERE bundle_id = ? ORDER BY rule_id ASC",
+            (record.id,),
+        ).fetchall()
+        rules = [self._deserialize_rule(json.loads(r["content"])) for r in rule_rows]
+        metadata = PolicyBundleMetadata(
+            bundle_name=record.name,
+            version=record.version,
+            loaded_from=f"sqlite://{self.db_path}",
+            lifecycle=record.lifecycle,
+            integrity_sha256=record.integrity_digest,
+            policy_file_count=0,
+        )
+        return StoredBundle(
+            id=record.id,
+            metadata=metadata,
+            rules=rules,
+            created_at=record.created_at,
+            release_id=record.release_id,
+            created_by=record.created_by,
+            creation_reason=record.creation_reason,
+            promoted_at=record.promoted_at,
+            promoted_by=record.promoted_by,
+            promotion_reason=record.promotion_reason,
+            source_bundle_id=record.source_bundle_id,
+            integrity_digest=record.integrity_digest,
+            compatibility_notes=record.compatibility_notes,
+            release_notes=record.release_notes,
+            migration_notes=record.migration_notes,
+            validation_artifact=record.validation_artifact,
+            release_manifest_path=record.release_manifest_path,
+            signature_verification_strict=record.signature_verification_strict,
+            signature_verified=record.signature_verified,
+            signature_error=record.signature_error,
+            signature_key_id=record.signature_key_id,
+            signature_verified_at=record.signature_verified_at,
+        )
 
-    def _insert_history(
-        self,
-        conn: sqlite3.Connection,
-        *,
-        bundle_id: int,
-        action: str,
-        from_lifecycle: str | None,
-        to_lifecycle: str,
-        actor: str,
-        reason: str,
-        replaced_bundle_id: int | None,
-        validation_artifact: str | None,
-    ) -> None:
+    def _insert_history(self, conn: sqlite3.Connection, history: BundleHistoryRow) -> None:
         conn.execute(
             """
             INSERT INTO bundle_history (
@@ -402,15 +448,15 @@ class SQLitePolicyBundleRepository:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                bundle_id,
-                action,
-                from_lifecycle,
-                to_lifecycle,
-                actor,
-                reason,
-                replaced_bundle_id,
-                validation_artifact,
-                datetime.now(timezone.utc).isoformat(),
+                history.bundle_id,
+                history.action,
+                history.from_lifecycle,
+                history.to_lifecycle,
+                history.actor,
+                history.reason,
+                history.replaced_bundle_id,
+                history.validation_artifact,
+                history.created_at,
             ),
         )
 
@@ -450,3 +496,17 @@ class SQLitePolicyBundleRepository:
         hashes = sorted(cls._rule_hash(rule) for rule in rules)
         canonical = json.dumps(hashes, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+class PostgresPolicyBundleRepository:
+    """Architecture placeholder for enterprise relational persistence.
+
+    This class intentionally shares the policy repository contract while
+    leaving query implementation for a future psycopg/SQLAlchemy rollout.
+    """
+
+    def __init__(self, dsn: str):
+        self.dsn = dsn
+
+    def initialize(self) -> None:
+        raise NotImplementedError("Postgres adapter not implemented yet; use SQLitePolicyBundleRepository")
