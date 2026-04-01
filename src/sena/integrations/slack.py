@@ -7,8 +7,10 @@ from typing import Any
 from urllib import request
 from urllib.error import HTTPError, URLError
 
+from sena.integrations.base import Connector, DecisionPayload, IntegrationError
 
-class SlackIntegrationError(RuntimeError):
+
+class SlackIntegrationError(IntegrationError):
     """Raised when Slack integration calls fail deterministically."""
 
 
@@ -19,7 +21,8 @@ class SlackEscalationMessage:
     blocks: list[dict[str, Any]]
 
 
-class SlackClient:
+class SlackClient(Connector):
+    name = "slack"
     """Minimal Slack Web API wrapper for posting escalation decisions."""
 
     def __init__(self, bot_token: str, default_channel: str):
@@ -29,6 +32,18 @@ class SlackClient:
             raise SlackIntegrationError("Slack default channel must be non-empty")
         self._bot_token = bot_token.strip()
         self._default_channel = default_channel.strip()
+
+    def handle_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        return parse_interaction_decision(event)
+
+    def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:
+        return self.post_escalation(
+            decision_id=payload.decision_id,
+            request_id=payload.request_id,
+            action_type=payload.action_type,
+            matched_rule_ids=payload.matched_rule_ids,
+            summary=payload.summary,
+        )
 
     def build_escalation_message(
         self,
