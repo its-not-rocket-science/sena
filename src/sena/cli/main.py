@@ -8,6 +8,8 @@ from typing import Any
 
 from sena import __version__ as SENA_VERSION
 from sena.audit.chain import locate_decision_in_audit, summarize_audit_chain, verify_audit_chain
+from sena.api.config import load_settings_from_env
+from sena.api.production_check import run_production_readiness_check
 from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig
 from sena.engine.evaluator import PolicyEvaluator
@@ -572,6 +574,25 @@ def _run_audit_locate_decision(args: argparse.Namespace) -> None:
         raise SystemExit("Decision not found in audit chain")
 
 
+def _run_production_check(args: argparse.Namespace) -> None:
+    settings = load_settings_from_env()
+    report = run_production_readiness_check(settings)
+
+    if args.format in {"text", "both"}:
+        status = "PASS" if report["ok"] else "FAIL"
+        print(f"Production readiness check: {status}")
+        for check in report["checks"]:
+            marker = "✓" if check["status"] == "pass" else "✗"
+            print(f"- {marker} {check['name']}")
+            for detail in check["details"]:
+                print(f"    • {detail}")
+    if args.format in {"json", "both"}:
+        print(json.dumps(report, indent=2))
+
+    if not report["ok"]:
+        raise SystemExit(1)
+
+
 def _build_evaluate_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -833,6 +854,17 @@ def _build_audit_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "production-check":
+        parser = argparse.ArgumentParser(description="SENA production-readiness validation")
+        parser.add_argument(
+            "--format",
+            choices=["text", "json", "both"],
+            default="both",
+            help="Output format for readiness report",
+        )
+        args = parser.parse_args(sys.argv[2:])
+        _run_production_check(args)
+        return
     if len(sys.argv) > 1 and sys.argv[1] == "policy":
         parser = _build_policy_parser()
         args = parser.parse_args(sys.argv[2:])

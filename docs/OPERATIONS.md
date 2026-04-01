@@ -37,6 +37,16 @@ SENA startup now fails for the following classes of misconfiguration:
   - `SENA_BUNDLE_SIGNATURE_KEYRING_DIR` existing directory
   - `SENA_JIRA_WEBHOOK_SECRET` when Jira mapping is enabled
 
+### Mandatory pre-deploy gate
+
+Run this before every deployment:
+
+```bash
+sena production-check --format both
+```
+
+`sena production-check` must pass (exit code `0`) before promotion. It validates startup-fatal configuration and operational readiness contracts (auth, policy backend, audit sink, signature verification, integration mapping schema, request safety bounds, writable/restore prerequisites, and environment coherence).
+
 ## 4) Environment configuration reference
 
 ### Core runtime
