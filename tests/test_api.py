@@ -156,7 +156,7 @@ def test_sqlite_policy_store_mode(tmp_path) -> None:
     seed_client = TestClient(seed_app)
 
     response = seed_client.post(
-        "/v1/bundles/register",
+        "/v1/bundle/register",
         json={
             "policy_dir": "src/sena/examples/policies",
             "bundle_name": "enterprise-compliance-controls",
@@ -172,8 +172,9 @@ def test_sqlite_policy_store_mode(tmp_path) -> None:
     repo = SQLitePolicyBundleRepository(str(db_path))
     repo.initialize()
     rules, metadata = load_policy_bundle("src/sena/examples/policies")
-    metadata.lifecycle = "candidate"
+    metadata.lifecycle = "draft"
     bundle_id = repo.register_bundle(metadata, rules)
+    repo.set_bundle_lifecycle(bundle_id, "candidate")
     repo.set_bundle_lifecycle(bundle_id, "active")
 
     app = create_app(
@@ -194,3 +195,36 @@ def test_sqlite_policy_store_mode(tmp_path) -> None:
         json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
     )
     assert eval_response.status_code == 200
+
+
+def test_bundle_promote_endpoint_enforces_transition_order(tmp_path) -> None:
+    db_path = tmp_path / "policy_registry.db"
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    metadata.lifecycle = "draft"
+    bundle_id = repo.register_bundle(metadata, rules)
+
+    app = create_app(
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
+    )
+    client = TestClient(app)
+
+    skipped = client.post(
+        "/v1/bundle/promote",
+        json={"bundle_id": bundle_id, "target_lifecycle": "active"},
+    )
+    assert skipped.status_code == 400
+
+    to_candidate = client.post(
+        "/v1/bundle/promote",
+        json={"bundle_id": bundle_id, "target_lifecycle": "candidate"},
+    )
+    assert to_candidate.status_code == 200

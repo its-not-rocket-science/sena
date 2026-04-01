@@ -27,6 +27,8 @@ class PolicyBundleRepository(Protocol):
 
     def get_active_bundle(self, bundle_name: str) -> StoredBundle | None: ...
 
+    def get_bundle(self, bundle_id: int) -> StoredBundle | None: ...
+
 
 class SQLitePolicyBundleRepository:
     def __init__(self, db_path: str):
@@ -86,6 +88,38 @@ class SQLitePolicyBundleRepository:
                 )
 
             conn.execute("UPDATE bundles SET lifecycle = ? WHERE id = ?", (lifecycle, bundle_id))
+
+    def get_bundle(self, bundle_id: int) -> StoredBundle | None:
+        with self._connect() as conn:
+            bundle_row = conn.execute(
+                """
+                SELECT id, name, version, lifecycle, created_at
+                FROM bundles
+                WHERE id = ?
+                """,
+                (bundle_id,),
+            ).fetchone()
+            if bundle_row is None:
+                return None
+
+            rule_rows = conn.execute(
+                "SELECT content FROM rules WHERE bundle_id = ? ORDER BY rule_id ASC",
+                (bundle_id,),
+            ).fetchall()
+            rules = [self._deserialize_rule(json.loads(row["content"])) for row in rule_rows]
+            metadata = PolicyBundleMetadata(
+                bundle_name=bundle_row["name"],
+                version=bundle_row["version"],
+                loaded_from=f"sqlite://{self.db_path}",
+                lifecycle=bundle_row["lifecycle"],
+                policy_file_count=0,
+            )
+            return StoredBundle(
+                id=int(bundle_row["id"]),
+                metadata=metadata,
+                rules=rules,
+                created_at=bundle_row["created_at"],
+            )
 
     def get_active_bundle(self, bundle_name: str) -> StoredBundle | None:
         with self._connect() as conn:

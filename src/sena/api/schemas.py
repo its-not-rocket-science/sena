@@ -66,3 +66,15 @@ class ReadinessResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: dict[str, Any]
+
+
+class BundleRegisterRequest(BaseModel):
+    policy_dir: str | None = None
+    bundle_name: str | None = None
+    bundle_version: str | None = None
+    lifecycle: Literal["draft", "candidate", "active", "deprecated"] = "draft"
+
+
+class BundlePromoteRequest(BaseModel):
+    bundle_id: int = Field(gt=0)
+    target_lifecycle: Literal["candidate", "active", "deprecated"]
