@@ -1,0 +1,26 @@
+- id: payment_block_unverified_vendor
+  description: Block vendor payments when vendor verification is incomplete
+  severity: critical
+  inviolable: true
+  applies_to:
+    - approve_vendor_payment
+  condition:
+    field: vendor_verified
+    eq: false
+  decision: BLOCK
+  reason: Payment blocked because vendor verification is required before disbursement.
+
+- id: payment_escalate_high_amount_non_director
+  description: Escalate high-value payments without finance-director initiator
+  severity: high
+  inviolable: false
+  applies_to:
+    - approve_vendor_payment
+  condition:
+    and:
+      - field: amount
+        gte: 10000
+      - field: requester_role
+        neq: finance_director
+  decision: ESCALATE
+  reason: High-value payments require finance director review.

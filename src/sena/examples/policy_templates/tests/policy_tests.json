@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "name": "unverified vendor is blocked",
+      "proposal": {
+        "action_type": "approve_vendor_payment",
+        "attributes": {
+          "amount": 1200.0,
+          "requester_role": "finance_manager",
+          "vendor_verified": false
+        }
+      },
+      "expected_outcome": "BLOCKED"
+    },
+    {
+      "name": "large payment from non-director escalates",
+      "proposal": {
+        "action_type": "approve_vendor_payment",
+        "attributes": {
+          "amount": 25000.0,
+          "requester_role": "finance_manager",
+          "vendor_verified": true
+        }
+      },
+      "expected_outcome": "ESCALATE_FOR_HUMAN_REVIEW"
+    }
+  ]
+}
