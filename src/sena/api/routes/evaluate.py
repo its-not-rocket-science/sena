@@ -5,59 +5,34 @@ from fastapi import APIRouter, Request
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, parse_default_decision
 from sena.api.schemas import BatchEvaluateRequest, EvaluateRequest, SimulationRequest
-from sena.core.models import ActionProposal, EvaluatorConfig
-from sena.engine.evaluator import PolicyEvaluator
-from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
-from sena.integrations.base import DecisionPayload
 from sena.policy.parser import load_policy_bundle
+from sena.services.audit_service import AuditService
+from sena.services.evaluation_service import EvaluationService
 
 
 def create_evaluate_router(state: EngineState) -> APIRouter:
     router = APIRouter()
+    evaluation_service = EvaluationService(state=state, audit_service=AuditService(state.settings.audit_sink_jsonl))
 
     def _evaluate(req: EvaluateRequest, request: Request) -> dict:
         try:
-            def _notify_slack(trace) -> None:
-                if state.slack_client is None:
-                    return
-                state.slack_client.send_decision(
-                    DecisionPayload(
-                        decision_id=trace.decision_id,
-                        request_id=trace.request_id,
-                        action_type=trace.action_type,
-                        matched_rule_ids=[item.rule_id for item in trace.matched_rules],
-                        summary=trace.summary,
-                    )
-                )
-
-            proposal = ActionProposal(
+            proposal = evaluation_service.build_action_proposal(
                 action_type=req.action_type,
                 request_id=req.request_id or request.state.request_id,
                 actor_id=req.actor_id,
                 actor_role=req.actor_role,
                 attributes=req.attributes,
             )
-            evaluator = PolicyEvaluator(
-                state.rules,
-                policy_bundle=state.metadata,
-                config=EvaluatorConfig(
-                    default_decision=parse_default_decision(req.default_decision),
-                    require_allow_match=req.strict_require_allow,
-                    on_escalation=_notify_slack,
-                ),
+            return evaluation_service.evaluate(
+                proposal=proposal,
+                facts=req.facts,
+                endpoint="/v1/evaluate",
+                default_decision=parse_default_decision(req.default_decision),
+                strict_require_allow=req.strict_require_allow,
+                notify_on_escalation=True,
+                append_audit=True,
             )
-            with state.metrics.evaluation_timer(endpoint="/v1/evaluate"):
-                trace = evaluator.evaluate(proposal, req.facts)
-            state.metrics.observe_decision_outcome(endpoint="/v1/evaluate", outcome=trace.outcome.value)
-            payload = trace.to_dict()
-            if state.settings.audit_sink_jsonl:
-                from sena.audit.chain import append_audit_record
-
-                payload["audit_record"] = append_audit_record(
-                    state.settings.audit_sink_jsonl, payload["audit_record"]
-                )
-            return payload
         except Exception as exc:  # pragma: no cover
             raise_api_error("evaluation_error", details={"reason": str(exc)})
 
@@ -68,28 +43,20 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
     @router.post("/evaluate/review-package")
     def evaluate_review_package(req: EvaluateRequest, request: Request) -> dict:
         try:
-            proposal = ActionProposal(
+            proposal = evaluation_service.build_action_proposal(
                 action_type=req.action_type,
                 request_id=req.request_id or request.state.request_id,
                 actor_id=req.actor_id,
                 actor_role=req.actor_role,
                 attributes=req.attributes,
             )
-            evaluator = PolicyEvaluator(
-                state.rules,
-                policy_bundle=state.metadata,
-                config=EvaluatorConfig(
-                    default_decision=parse_default_decision(req.default_decision),
-                    require_allow_match=req.strict_require_allow,
-                ),
-            )
-            with state.metrics.evaluation_timer(endpoint="/v1/evaluate/review-package"):
-                trace = evaluator.evaluate(proposal, req.facts)
-            state.metrics.observe_decision_outcome(
+            return evaluation_service.evaluate_review_package(
+                proposal=proposal,
+                facts=req.facts,
                 endpoint="/v1/evaluate/review-package",
-                outcome=trace.outcome.value,
+                default_decision=parse_default_decision(req.default_decision),
+                strict_require_allow=req.strict_require_allow,
             )
-            return build_decision_review_package(trace)
         except Exception as exc:  # pragma: no cover
             raise_api_error("evaluation_error", details={"reason": str(exc)})
 
