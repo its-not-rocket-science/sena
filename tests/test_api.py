@@ -140,7 +140,7 @@ def test_api_key_role_evaluator_cannot_promote_bundle() -> None:
     response = client.post(
         "/v1/bundle/promote",
         headers={"x-api-key": "eval-key"},
-        json={"bundle_id": 1, "target_lifecycle": "active"},
+        json={"bundle_id": 1, "target_lifecycle": "active", "promoted_by": "u", "promotion_reason": "r", "validation_artifact": "a"},
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "forbidden"
@@ -306,14 +306,14 @@ def test_bundle_promote_endpoint_enforces_transition_order(tmp_path) -> None:
 
     skipped = client.post(
         "/v1/bundle/promote",
-        json={"bundle_id": bundle_id, "target_lifecycle": "active"},
+        json={"bundle_id": bundle_id, "target_lifecycle": "active", "promoted_by": "ops", "promotion_reason": "go", "validation_artifact": "CAB"},
     )
     assert skipped.status_code == 400
     assert skipped.json()["error"]["code"] == "promotion_validation_failed"
 
     to_candidate = client.post(
         "/v1/bundle/promote",
-        json={"bundle_id": bundle_id, "target_lifecycle": "candidate"},
+        json={"bundle_id": bundle_id, "target_lifecycle": "candidate", "promoted_by": "ops", "promotion_reason": "ready"},
     )
     assert to_candidate.status_code == 200
 
@@ -681,3 +681,59 @@ def test_startup_fails_in_production_without_api_key_auth() -> None:
 def test_startup_fails_when_api_keys_has_invalid_role() -> None:
     with pytest.raises(RuntimeError, match="unsupported role"):
         create_app(_settings(enable_api_key_auth=True, api_keys=(("key-1", "reader"),)))
+
+def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    db_path = tmp_path / "policy_registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+
+    metadata.lifecycle = "draft"
+    id1 = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(id1, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(id1, "active", promoted_by="ops", promotion_reason="go", validation_artifact="CAB-1")
+
+    metadata.version = "2026.04"
+    metadata.lifecycle = "draft"
+    id2 = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(id2, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(id2, "active", promoted_by="ops", promotion_reason="go", validation_artifact="CAB-2")
+
+    app = create_app(
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
+    )
+    client = TestClient(app)
+
+    history = client.get("/v1/bundles/history", params={"bundle_name": metadata.bundle_name})
+    assert history.status_code == 200
+    assert history.json()["history"]
+
+    by_version = client.get(
+        "/v1/bundles/by-version",
+        params={"bundle_name": metadata.bundle_name, "version": "2026.04"},
+    )
+    assert by_version.status_code == 200
+    assert by_version.json()["bundle_id"] == id2
+
+    rollback = client.post(
+        "/v1/bundle/rollback",
+        json={
+            "bundle_name": metadata.bundle_name,
+            "to_bundle_id": id1,
+            "promoted_by": "ops",
+            "promotion_reason": "incident",
+            "validation_artifact": "INC-1",
+        },
+    )
+    assert rollback.status_code == 200
+
+    active = client.get("/v1/bundles/active", params={"bundle_name": metadata.bundle_name})
+    assert active.status_code == 200
+    assert active.json()["bundle_id"] == id1

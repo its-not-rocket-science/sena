@@ -15,6 +15,7 @@ from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.examples import DEFAULT_POLICY_DIR
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
+from sena.policy.store import SQLitePolicyBundleRepository
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
 
 TEMPLATES_ROOT = Path(__file__).resolve().parent.parent / "examples" / "policy_templates"
@@ -228,6 +229,106 @@ def _run_policy_test(args: argparse.Namespace) -> None:
         raise SystemExit("Policy tests failed")
 
 
+
+
+def _registry_repo(sqlite_path: Path) -> SQLitePolicyBundleRepository:
+    repo = SQLitePolicyBundleRepository(str(sqlite_path))
+    repo.initialize()
+    return repo
+
+
+def _run_registry_register(args: argparse.Namespace) -> None:
+    repo = _registry_repo(args.sqlite_path)
+    rules, metadata = load_policy_bundle(args.policy_dir, bundle_name=args.bundle_name, version=args.bundle_version)
+    metadata.lifecycle = args.lifecycle
+    bundle_id = repo.register_bundle(
+        metadata,
+        rules,
+        created_by=args.created_by,
+        creation_reason=args.creation_reason,
+        source_bundle_id=args.source_bundle_id,
+        compatibility_notes=args.compatibility_notes,
+        release_notes=args.release_notes,
+        migration_notes=args.migration_notes,
+    )
+    print(json.dumps({"bundle_id": bundle_id, "bundle_name": metadata.bundle_name, "version": metadata.version}, indent=2))
+
+
+def _run_registry_history(args: argparse.Namespace) -> None:
+    repo = _registry_repo(args.sqlite_path)
+    print(json.dumps({"bundle_name": args.bundle_name, "history": repo.get_history(args.bundle_name)}, indent=2))
+
+
+def _run_registry_diff(args: argparse.Namespace) -> None:
+    repo = _registry_repo(args.sqlite_path)
+    current = repo.get_bundle(args.current_bundle_id)
+    target = repo.get_bundle(args.target_bundle_id)
+    if current is None or target is None:
+        raise SystemExit("Bundle id not found")
+    print(json.dumps(diff_rule_sets(current.rules, target.rules).__dict__, indent=2))
+
+
+def _run_registry_validate(args: argparse.Namespace) -> None:
+    repo = _registry_repo(args.sqlite_path)
+    bundle = repo.get_bundle(args.bundle_id)
+    if bundle is None:
+        raise SystemExit("Bundle id not found")
+    source_rules = bundle.rules
+    if args.target_lifecycle == "active":
+        active = repo.get_active_bundle(bundle.metadata.bundle_name)
+        source_rules = active.rules if active else []
+    print(
+        json.dumps(
+            validate_promotion(
+                bundle.metadata.lifecycle,
+                args.target_lifecycle,
+                source_rules,
+                bundle.rules,
+                validation_artifact=args.validation_artifact,
+            ).__dict__,
+            indent=2,
+        )
+    )
+
+
+def _run_registry_promote(args: argparse.Namespace) -> None:
+    repo = _registry_repo(args.sqlite_path)
+    repo.transition_bundle(
+        args.bundle_id,
+        args.target_lifecycle,
+        promoted_by=args.promoted_by,
+        promotion_reason=args.promotion_reason,
+        validation_artifact=args.validation_artifact,
+    )
+    print(json.dumps({"status": "ok"}, indent=2))
+
+
+def _run_registry_rollback(args: argparse.Namespace) -> None:
+    repo = _registry_repo(args.sqlite_path)
+    repo.rollback_bundle(
+        args.bundle_name,
+        args.to_bundle_id,
+        promoted_by=args.promoted_by,
+        promotion_reason=args.promotion_reason,
+        validation_artifact=args.validation_artifact,
+    )
+    print(json.dumps({"status": "ok"}, indent=2))
+
+
+def _run_registry_fetch_active(args: argparse.Namespace) -> None:
+    repo = _registry_repo(args.sqlite_path)
+    bundle = repo.get_active_bundle(args.bundle_name)
+    if bundle is None:
+        raise SystemExit("No active bundle")
+    print(json.dumps({"bundle_id": bundle.id, "bundle_name": bundle.metadata.bundle_name, "version": bundle.metadata.version}, indent=2))
+
+
+def _run_registry_fetch(args: argparse.Namespace) -> None:
+    repo = _registry_repo(args.sqlite_path)
+    bundle = repo.get_bundle(args.bundle_id) if args.bundle_id else repo.get_bundle_by_version(args.bundle_name, args.version)
+    if bundle is None:
+        raise SystemExit("Bundle not found")
+    print(json.dumps({"bundle_id": bundle.id, "bundle_name": bundle.metadata.bundle_name, "version": bundle.metadata.version, "lifecycle": bundle.metadata.lifecycle}, indent=2))
 def _build_evaluate_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -328,9 +429,76 @@ def _build_policy_parser() -> argparse.ArgumentParser:
     return parser
 
 
+
+
+def _build_registry_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="SENA sqlite policy registry commands")
+    parser.add_argument("--sqlite-path", type=Path, required=True)
+    sub = parser.add_subparsers(dest="registry_command", required=True)
+
+    register = sub.add_parser("register")
+    register.add_argument("--policy-dir", type=Path, required=True)
+    register.add_argument("--bundle-name", required=True)
+    register.add_argument("--bundle-version", required=True)
+    register.add_argument("--lifecycle", default="draft", choices=["draft", "candidate", "active", "deprecated"])
+    register.add_argument("--created-by", default="system")
+    register.add_argument("--creation-reason")
+    register.add_argument("--source-bundle-id", type=int)
+    register.add_argument("--compatibility-notes")
+    register.add_argument("--release-notes")
+    register.add_argument("--migration-notes")
+    register.set_defaults(handler=_run_registry_register)
+
+    history = sub.add_parser("inspect-history")
+    history.add_argument("--bundle-name", required=True)
+    history.set_defaults(handler=_run_registry_history)
+
+    diff = sub.add_parser("diff")
+    diff.add_argument("--current-bundle-id", type=int, required=True)
+    diff.add_argument("--target-bundle-id", type=int, required=True)
+    diff.set_defaults(handler=_run_registry_diff)
+
+    validate = sub.add_parser("validate-promotion")
+    validate.add_argument("--bundle-id", type=int, required=True)
+    validate.add_argument("--target-lifecycle", required=True, choices=["candidate", "active", "deprecated"])
+    validate.add_argument("--validation-artifact")
+    validate.set_defaults(handler=_run_registry_validate)
+
+    promote = sub.add_parser("promote")
+    promote.add_argument("--bundle-id", type=int, required=True)
+    promote.add_argument("--target-lifecycle", required=True, choices=["candidate", "active", "deprecated"])
+    promote.add_argument("--promoted-by", required=True)
+    promote.add_argument("--promotion-reason", required=True)
+    promote.add_argument("--validation-artifact")
+    promote.set_defaults(handler=_run_registry_promote)
+
+    rollback = sub.add_parser("rollback")
+    rollback.add_argument("--bundle-name", required=True)
+    rollback.add_argument("--to-bundle-id", type=int, required=True)
+    rollback.add_argument("--promoted-by", required=True)
+    rollback.add_argument("--promotion-reason", required=True)
+    rollback.add_argument("--validation-artifact", required=True)
+    rollback.set_defaults(handler=_run_registry_rollback)
+
+    active = sub.add_parser("fetch-active")
+    active.add_argument("--bundle-name", required=True)
+    active.set_defaults(handler=_run_registry_fetch_active)
+
+    fetch = sub.add_parser("fetch")
+    fetch.add_argument("--bundle-id", type=int)
+    fetch.add_argument("--bundle-name")
+    fetch.add_argument("--version")
+    fetch.set_defaults(handler=_run_registry_fetch)
+
+    return parser
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "policy":
         parser = _build_policy_parser()
+        args = parser.parse_args(sys.argv[2:])
+        args.handler(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "registry":
+        parser = _build_registry_parser()
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return

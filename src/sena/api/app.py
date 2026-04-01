@@ -21,6 +21,7 @@ from sena.api.schemas import (
     BundleInfo,
     BundlePromoteRequest,
     BundleRegisterRequest,
+    BundleRollbackRequest,
     EvaluateRequest,
     HealthResponse,
     WebhookEvaluateRequest,
@@ -74,6 +75,10 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("POST", "/v1/bundle/promote"),
         ("POST", "/v1/bundle/diff"),
         ("POST", "/v1/bundle/promotion/validate"),
+        ("POST", "/v1/bundle/rollback"),
+        ("GET", "/v1/bundles/history"),
+        ("GET", "/v1/bundles/active"),
+        ("GET", "/v1/bundles/by-version"),
     },
     "evaluator": {
         ("POST", "/v1/evaluate"),
@@ -431,7 +436,20 @@ def create_app(settings: ApiSettings | None = None):
             version=payload.bundle_version or state.settings.bundle_version,
         )
         metadata.lifecycle = payload.lifecycle
-        bundle_id = state.policy_repo.register_bundle(metadata, rules)
+        try:
+            bundle_id = state.policy_repo.register_bundle(
+                metadata,
+                rules,
+                created_by=payload.created_by,
+                creation_reason=payload.creation_reason,
+                source_bundle_id=payload.source_bundle_id,
+                compatibility_notes=payload.compatibility_notes,
+                release_notes=payload.release_notes,
+                migration_notes=payload.migration_notes,
+            )
+        except ValueError as exc:
+            raise_api_error("http_bad_request", details={"reason": str(exc)})
+
         return {"bundle_id": bundle_id, "bundle": metadata.__dict__, "rules_total": len(rules)}
 
     @api_v1.post("/bundle/promote")
@@ -453,16 +471,49 @@ def create_app(settings: ApiSettings | None = None):
             payload.target_lifecycle,
             source_rules,
             stored_bundle.rules,
+            validation_artifact=payload.validation_artifact,
         )
         if not validation.valid:
             raise_api_error("promotion_validation_failed", details={"errors": validation.errors})
 
-        state.policy_repo.set_bundle_lifecycle(payload.bundle_id, payload.target_lifecycle)
+        try:
+            state.policy_repo.transition_bundle(
+                payload.bundle_id,
+                payload.target_lifecycle,
+                promoted_by=payload.promoted_by,
+                promotion_reason=payload.promotion_reason,
+                validation_artifact=payload.validation_artifact,
+            )
+        except ValueError as exc:
+            raise_api_error("promotion_validation_failed", details={"errors": [str(exc)]})
+
         active = state.policy_repo.get_active_bundle(state.settings.bundle_name)
         if active is not None:
             state.rules = active.rules
             state.metadata = active.metadata
         return {"status": "ok", "bundle_id": payload.bundle_id, "lifecycle": payload.target_lifecycle}
+
+    @api_v1.post("/bundle/rollback")
+    def rollback_bundle(payload: BundleRollbackRequest) -> dict[str, Any]:
+        if state.policy_repo is None:
+            raise_api_error("policy_store_unavailable")
+        try:
+            state.policy_repo.rollback_bundle(
+                payload.bundle_name,
+                payload.to_bundle_id,
+                promoted_by=payload.promoted_by,
+                promotion_reason=payload.promotion_reason,
+                validation_artifact=payload.validation_artifact,
+            )
+        except ValueError as exc:
+            raise_api_error("promotion_validation_failed", details={"errors": [str(exc)]})
+
+        active = state.policy_repo.get_active_bundle(payload.bundle_name)
+        if active is not None and payload.bundle_name == state.settings.bundle_name:
+            state.rules = active.rules
+            state.metadata = active.metadata
+
+        return {"status": "ok", "bundle_name": payload.bundle_name, "active_bundle_id": payload.to_bundle_id}
 
     @api_v1.get("/bundles/active")
     def get_active_bundle(bundle_name: str | None = None) -> dict[str, Any]:
@@ -475,10 +526,63 @@ def create_app(settings: ApiSettings | None = None):
         return {
             "bundle_id": active.id,
             "bundle": BundleInfo.model_validate(active.metadata.__dict__),
+            "release_id": active.release_id,
+            "created_by": active.created_by,
+            "promoted_by": active.promoted_by,
+            "promotion_reason": active.promotion_reason,
+            "validation_artifact": active.validation_artifact,
+            "source_bundle_id": active.source_bundle_id,
+            "integrity_digest": active.integrity_digest,
+            "release_notes": active.release_notes,
+            "migration_notes": active.migration_notes,
             "rules_total": len(active.rules),
             "created_at": active.created_at,
         }
 
+    @api_v1.get("/bundles/{bundle_id}")
+    def get_bundle_by_id(bundle_id: int) -> dict[str, Any]:
+        if state.policy_repo is None:
+            raise_api_error("policy_store_unavailable")
+        bundle = state.policy_repo.get_bundle(bundle_id)
+        if bundle is None:
+            raise_api_error("bundle_not_found", details={"bundle_id": bundle_id})
+        return {
+            "bundle_id": bundle.id,
+            "bundle": BundleInfo.model_validate(bundle.metadata.__dict__),
+            "release_id": bundle.release_id,
+            "created_by": bundle.created_by,
+            "creation_reason": bundle.creation_reason,
+            "promoted_by": bundle.promoted_by,
+            "promotion_reason": bundle.promotion_reason,
+            "source_bundle_id": bundle.source_bundle_id,
+            "integrity_digest": bundle.integrity_digest,
+            "compatibility_notes": bundle.compatibility_notes,
+            "release_notes": bundle.release_notes,
+            "migration_notes": bundle.migration_notes,
+            "validation_artifact": bundle.validation_artifact,
+            "rules_total": len(bundle.rules),
+            "created_at": bundle.created_at,
+        }
+
+    @api_v1.get("/bundles/by-version")
+    def get_bundle_by_version(bundle_name: str, version: str) -> dict[str, Any]:
+        if state.policy_repo is None:
+            raise_api_error("policy_store_unavailable")
+        bundle = state.policy_repo.get_bundle_by_version(bundle_name, version)
+        if bundle is None:
+            raise_api_error("bundle_not_found", details={"bundle_name": bundle_name, "version": version})
+        return {
+            "bundle_id": bundle.id,
+            "bundle": BundleInfo.model_validate(bundle.metadata.__dict__),
+            "release_id": bundle.release_id,
+            "created_at": bundle.created_at,
+        }
+
+    @api_v1.get("/bundles/history")
+    def bundle_history(bundle_name: str) -> dict[str, Any]:
+        if state.policy_repo is None:
+            raise_api_error("policy_store_unavailable")
+        return {"bundle_name": bundle_name, "history": state.policy_repo.get_history(bundle_name)}
     @api_v1.post("/evaluate")
     def evaluate(req: EvaluateRequest, request: Request) -> dict[str, Any]:
         try:
@@ -783,13 +887,37 @@ def create_app(settings: ApiSettings | None = None):
         )
 
     @api_v1.post("/bundle/diff")
-    def bundle_diff(payload: dict[str, str]) -> dict[str, Any]:
+    def bundle_diff(payload: dict[str, Any]) -> dict[str, Any]:
+        if state.policy_repo and payload.get("current_bundle_id") and payload.get("target_bundle_id"):
+            current_bundle = state.policy_repo.get_bundle(int(payload["current_bundle_id"]))
+            target_bundle = state.policy_repo.get_bundle(int(payload["target_bundle_id"]))
+            if current_bundle is None or target_bundle is None:
+                raise_api_error("bundle_not_found")
+            return diff_rule_sets(current_bundle.rules, target_bundle.rules).__dict__
+
         current_rules, _ = load_policy_bundle(payload["current_policy_dir"])
         target_rules, _ = load_policy_bundle(payload["target_policy_dir"])
         return diff_rule_sets(current_rules, target_rules).__dict__
 
     @api_v1.post("/bundle/promotion/validate")
     def bundle_promotion_validate(payload: dict[str, Any]) -> dict[str, Any]:
+        if state.policy_repo and payload.get("bundle_id"):
+            bundle = state.policy_repo.get_bundle(int(payload["bundle_id"]))
+            if bundle is None:
+                raise_api_error("bundle_not_found")
+            source_rules = bundle.rules
+            if payload.get("target_lifecycle") == "active":
+                active = state.policy_repo.get_active_bundle(bundle.metadata.bundle_name)
+                source_rules = active.rules if active else []
+            result = validate_promotion(
+                bundle.metadata.lifecycle,
+                payload["target_lifecycle"],
+                source_rules,
+                bundle.rules,
+                validation_artifact=payload.get("validation_artifact"),
+            )
+            return result.__dict__
+
         source_rules, source_meta = load_policy_bundle(payload["source_policy_dir"])
         target_rules, target_meta = load_policy_bundle(payload["target_policy_dir"])
         result = validate_promotion(
@@ -797,6 +925,7 @@ def create_app(settings: ApiSettings | None = None):
             payload.get("target_lifecycle", target_meta.lifecycle),
             source_rules,
             target_rules,
+            validation_artifact=payload.get("validation_artifact"),
         )
         return result.__dict__
 

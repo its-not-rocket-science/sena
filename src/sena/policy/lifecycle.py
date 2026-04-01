@@ -7,11 +7,10 @@ from sena.core.enums import RuleDecision
 from sena.core.models import PolicyRule
 
 
-LIFECYCLE_ORDER = {
-    "draft": 0,
-    "candidate": 1,
-    "active": 2,
-    "deprecated": 3,
+ALLOWED_LIFECYCLE_TRANSITIONS = {
+    ("draft", "candidate"),
+    ("candidate", "active"),
+    ("active", "deprecated"),
 }
 
 
@@ -29,24 +28,12 @@ class PromotionValidation:
 
 
 def validate_lifecycle_transition(source_lifecycle: str, target_lifecycle: str) -> PromotionValidation:
-    errors: list[str] = []
-
-    if source_lifecycle not in LIFECYCLE_ORDER:
-        errors.append(f"unsupported source lifecycle '{source_lifecycle}'")
-    if target_lifecycle not in LIFECYCLE_ORDER:
-        errors.append(f"unsupported target lifecycle '{target_lifecycle}'")
-
-    if errors:
-        return PromotionValidation(valid=False, errors=errors)
-
-    if source_lifecycle == target_lifecycle:
-        errors.append("lifecycle transition requires a new target state")
-    elif LIFECYCLE_ORDER[target_lifecycle] < LIFECYCLE_ORDER[source_lifecycle]:
-        errors.append("lifecycle cannot move backwards")
-    elif LIFECYCLE_ORDER[target_lifecycle] - LIFECYCLE_ORDER[source_lifecycle] > 1:
-        errors.append("lifecycle cannot skip states")
-
-    return PromotionValidation(valid=not errors, errors=errors)
+    if (source_lifecycle, target_lifecycle) in ALLOWED_LIFECYCLE_TRANSITIONS:
+        return PromotionValidation(valid=True, errors=[])
+    return PromotionValidation(
+        valid=False,
+        errors=[f"invalid lifecycle transition '{source_lifecycle}' -> '{target_lifecycle}'"],
+    )
 
 
 def _rule_fingerprint(rule: PolicyRule) -> tuple:
@@ -80,11 +67,15 @@ def validate_promotion(
     target_lifecycle: str,
     source_rules: list[PolicyRule],
     target_rules: list[PolicyRule],
+    *,
+    validation_artifact: str | None = None,
 ) -> PromotionValidation:
     transition = validate_lifecycle_transition(source_lifecycle, target_lifecycle)
     errors: list[str] = list(transition.errors)
 
     diff = diff_rule_sets(source_rules, target_rules)
+    if target_lifecycle == "active" and not validation_artifact:
+        errors.append("promotion to active requires validation artifact")
     if target_lifecycle == "active" and not (diff.added_rule_ids or diff.changed_rule_ids):
         errors.append("promotion to active requires at least one added or changed rule")
 

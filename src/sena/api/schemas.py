@@ -98,8 +98,30 @@ class BundleRegisterRequest(BaseModel):
     bundle_name: str | None = None
     bundle_version: str | None = None
     lifecycle: Literal["draft", "candidate", "active", "deprecated"] = "draft"
+    created_by: NonEmptyStr = "system"
+    creation_reason: str | None = None
+    source_bundle_id: int | None = Field(default=None, gt=0)
+    compatibility_notes: str | None = None
+    release_notes: str | None = None
+    migration_notes: str | None = None
 
 
 class BundlePromoteRequest(BaseModel):
     bundle_id: int = Field(gt=0)
     target_lifecycle: Literal["candidate", "active", "deprecated"]
+    promoted_by: NonEmptyStr
+    promotion_reason: NonEmptyStr
+    validation_artifact: str | None = None
+
+
+class BundleRollbackRequest(BaseModel):
+    bundle_name: NonEmptyStr
+    to_bundle_id: int = Field(gt=0)
+    promoted_by: NonEmptyStr
+    promotion_reason: NonEmptyStr
+    validation_artifact: NonEmptyStr
+
+
+class BundleHistoryQuery(BaseModel):
+    bundle_name: NonEmptyStr
+
