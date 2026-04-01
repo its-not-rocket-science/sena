@@ -1,0 +1,40 @@
+routes:
+  change_approval.requested:
+    action_type: approve_change_request
+    actor_id_path: requested_by.user_id
+    actor_role_path: requested_by.role
+    request_id_path: change_request.number
+    source_record_id_path: change_request.sys_id
+    source_object_type_path: change_request.table
+    workflow_stage_path: change_request.stage
+    requested_action_path: requested_action
+    correlation_key_path: change_request.number
+    required_fields:
+      - change_request.number
+      - change_request.sys_id
+      - requested_by.user_id
+      - risk.score
+      - environment
+      - cab_review.evidence_id
+    attributes:
+      source_event_type: event_type
+      source_record_id: change_request.sys_id
+      source_object_type: change_request.table
+      workflow_stage: change_request.stage
+      requested_action: requested_action
+      source_system: source_system
+      risk_score: risk.score
+      privileged_change: flags.privileged
+      emergency_change: flags.emergency
+      environment: environment
+      service_tier: service_tier
+      cab_review_evidence_id: cab_review.evidence_id
+      approver_chain: approver_chain
+    risk_attributes:
+      risk_score: risk.score
+      privileged_change: flags.privileged
+      emergency_change: flags.emergency
+      environment: environment
+    policy_bundle: acme-change-governance
+outbound:
+  mode: callback

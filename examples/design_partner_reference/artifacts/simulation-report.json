@@ -1,0 +1,94 @@
+{
+  "total_scenarios": 3,
+  "changed_scenarios": 1,
+  "change_ratio": 0.3333333333333333,
+  "grouped_changes": {
+    "source_system": {
+      "servicenow": {
+        "total": 3,
+        "changed": 1,
+        "changed_scenarios": [
+          "emergency_privileged_no_chain"
+        ]
+      }
+    },
+    "workflow_stage": {
+      "awaiting_approval": {
+        "total": 3,
+        "changed": 1,
+        "changed_scenarios": [
+          "emergency_privileged_no_chain"
+        ]
+      }
+    },
+    "risk_category": {
+      "emergency_change": {
+        "total": 1,
+        "changed": 1,
+        "changed_scenarios": [
+          "emergency_privileged_no_chain"
+        ]
+      },
+      "change_governance": {
+        "total": 1,
+        "changed": 0,
+        "changed_scenarios": []
+      },
+      "routine_change": {
+        "total": 1,
+        "changed": 0,
+        "changed_scenarios": []
+      }
+    }
+  },
+  "changes": [
+    {
+      "scenario_id": "emergency_privileged_no_chain",
+      "source_system": "servicenow",
+      "workflow_stage": "awaiting_approval",
+      "risk_category": "emergency_change",
+      "before_outcome": "ESCALATE_FOR_HUMAN_REVIEW",
+      "after_outcome": "BLOCKED",
+      "changed": true,
+      "before_summary": "Decision dec_af174c6364b9: ESCALATE_FOR_HUMAN_REVIEW for rule(s) (escalate_privileged_production_changes).",
+      "after_summary": "Decision dec_4925e588f7ed: BLOCKED due to inviolable policy constraints (block_emergency_privileged_changes_without_approver).",
+      "before_matched_rules": [
+        "escalate_privileged_production_changes"
+      ],
+      "after_matched_rules": [
+        "block_emergency_privileged_changes_without_approver",
+        "escalate_privileged_production_changes"
+      ]
+    },
+    {
+      "scenario_id": "high_risk_missing_cab",
+      "source_system": "servicenow",
+      "workflow_stage": "awaiting_approval",
+      "risk_category": "change_governance",
+      "before_outcome": "BLOCKED",
+      "after_outcome": "BLOCKED",
+      "changed": false,
+      "before_summary": "Decision dec_ce3c0743526f: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
+      "after_summary": "Decision dec_e9950cebc5f4: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
+      "before_matched_rules": [],
+      "after_matched_rules": []
+    },
+    {
+      "scenario_id": "low_risk_with_cab",
+      "source_system": "servicenow",
+      "workflow_stage": "awaiting_approval",
+      "risk_category": "routine_change",
+      "before_outcome": "APPROVED",
+      "after_outcome": "APPROVED",
+      "changed": false,
+      "before_summary": "Decision dec_44c88db3c702: APPROVED. No matching policy rules for action 'approve_change_request'.",
+      "after_summary": "Decision dec_30ba9b8b063c: APPROVED. No matching policy rules for action 'approve_change_request'.",
+      "before_matched_rules": [
+        "allow_standard_low_risk_changes"
+      ],
+      "after_matched_rules": [
+        "allow_standard_low_risk_changes"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+- id: block_unreviewed_high_risk_changes
+  description: Block high-risk changes without CAB evidence.
+  severity: critical
+  inviolable: true
+  applies_to: [approve_change_request]
+  condition:
+    and:
+      - field: risk_score
+        gte: 90
+      - field: cab_review_evidence_id
+        exists: false
+  decision: BLOCK
+  reason: CAB evidence is mandatory for high-risk production changes.
+
+- id: block_emergency_privileged_changes_without_approver
+  description: Block emergency privileged production changes without an approver chain.
+  severity: critical
+  inviolable: true
+  applies_to: [approve_change_request]
+  condition:
+    and:
+      - field: emergency_change
+        eq: true
+      - field: privileged_change
+        eq: true
+      - field: approver_chain
+        exists: false
+  decision: BLOCK
+  reason: Emergency privileged changes require a recorded approver chain.
+
+- id: escalate_privileged_production_changes
+  description: Escalate privileged production changes for security review.
+  severity: high
+  inviolable: false
+  applies_to: [approve_change_request]
+  condition:
+    and:
+      - field: privileged_change
+        eq: true
+      - field: environment
+        eq: production
+  decision: ESCALATE
+  reason: Privileged production changes require security approval.
+
+- id: allow_standard_low_risk_changes
+  description: Allow low-risk changes after CAB evidence is attached.
+  severity: low
+  inviolable: false
+  applies_to: [approve_change_request]
+  condition:
+    and:
+      - field: risk_score
+        lt: 65
+      - field: cab_review_evidence_id
+        exists: true
+  decision: ALLOW
+  reason: Low-risk changes with CAB evidence can proceed automatically.

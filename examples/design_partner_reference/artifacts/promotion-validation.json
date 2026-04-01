@@ -1,0 +1,50 @@
+{
+  "candidate_bundle": {
+    "bundle_name": "acme-change-governance",
+    "version": "2026.04-candidate",
+    "loaded_from": "/workspace/sena/examples/design_partner_reference/policy_bundles/candidate",
+    "lifecycle": "candidate",
+    "owner": "acme-platform-risk",
+    "description": "Candidate release for production change-approval controls.",
+    "schema_version": "1",
+    "integrity_sha256": "3a04e6ce99e0bf6ee5579ac94893811021261e0134c88c4d6c6659c36ecff20f",
+    "policy_file_count": 1,
+    "context_schema": {
+      "action_type": "str",
+      "request_id": "str",
+      "actor_id": "str",
+      "source_system": "str",
+      "risk_score": "int",
+      "privileged_change": "bool",
+      "cab_review_evidence_id": "str"
+    }
+  },
+  "active_bundle": {
+    "bundle_name": "acme-change-governance",
+    "version": "2026.04.0",
+    "loaded_from": "/workspace/sena/examples/design_partner_reference/policy_bundles/active",
+    "lifecycle": "active",
+    "owner": "acme-platform-risk",
+    "description": "Active release for production change-approval controls.",
+    "schema_version": "1",
+    "integrity_sha256": "fa5895541da8d927bb3d90f071b7dc4bd2a9ff6cd5e82e52ffeabebb21b3191f",
+    "policy_file_count": 1,
+    "context_schema": {
+      "action_type": "str",
+      "request_id": "str",
+      "actor_id": "str",
+      "source_system": "str",
+      "risk_score": "int",
+      "privileged_change": "bool",
+      "cab_review_evidence_id": "str"
+    }
+  },
+  "signature_verification": {
+    "valid": true,
+    "errors": []
+  },
+  "promotion_validation": {
+    "valid": true,
+    "errors": []
+  }
+}

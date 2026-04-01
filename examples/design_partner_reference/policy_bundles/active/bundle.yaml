@@ -1,0 +1,13 @@
+bundle_name: acme-change-governance
+version: 2026.04.0
+owner: acme-platform-risk
+lifecycle: active
+description: Active release for production change-approval controls.
+context_schema:
+  action_type: str
+  request_id: str
+  actor_id: str
+  source_system: str
+  risk_score: int
+  privileged_change: bool
+  cab_review_evidence_id: str

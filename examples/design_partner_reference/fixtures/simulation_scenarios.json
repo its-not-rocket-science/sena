@@ -1,0 +1,56 @@
+{
+  "high_risk_missing_cab": {
+    "action_type": "approve_change_request",
+    "request_id": "SIM-CHG-1001",
+    "actor_id": "sim-user-001",
+    "attributes": {
+      "source_system": "servicenow",
+      "workflow_stage": "awaiting_approval",
+      "risk_category": "change_governance",
+      "risk_score": 97,
+      "privileged_change": true,
+      "emergency_change": false,
+      "environment": "production",
+      "cab_review_evidence_id": null,
+      "approver_chain": null
+    },
+    "facts": {}
+  },
+  "low_risk_with_cab": {
+    "action_type": "approve_change_request",
+    "request_id": "SIM-CHG-1002",
+    "actor_id": "sim-user-002",
+    "attributes": {
+      "source_system": "servicenow",
+      "workflow_stage": "awaiting_approval",
+      "risk_category": "routine_change",
+      "risk_score": 40,
+      "privileged_change": false,
+      "emergency_change": false,
+      "environment": "production",
+      "cab_review_evidence_id": "CAB-REV-6621",
+      "approver_chain": [
+        "ops_manager",
+        "security_oncall"
+      ]
+    },
+    "facts": {}
+  },
+  "emergency_privileged_no_chain": {
+    "action_type": "approve_change_request",
+    "request_id": "SIM-CHG-1003",
+    "actor_id": "sim-user-003",
+    "attributes": {
+      "source_system": "servicenow",
+      "workflow_stage": "awaiting_approval",
+      "risk_category": "emergency_change",
+      "risk_score": 82,
+      "privileged_change": true,
+      "emergency_change": true,
+      "environment": "production",
+      "cab_review_evidence_id": "CAB-REV-7001",
+      "approver_chain": null
+    },
+    "facts": {}
+  }
+}

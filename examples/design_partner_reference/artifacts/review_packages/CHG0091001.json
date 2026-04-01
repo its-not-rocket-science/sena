@@ -1,0 +1,123 @@
+{
+  "package_schema_version": "1.0",
+  "package_type": "sena.decision_review_package",
+  "package_generated_at": "2026-04-01T14:51:32.358946+00:00",
+  "decision_summary": {
+    "decision_id": "dec_8a81df6744c4",
+    "decision": "BLOCKED",
+    "outcome": "BLOCKED",
+    "action_type": "approve_change_request",
+    "summary": "Decision dec_8a81df6744c4: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
+    "decision_timestamp": "2026-04-01T14:51:32.358946+00:00"
+  },
+  "rules": {
+    "matched": [],
+    "applicable": [],
+    "evaluated": [],
+    "conflicting_rule_ids": []
+  },
+  "precedence": {
+    "explanation": "Context schema validation failed before policy evaluation; blocked deterministically.",
+    "outcome_rationale": [
+      "Outcome resolved to BLOCKED using deterministic precedence.",
+      "Context schema validation failed before policy evaluation; blocked deterministically.",
+      "Input context schema validation failed before rule evaluation."
+    ],
+    "reviewer_guidance": [
+      "Verify matched controls align with control owner expectations.",
+      "Retain decision hash and input fingerprint for audit replay.",
+      "Treat as control failure until remediating evidence is attached."
+    ]
+  },
+  "facts_and_actor": {
+    "actor": {
+      "actor_id": "u.change.001",
+      "actor_role": "site_reliability_engineer"
+    },
+    "facts": {
+      "action_type": "approve_change_request",
+      "request_id": "CHG0091001",
+      "actor_id": "u.change.001",
+      "actor_role": "site_reliability_engineer",
+      "source_event_type": "change_approval.requested",
+      "source_record_id": "f4eaf8fb1b552010ba2d55368b4bcbee",
+      "source_object_type": "change_request",
+      "workflow_stage": "awaiting_approval",
+      "requested_action": "approve_change_request",
+      "source_system": "servicenow",
+      "risk_score": 97,
+      "privileged_change": true,
+      "emergency_change": false,
+      "environment": "production",
+      "service_tier": "tier0",
+      "cab_review_evidence_id": null,
+      "approver_chain": null,
+      "source_object_id": "f4eaf8fb1b552010ba2d55368b4bcbee",
+      "correlation_key": "CHG0091001",
+      "idempotency_key": "sn-delivery-1001",
+      "risk_attributes": {
+        "risk_score": 97,
+        "privileged_change": true,
+        "emergency_change": false,
+        "environment": "production"
+      },
+      "evidence_references": [],
+      "servicenow_table": "change_request",
+      "servicenow_change_number": "CHG0091001"
+    },
+    "missing_fields": []
+  },
+  "policy_bundle_metadata": {
+    "bundle_name": "acme-change-governance",
+    "version": "2026.04.0",
+    "lifecycle": "active",
+    "schema_version": "1",
+    "integrity_sha256": "fa5895541da8d927bb3d90f071b7dc4bd2a9ff6cd5e82e52ffeabebb21b3191f",
+    "loaded_from": "/workspace/sena/examples/design_partner_reference/policy_bundles/active"
+  },
+  "audit_identifiers": {
+    "request_id": "CHG0091001",
+    "decision_hash": "a3bb473761ce1d4070164bdec2d3c47dba91477a43a3ed30946df480da5b28c7",
+    "input_fingerprint": "c4cc9d4dc88d8f151e7433058ab67326e3d185b77220429dee829d1c28e08497",
+    "chain_hash": "7fbc69bbf2f8b3a9c5e82af81eb6ea5895c8d04e11cad556ee5802b3722d5d84",
+    "previous_chain_hash": "ec48570a2378a0452cb8c31422cc6e8581acf9ca31d9440861d77b10b74dcb98",
+    "storage_sequence_number": 9
+  },
+  "normalized_source_system_references": [
+    {
+      "source_system": "servicenow",
+      "reference_type": "servicenow_change_number",
+      "reference_value": "CHG0091001"
+    },
+    {
+      "source_system": "servicenow",
+      "reference_type": "source_event_type",
+      "reference_value": "change_approval.requested"
+    },
+    {
+      "source_system": "servicenow",
+      "reference_type": "source_object_id",
+      "reference_value": "f4eaf8fb1b552010ba2d55368b4bcbee"
+    },
+    {
+      "source_system": "servicenow",
+      "reference_type": "source_object_type",
+      "reference_value": "change_request"
+    },
+    {
+      "source_system": "servicenow",
+      "reference_type": "source_record_id",
+      "reference_value": "f4eaf8fb1b552010ba2d55368b4bcbee"
+    },
+    {
+      "source_system": "servicenow",
+      "reference_type": "source_system",
+      "reference_value": "servicenow"
+    },
+    {
+      "source_system": "servicenow",
+      "reference_type": "request_correlation_id",
+      "reference_value": "CHG0091001"
+    }
+  ]
+}
