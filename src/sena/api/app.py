@@ -21,8 +21,9 @@ from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig, PolicyBundleMetadata
 from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
-from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
+from sena.policy.parser import PolicyParseError, load_policy_bundle
+from sena.policy.store import SQLitePolicyBundleRepository
 
 try:
     from fastapi import APIRouter, FastAPI, HTTPException, Request
@@ -47,11 +48,17 @@ def _error_payload(code: str, message: str, request_id: str | None = None) -> di
 
 
 class _EngineState:
-    def __init__(self, settings: ApiSettings, rules: list, metadata: PolicyBundleMetadata):
+    def __init__(
+        self,
+        settings: ApiSettings,
+        rules: list,
+        metadata: PolicyBundleMetadata,
+        policy_repo: SQLitePolicyBundleRepository | None,
+    ):
         self.settings = settings
         self.rules = rules
         self.metadata = metadata
-
+        self.policy_repo = policy_repo
 
 
 def _parse_default_decision(raw: str) -> DecisionOutcome:
@@ -59,6 +66,33 @@ def _parse_default_decision(raw: str) -> DecisionOutcome:
         return DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
     return DecisionOutcome(raw)
 
+
+def _load_runtime_bundle(
+    runtime_settings: ApiSettings,
+) -> tuple[list, PolicyBundleMetadata, SQLitePolicyBundleRepository | None]:
+    if runtime_settings.policy_store_backend == "sqlite":
+        if not runtime_settings.policy_store_sqlite_path:
+            raise RuntimeError(
+                "SENA_POLICY_STORE_SQLITE_PATH is required when SENA_POLICY_STORE_BACKEND=sqlite"
+            )
+        repo = SQLitePolicyBundleRepository(runtime_settings.policy_store_sqlite_path)
+        repo.initialize()
+        active = repo.get_active_bundle(runtime_settings.bundle_name)
+        if active is None:
+            raise RuntimeError(
+                f"No active bundle found for '{runtime_settings.bundle_name}' in sqlite store"
+            )
+        return active.rules, active.metadata, repo
+
+    try:
+        rules, metadata = load_policy_bundle(
+            runtime_settings.policy_dir,
+            bundle_name=runtime_settings.bundle_name,
+            version=runtime_settings.bundle_version,
+        )
+    except PolicyParseError as exc:
+        raise RuntimeError(f"Failed to load policy bundle: {exc}") from exc
+    return rules, metadata, None
 
 
 def create_app(settings: ApiSettings | None = None):
@@ -71,17 +105,10 @@ def create_app(settings: ApiSettings | None = None):
     if runtime_settings.enable_api_key_auth and not runtime_settings.api_key:
         raise RuntimeError("SENA_API_KEY_ENABLED=true requires SENA_API_KEY to be set")
 
-    try:
-        rules, metadata = load_policy_bundle(
-            runtime_settings.policy_dir,
-            bundle_name=runtime_settings.bundle_name,
-            version=runtime_settings.bundle_version,
-        )
-    except PolicyParseError as exc:
-        raise RuntimeError(f"Failed to load policy bundle: {exc}") from exc
+    rules, metadata, policy_repo = _load_runtime_bundle(runtime_settings)
 
     app = FastAPI(title="SENA Compliance Engine API", version=SENA_VERSION)
-    state = _EngineState(runtime_settings, rules, metadata)
+    state = _EngineState(runtime_settings, rules, metadata, policy_repo)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -147,6 +174,55 @@ def create_app(settings: ApiSettings | None = None):
             "bundle": BundleInfo.model_validate(state.metadata.__dict__),
             "rules_total": len(state.rules),
             "actions_covered": applies_to,
+        }
+
+    @api_v1.post("/bundles/register")
+    def register_bundle(payload: dict[str, Any]) -> dict[str, Any]:
+        if state.policy_repo is None:
+            raise HTTPException(status_code=400, detail="policy store backend is not sqlite")
+
+        policy_dir = payload.get("policy_dir", state.settings.policy_dir)
+        rules, metadata = load_policy_bundle(
+            policy_dir,
+            bundle_name=payload.get("bundle_name", state.settings.bundle_name),
+            version=payload.get("bundle_version", state.settings.bundle_version),
+        )
+        if "lifecycle" in payload:
+            metadata.lifecycle = payload["lifecycle"]
+        bundle_id = state.policy_repo.register_bundle(metadata, rules)
+        return {"bundle_id": bundle_id, "bundle": metadata.__dict__, "rules_total": len(rules)}
+
+    @api_v1.post("/bundles/{bundle_id}/activate")
+    def activate_bundle(bundle_id: int) -> dict[str, str]:
+        if state.policy_repo is None:
+            raise HTTPException(status_code=400, detail="policy store backend is not sqlite")
+        state.policy_repo.set_bundle_lifecycle(bundle_id, "active")
+        active = state.policy_repo.get_active_bundle(state.settings.bundle_name)
+        if active is not None:
+            state.rules = active.rules
+            state.metadata = active.metadata
+        return {"status": "ok"}
+
+    @api_v1.post("/bundles/{bundle_id}/deprecate")
+    def deprecate_bundle(bundle_id: int) -> dict[str, str]:
+        if state.policy_repo is None:
+            raise HTTPException(status_code=400, detail="policy store backend is not sqlite")
+        state.policy_repo.set_bundle_lifecycle(bundle_id, "deprecated")
+        return {"status": "ok"}
+
+    @api_v1.get("/bundles/active")
+    def get_active_bundle(bundle_name: str | None = None) -> dict[str, Any]:
+        if state.policy_repo is None:
+            raise HTTPException(status_code=400, detail="policy store backend is not sqlite")
+        name = bundle_name or state.settings.bundle_name
+        active = state.policy_repo.get_active_bundle(name)
+        if active is None:
+            raise HTTPException(status_code=404, detail=f"No active bundle found for '{name}'")
+        return {
+            "bundle_id": active.id,
+            "bundle": BundleInfo.model_validate(active.metadata.__dict__),
+            "rules_total": len(active.rules),
+            "created_at": active.created_at,
         }
 
     @api_v1.post("/evaluate")
@@ -227,7 +303,6 @@ def create_app(settings: ApiSettings | None = None):
 
     app.include_router(api_v1)
 
-    # Backward-compatible unversioned aliases.
     app.add_api_route("/health", health, methods=["GET"], response_model=HealthResponse)
     app.add_api_route("/bundle", bundle, methods=["GET"], response_model=BundleInfo)
     app.add_api_route("/evaluate", evaluate, methods=["POST"])

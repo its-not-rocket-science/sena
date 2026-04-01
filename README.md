@@ -79,6 +79,31 @@ Versioned endpoints:
 
 Backward-compatible aliases still exist at `/health`, `/bundle`, `/evaluate`.
 
+### Persistent policy registry (SQLite)
+
+You can optionally run the API against a DB-backed policy registry instead of filesystem bundles.
+
+```bash
+# 1) Initialize schema
+PYTHONPATH=src python scripts/migrate_policy_registry.py --sqlite-path ./.data/policy_registry.db
+
+# 2) Start API in sqlite mode
+export SENA_POLICY_STORE_BACKEND=sqlite
+export SENA_POLICY_STORE_SQLITE_PATH=./.data/policy_registry.db
+export SENA_BUNDLE_NAME=enterprise-compliance-controls
+python -m uvicorn sena.api.app:app --reload
+
+# 3) Register and activate a bundle
+curl -X POST http://127.0.0.1:8000/v1/bundles/register \
+  -H 'content-type: application/json' \
+  -d '{"policy_dir":"src/sena/examples/policies","bundle_name":"enterprise-compliance-controls","bundle_version":"2026.03","lifecycle":"candidate"}'
+
+curl -X POST http://127.0.0.1:8000/v1/bundles/1/activate
+
+# 4) Inspect currently active bundle
+curl http://127.0.0.1:8000/v1/bundles/active
+```
+
 ### Quickstart (guaranteed working)
 
 The commands below were validated against the checked-in example bundle and scenario paths, without requiring optional API dependencies.
