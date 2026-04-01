@@ -7,6 +7,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from collections import defaultdict, deque
+from pathlib import Path
 from typing import Any
 
 from sena import __version__ as SENA_VERSION
@@ -126,6 +127,10 @@ def _load_runtime_bundle(
             raise RuntimeError(
                 f"No active bundle found for '{runtime_settings.bundle_name}' in sqlite store"
             )
+        if not active.rules:
+            raise RuntimeError(
+                f"Active bundle '{runtime_settings.bundle_name}' in sqlite store has no rules"
+            )
         return active.rules, active.metadata, repo
 
     try:
@@ -136,7 +141,27 @@ def _load_runtime_bundle(
         )
     except PolicyParseError as exc:
         raise RuntimeError(f"Failed to load policy bundle: {exc}") from exc
+    if not rules:
+        raise RuntimeError(
+            f"Loaded bundle '{metadata.bundle_name}' version '{metadata.version}' contains no rules"
+        )
     return rules, metadata, None
+
+
+def _validate_startup_settings(runtime_settings: ApiSettings) -> None:
+    if runtime_settings.policy_store_backend == "filesystem":
+        policy_dir = Path(runtime_settings.policy_dir)
+        if not policy_dir.exists() or not policy_dir.is_dir():
+            raise RuntimeError(
+                f"SENA_POLICY_DIR must point to an existing directory: {runtime_settings.policy_dir}"
+            )
+
+    if runtime_settings.enable_api_key_auth and not runtime_settings.api_key:
+        raise RuntimeError("SENA_API_KEY_ENABLED=true requires SENA_API_KEY to be set")
+    if runtime_settings.api_key and not runtime_settings.enable_api_key_auth:
+        raise RuntimeError("SENA_API_KEY is set but SENA_API_KEY_ENABLED is not true")
+    if runtime_settings.runtime_mode == "production" and not runtime_settings.enable_api_key_auth:
+        raise RuntimeError("SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true")
 
 
 def create_app(settings: ApiSettings | None = None):
@@ -145,9 +170,8 @@ def create_app(settings: ApiSettings | None = None):
 
     runtime_settings = settings or load_settings_from_env()
     configure_logging(runtime_settings.log_level)
+    _validate_startup_settings(runtime_settings)
 
-    if runtime_settings.enable_api_key_auth and not runtime_settings.api_key:
-        raise RuntimeError("SENA_API_KEY_ENABLED=true requires SENA_API_KEY to be set")
     if runtime_settings.request_max_bytes <= 0:
         raise RuntimeError("SENA_REQUEST_MAX_BYTES must be greater than 0")
     if runtime_settings.request_timeout_seconds <= 0:
