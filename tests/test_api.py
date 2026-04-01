@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 import time
 
@@ -27,6 +30,13 @@ def _settings(**kwargs):
     defaults.update(kwargs)
     return ApiSettings(**defaults)
 
+
+
+
+
+def _servicenow_fixture(name: str) -> dict:
+    fixture_path = Path("tests/fixtures/integrations/servicenow") / f"{name}.json"
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
 
 
 def test_health_endpoint() -> None:
@@ -468,6 +478,81 @@ def test_jira_webhook_unsupported_event_returns_deterministic_error() -> None:
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "jira_unsupported_event_type"
+
+
+
+def test_servicenow_webhook_happy_path_returns_machine_readable_payload() -> None:
+    app = create_app(
+        _settings(servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml")
+    )
+    client = TestClient(app)
+    payload = _servicenow_fixture("emergency_change")
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        json=payload,
+        headers={"x-servicenow-delivery-id": "sn-delivery-1"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "evaluated"
+    assert body["normalized_event"]["source_system"] == "servicenow"
+    assert body["mapped_action_proposal"]["request_id"] == payload["change_request"]["number"]
+
+
+def test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response() -> None:
+    app = create_app(
+        _settings(servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml")
+    )
+    client = TestClient(app)
+    payload = _servicenow_fixture("emergency_change")
+    headers = {"x-servicenow-delivery-id": "sn-delivery-dup"}
+
+    first = client.post("/v1/integrations/servicenow/webhook", json=payload, headers=headers)
+    second = client.post("/v1/integrations/servicenow/webhook", json=payload, headers=headers)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["status"] == "duplicate_ignored"
+    assert second.json()["error"]["code"] == "servicenow_duplicate_delivery"
+
+
+def test_servicenow_webhook_missing_actor_identity_returns_deterministic_error() -> None:
+    app = create_app(
+        _settings(servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml")
+    )
+    client = TestClient(app)
+    payload = _servicenow_fixture("emergency_change")
+    del payload["requested_by"]["user_id"]
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        json=payload,
+        headers={"x-servicenow-delivery-id": "sn-delivery-missing-user"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "servicenow_missing_required_fields"
+
+
+def test_servicenow_webhook_audit_record_includes_source_metadata() -> None:
+    app = create_app(
+        _settings(servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml")
+    )
+    client = TestClient(app)
+    payload = _servicenow_fixture("privileged_change")
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        json=payload,
+        headers={"x-servicenow-delivery-id": "sn-delivery-audit"},
+    )
+
+    assert response.status_code == 200
+    source_metadata = response.json()["decision"]["audit_record"]["source_metadata"]
+    assert source_metadata["source_system"] == "servicenow"
+    assert source_metadata["source_event_type"] == "change_approval.requested"
+    assert source_metadata["servicenow_change_number"] == payload["change_request"]["number"]
 
 
 def test_rate_limiting_per_api_key() -> None:

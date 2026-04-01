@@ -4,6 +4,7 @@ from sena.integrations.base import ConnectorRegistry, DecisionPayload, Integrati
 from sena.integrations.jira import AllowAllJiraWebhookVerifier, JiraConnector, load_jira_mapping_config
 from sena.integrations.registry import build_connector_registry
 from sena.integrations.slack import SlackClient
+from sena.integrations.servicenow import ServiceNowConnector, load_servicenow_mapping_config
 from sena.integrations.webhook import WebhookMappingConfig, WebhookPayloadMapper, WebhookRoute
 
 
@@ -33,6 +34,15 @@ def test_registry_registers_jira_connector() -> None:
     )
     registry = build_connector_registry(jira=jira)
     assert registry.list_names() == ["jira"]
+
+
+
+def test_registry_registers_servicenow_connector() -> None:
+    servicenow = ServiceNowConnector(
+        config=load_servicenow_mapping_config("src/sena/examples/integrations/servicenow_mappings.yaml")
+    )
+    registry = build_connector_registry(servicenow=servicenow)
+    assert registry.list_names() == ["servicenow"]
 
 
 def test_registry_rejects_duplicate_names() -> None:

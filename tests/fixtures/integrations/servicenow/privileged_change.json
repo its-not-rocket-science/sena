@@ -1,0 +1,17 @@
+{
+  "fixture_version": "1",
+  "event_type": "change_approval.requested",
+  "table": "change_request",
+  "change_request": {"sys_id": "d0f1e2a3b5", "number": "CHG0091002"},
+  "requested_by": {"user_id": "sn.user.002", "role": "privileged_admin"},
+  "classification": "standard",
+  "environment": "production",
+  "risk": {"level": "critical"},
+  "schedule": {"window": "business_hours", "start": "2026-04-01T14:00:00Z", "end": "2026-04-01T15:00:00Z"},
+  "flags": {"emergency": false, "privileged": true, "out_of_hours": false},
+  "approver_chain": ["platform_lead", "ciso_delegate"],
+  "approver_chain_missing": false,
+  "cab_review": {"evidence_id": "CAB-2026-0043"},
+  "cab_review_missing": false,
+  "updated_at": "2026-04-01T12:00:00Z"
+}

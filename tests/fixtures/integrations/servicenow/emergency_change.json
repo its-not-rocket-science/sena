@@ -1,0 +1,27 @@
+{
+  "fixture_version": "1",
+  "event_type": "change_approval.requested",
+  "table": "change_request",
+  "change_request": {
+    "sys_id": "d0f1e2a3b4",
+    "number": "CHG0091001"
+  },
+  "requested_by": {
+    "user_id": "sn.user.001",
+    "role": "change_manager"
+  },
+  "classification": "emergency",
+  "environment": "production",
+  "risk": {"level": "high"},
+  "schedule": {
+    "window": "out_of_hours",
+    "start": "2026-04-01T23:00:00Z",
+    "end": "2026-04-02T01:00:00Z"
+  },
+  "flags": {"emergency": true, "privileged": false, "out_of_hours": true},
+  "approver_chain": ["director_ops", "security_lead"],
+  "approver_chain_missing": false,
+  "cab_review": {"evidence_id": "CAB-2026-0042"},
+  "cab_review_missing": false,
+  "updated_at": "2026-04-01T21:33:00Z"
+}

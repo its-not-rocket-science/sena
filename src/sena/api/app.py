@@ -40,6 +40,11 @@ from sena.integrations.jira import (
     load_jira_mapping_config,
 )
 from sena.integrations.registry import build_connector_registry
+from sena.integrations.servicenow import (
+    ServiceNowConnector,
+    ServiceNowIntegrationError,
+    load_servicenow_mapping_config,
+)
 from sena.integrations.webhook import (
     WebhookMappingError,
     WebhookPayloadMapper,
@@ -75,6 +80,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("POST", "/v1/evaluate/batch"),
         ("POST", "/v1/integrations/webhook"),
         ("POST", "/v1/integrations/jira/webhook"),
+        ("POST", "/v1/integrations/servicenow/webhook"),
         ("POST", "/v1/integrations/slack/interactions"),
         ("POST", "/v1/simulation"),
     },
@@ -109,6 +115,7 @@ class _EngineState:
         self.slack_client: SlackClient | None = None
         self.connector_registry = build_connector_registry()
         self.jira_connector: JiraConnector | None = None
+        self.servicenow_connector: ServiceNowConnector | None = None
 
 
 class _FixedWindowRateLimiter:
@@ -245,6 +252,7 @@ def create_app(settings: ApiSettings | None = None):
         webhook=state.webhook_mapper,
         slack=state.slack_client,
         jira=state.jira_connector,
+        servicenow=state.servicenow_connector,
     )
     if runtime_settings.jira_mapping_config_path:
         verifier = (
@@ -260,6 +268,18 @@ def create_app(settings: ApiSettings | None = None):
             webhook=state.webhook_mapper,
             slack=state.slack_client,
             jira=state.jira_connector,
+            servicenow=state.servicenow_connector,
+        )
+
+    if runtime_settings.servicenow_mapping_config_path:
+        state.servicenow_connector = ServiceNowConnector(
+            config=load_servicenow_mapping_config(runtime_settings.servicenow_mapping_config_path)
+        )
+        state.connector_registry = build_connector_registry(
+            webhook=state.webhook_mapper,
+            slack=state.slack_client,
+            jira=state.jira_connector,
+            servicenow=state.servicenow_connector,
         )
 
     deprecation_date = "2026-04-01"
@@ -640,6 +660,86 @@ def create_app(settings: ApiSettings | None = None):
             raise_api_error("jira_invalid_mapping", details={"reason": reason})
         except Exception as exc:  # pragma: no cover
             raise_api_error("jira_evaluation_error", details={"reason": str(exc)})
+
+    @api_v1.post("/integrations/servicenow/webhook")
+    async def integrations_servicenow_webhook(
+        request: Request,
+        strict_require_allow: bool = False,
+    ) -> dict[str, Any]:
+        if state.servicenow_connector is None:
+            raise_api_error("servicenow_mapping_not_configured")
+        raw_body = await request.body()
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except json.JSONDecodeError:
+            raise_api_error("validation_error", details={"reason": "Malformed JSON body"})
+
+        try:
+            mapped = state.connector_registry.get("servicenow").handle_event(
+                {
+                    "headers": dict(request.headers.items()),
+                    "payload": payload,
+                    "raw_body": raw_body,
+                }
+            )
+            normalized = mapped["normalized_event"]
+            proposal = mapped["action_proposal"]
+            event_route = state.servicenow_connector.route_for_event_type(normalized["event_type"])
+            if event_route and event_route.policy_bundle and event_route.policy_bundle != state.metadata.bundle_name:
+                raise_api_error(
+                    "servicenow_policy_bundle_not_found",
+                    details={
+                        "required_bundle": event_route.policy_bundle,
+                        "loaded_bundle": state.metadata.bundle_name,
+                    },
+                )
+
+            evaluator = PolicyEvaluator(
+                state.rules,
+                policy_bundle=state.metadata,
+                config=EvaluatorConfig(
+                    default_decision=DecisionOutcome.APPROVED,
+                    require_allow_match=strict_require_allow,
+                ),
+            )
+            with state.metrics.evaluation_timer(endpoint="/v1/integrations/servicenow/webhook"):
+                trace = evaluator.evaluate(proposal, {})
+            outbound = state.servicenow_connector.send_decision(
+                DecisionPayload(
+                    decision_id=trace.decision_id,
+                    request_id=proposal.request_id,
+                    action_type=proposal.action_type,
+                    matched_rule_ids=[item.rule_id for item in trace.matched_rules],
+                    summary=trace.summary,
+                )
+            )
+            return {
+                "status": "evaluated",
+                "normalized_event": normalized,
+                "mapped_action_proposal": {
+                    "action_type": proposal.action_type,
+                    "request_id": proposal.request_id,
+                    "actor_id": proposal.actor_id,
+                    "actor_role": proposal.actor_role,
+                    "attributes": proposal.attributes,
+                },
+                "decision": trace.to_dict(),
+                "outbound_delivery": outbound,
+            }
+        except ServiceNowIntegrationError as exc:
+            reason = str(exc)
+            if "duplicate delivery" in reason:
+                return {
+                    "status": "duplicate_ignored",
+                    "error": {"code": "servicenow_duplicate_delivery", "message": reason},
+                }
+            if "unsupported servicenow event type" in reason:
+                raise_api_error("servicenow_unsupported_event_type", details={"reason": reason})
+            if "missing required fields" in reason or "missing actor identity" in reason:
+                raise_api_error("servicenow_missing_required_fields", details={"reason": reason})
+            raise_api_error("servicenow_invalid_mapping", details={"reason": reason})
+        except Exception as exc:  # pragma: no cover
+            raise_api_error("servicenow_evaluation_error", details={"reason": str(exc)})
 
     @api_v1.post("/integrations/slack/interactions")
     async def slack_interactions(request: Request) -> dict[str, Any]:
