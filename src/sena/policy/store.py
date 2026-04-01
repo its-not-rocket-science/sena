@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from contextlib import contextmanager
 from typing import Any, Protocol
 
 from sena.core.enums import RuleDecision, Severity
@@ -18,6 +19,26 @@ ALLOWED_TRANSITIONS: set[tuple[str, str]] = {
     ("candidate", "active"),
     ("active", "deprecated"),
 }
+
+
+class PolicyStoreError(Exception):
+    """Base class for policy store persistence failures."""
+
+
+class PolicyBundleConflictError(PolicyStoreError):
+    """Raised when a write conflicts with uniqueness or concurrent operations."""
+
+
+class PolicyBundleNotFoundError(PolicyStoreError):
+    """Raised when a requested bundle does not exist."""
+
+
+class PolicyBundleInvalidTransitionError(PolicyStoreError):
+    """Raised when lifecycle transition business rules are violated."""
+
+
+class PolicyStoreIntegrityError(PolicyStoreError):
+    """Raised when startup checks or invariants detect a corrupt state."""
 
 
 @dataclass(frozen=True)
@@ -73,6 +94,16 @@ class PolicyBundleRepository(Protocol):
 
 
 class SQLitePolicyBundleRepository:
+    """SQLite-backed policy repository.
+
+    Concurrency assumptions:
+    - lifecycle-changing operations acquire a write lock using ``BEGIN IMMEDIATE``
+      so promotion/rollback transitions are serialized across writers.
+    - readers remain non-blocking while there is no active writer transaction.
+    - lock contention is surfaced as ``PolicyBundleConflictError`` rather than
+      leaking sqlite3 implementation exceptions.
+    """
+
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._migration_manager = SQLiteMigrationManager(
@@ -106,6 +137,25 @@ class SQLitePolicyBundleRepository:
                         datetime.now(timezone.utc).isoformat(),
                     ),
                 )
+            self._run_startup_integrity_checks(conn)
+
+    @contextmanager
+    def _write_transaction(self) -> Any:
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            yield conn
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            conn.rollback()
+            if "locked" in str(exc).lower():
+                raise PolicyBundleConflictError("policy store is busy; retry operation") from exc
+            raise
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def register_bundle(
         self,
@@ -128,7 +178,7 @@ class SQLitePolicyBundleRepository:
         created_at = datetime.now(timezone.utc).isoformat()
         digest = self._bundle_digest(rules)
         release_id = metadata.version
-        with self._connect() as conn:
+        with self._write_transaction() as conn:
             try:
                 cursor = conn.execute(
                     """
@@ -162,7 +212,7 @@ class SQLitePolicyBundleRepository:
                     ),
                 )
             except sqlite3.IntegrityError as exc:
-                raise ValueError("bundle with same name and version already exists") from exc
+                raise PolicyBundleConflictError("bundle with same name and version already exists") from exc
             bundle_id = int(cursor.lastrowid)
             conn.executemany(
                 """
@@ -205,68 +255,75 @@ class SQLitePolicyBundleRepository:
         validation_artifact: str | None = None,
         action: str = "promote",
     ) -> None:
-        with self._connect() as conn:
-            row = conn.execute("SELECT * FROM bundles WHERE id = ?", (bundle_id,)).fetchone()
-            if row is None:
-                raise ValueError(f"bundle id '{bundle_id}' not found")
-            source = row["lifecycle"]
-            if (source, target_lifecycle) not in ALLOWED_TRANSITIONS:
-                raise ValueError(f"invalid lifecycle transition '{source}' -> '{target_lifecycle}'")
-            if target_lifecycle == "active" and not validation_artifact:
-                raise ValueError("promotion to active requires validation_artifact")
-
-            replaced_bundle_id: int | None = None
-            if target_lifecycle == "active":
-                active = conn.execute(
-                    "SELECT id FROM bundles WHERE name = ? AND lifecycle = 'active' AND id != ? ORDER BY id DESC LIMIT 1",
-                    (row["name"], bundle_id),
-                ).fetchone()
-                if active is not None:
-                    replaced_bundle_id = int(active["id"])
-                    conn.execute("UPDATE bundles SET lifecycle = 'deprecated' WHERE id = ?", (replaced_bundle_id,))
-                    self._insert_history(
-                        conn,
-                        BundleHistoryRow(
-                            bundle_id=replaced_bundle_id,
-                            action="auto_deprecate",
-                            from_lifecycle="active",
-                            to_lifecycle="deprecated",
-                            actor=promoted_by,
-                            reason=f"Replaced by bundle {bundle_id}",
-                            replaced_bundle_id=bundle_id,
-                            validation_artifact=validation_artifact,
-                            created_at=datetime.now(timezone.utc).isoformat(),
-                        ),
+        with self._write_transaction() as conn:
+            try:
+                row = conn.execute("SELECT * FROM bundles WHERE id = ?", (bundle_id,)).fetchone()
+                if row is None:
+                    raise PolicyBundleNotFoundError(f"bundle id '{bundle_id}' not found")
+                source = row["lifecycle"]
+                if (source, target_lifecycle) not in ALLOWED_TRANSITIONS:
+                    raise PolicyBundleInvalidTransitionError(
+                        f"invalid lifecycle transition '{source}' -> '{target_lifecycle}'"
                     )
+                if target_lifecycle == "active" and not validation_artifact:
+                    raise PolicyBundleInvalidTransitionError("promotion to active requires validation_artifact")
 
-            promoted_at = datetime.now(timezone.utc).isoformat()
-            conn.execute(
-                """
-                UPDATE bundles
-                SET lifecycle = ?, promoted_at = ?, promoted_by = ?, promotion_reason = ?, validation_artifact = ?
-                WHERE id = ?
-                """,
-                (target_lifecycle, promoted_at, promoted_by, promotion_reason, validation_artifact, bundle_id),
-            )
-            self._insert_history(
-                conn,
-                BundleHistoryRow(
-                    bundle_id=bundle_id,
-                    action=action,
-                    from_lifecycle=source,
-                    to_lifecycle=target_lifecycle,
-                    actor=promoted_by,
-                    reason=promotion_reason,
-                    replaced_bundle_id=replaced_bundle_id,
-                    validation_artifact=validation_artifact,
-                    created_at=datetime.now(timezone.utc).isoformat(),
-                ),
-            )
+                replaced_bundle_id: int | None = None
+                if target_lifecycle == "active":
+                    active = conn.execute(
+                        "SELECT id FROM bundles WHERE name = ? AND lifecycle = 'active' AND id != ? ORDER BY id DESC LIMIT 1",
+                        (row["name"], bundle_id),
+                    ).fetchone()
+                    if active is not None:
+                        replaced_bundle_id = int(active["id"])
+                        conn.execute("UPDATE bundles SET lifecycle = 'deprecated' WHERE id = ?", (replaced_bundle_id,))
+                        self._insert_history(
+                            conn,
+                            BundleHistoryRow(
+                                bundle_id=replaced_bundle_id,
+                                action="auto_deprecate",
+                                from_lifecycle="active",
+                                to_lifecycle="deprecated",
+                                actor=promoted_by,
+                                reason=f"Replaced by bundle {bundle_id}",
+                                replaced_bundle_id=bundle_id,
+                                validation_artifact=validation_artifact,
+                                created_at=datetime.now(timezone.utc).isoformat(),
+                            ),
+                        )
+
+                promoted_at = datetime.now(timezone.utc).isoformat()
+                conn.execute(
+                    """
+                    UPDATE bundles
+                    SET lifecycle = ?, promoted_at = ?, promoted_by = ?, promotion_reason = ?, validation_artifact = ?
+                    WHERE id = ?
+                    """,
+                    (target_lifecycle, promoted_at, promoted_by, promotion_reason, validation_artifact, bundle_id),
+                )
+                if target_lifecycle == "active":
+                    self._assert_single_active_bundle(conn, row["name"])
+                self._insert_history(
+                    conn,
+                    BundleHistoryRow(
+                        bundle_id=bundle_id,
+                        action=action,
+                        from_lifecycle=source,
+                        to_lifecycle=target_lifecycle,
+                        actor=promoted_by,
+                        reason=promotion_reason,
+                        replaced_bundle_id=replaced_bundle_id,
+                        validation_artifact=validation_artifact,
+                        created_at=datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise PolicyBundleConflictError("bundle transition conflicted with repository invariants") from exc
 
     def set_bundle_lifecycle(self, bundle_id: int, lifecycle: str) -> None:
         bundle = self.get_bundle(bundle_id)
         if bundle is None:
-            raise ValueError(f"bundle id '{bundle_id}' not found")
+            raise PolicyBundleNotFoundError(f"bundle id '{bundle_id}' not found")
         self.transition_bundle(
             bundle_id,
             lifecycle,
@@ -284,60 +341,70 @@ class SQLitePolicyBundleRepository:
         promotion_reason: str,
         validation_artifact: str,
     ) -> None:
-        with self._connect() as conn:
-            target = conn.execute(
-                "SELECT id, lifecycle, name FROM bundles WHERE id = ? AND name = ?",
-                (to_bundle_id, bundle_name),
-            ).fetchone()
-            if target is None:
-                raise ValueError("rollback target bundle not found")
-            current = conn.execute(
-                "SELECT id FROM bundles WHERE name = ? AND lifecycle = 'active' ORDER BY id DESC LIMIT 1",
-                (bundle_name,),
-            ).fetchone()
-            if current is None:
-                raise ValueError("no active bundle to rollback from")
-            current_id = int(current["id"])
-            if current_id == to_bundle_id:
-                raise ValueError("rollback target is already active")
+        with self._write_transaction() as conn:
+            try:
+                target = conn.execute(
+                    "SELECT id, lifecycle, name FROM bundles WHERE id = ? AND name = ?",
+                    (to_bundle_id, bundle_name),
+                ).fetchone()
+                if target is None:
+                    raise PolicyBundleNotFoundError("rollback target bundle not found")
+                current = conn.execute(
+                    "SELECT id FROM bundles WHERE name = ? AND lifecycle = 'active' ORDER BY id DESC LIMIT 1",
+                    (bundle_name,),
+                ).fetchone()
+                if current is None:
+                    raise PolicyBundleInvalidTransitionError("no active bundle to rollback from")
+                current_id = int(current["id"])
+                if current_id == to_bundle_id:
+                    raise PolicyBundleInvalidTransitionError("rollback target is already active")
 
-            conn.execute("UPDATE bundles SET lifecycle = 'deprecated' WHERE id = ?", (current_id,))
-            self._insert_history(
-                conn,
-                BundleHistoryRow(
-                    bundle_id=current_id,
-                    action="rollback_deprecate",
-                    from_lifecycle="active",
-                    to_lifecycle="deprecated",
-                    actor=promoted_by,
-                    reason=f"Rolled back to bundle {to_bundle_id}",
-                    replaced_bundle_id=to_bundle_id,
-                    validation_artifact=validation_artifact,
-                    created_at=datetime.now(timezone.utc).isoformat(),
-                ),
-            )
-            conn.execute(
-                """
-                UPDATE bundles
-                SET lifecycle = 'active', promoted_at = ?, promoted_by = ?, promotion_reason = ?, validation_artifact = ?
-                WHERE id = ?
-                """,
-                (datetime.now(timezone.utc).isoformat(), promoted_by, promotion_reason, validation_artifact, to_bundle_id),
-            )
-            self._insert_history(
-                conn,
-                BundleHistoryRow(
-                    bundle_id=to_bundle_id,
-                    action="rollback",
-                    from_lifecycle=target["lifecycle"],
-                    to_lifecycle="active",
-                    actor=promoted_by,
-                    reason=promotion_reason,
-                    replaced_bundle_id=current_id,
-                    validation_artifact=validation_artifact,
-                    created_at=datetime.now(timezone.utc).isoformat(),
-                ),
-            )
+                conn.execute("UPDATE bundles SET lifecycle = 'deprecated' WHERE id = ?", (current_id,))
+                self._insert_history(
+                    conn,
+                    BundleHistoryRow(
+                        bundle_id=current_id,
+                        action="rollback_deprecate",
+                        from_lifecycle="active",
+                        to_lifecycle="deprecated",
+                        actor=promoted_by,
+                        reason=f"Rolled back to bundle {to_bundle_id}",
+                        replaced_bundle_id=to_bundle_id,
+                        validation_artifact=validation_artifact,
+                        created_at=datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+                conn.execute(
+                    """
+                    UPDATE bundles
+                    SET lifecycle = 'active', promoted_at = ?, promoted_by = ?, promotion_reason = ?, validation_artifact = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        datetime.now(timezone.utc).isoformat(),
+                        promoted_by,
+                        promotion_reason,
+                        validation_artifact,
+                        to_bundle_id,
+                    ),
+                )
+                self._assert_single_active_bundle(conn, bundle_name)
+                self._insert_history(
+                    conn,
+                    BundleHistoryRow(
+                        bundle_id=to_bundle_id,
+                        action="rollback",
+                        from_lifecycle=target["lifecycle"],
+                        to_lifecycle="active",
+                        actor=promoted_by,
+                        reason=promotion_reason,
+                        replaced_bundle_id=current_id,
+                        validation_artifact=validation_artifact,
+                        created_at=datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise PolicyBundleConflictError("rollback conflicted with repository invariants") from exc
 
     def get_bundle(self, bundle_id: int) -> StoredBundle | None:
         with self._connect() as conn:
@@ -459,6 +526,31 @@ class SQLitePolicyBundleRepository:
                 history.created_at,
             ),
         )
+
+    def _run_startup_integrity_checks(self, conn: sqlite3.Connection) -> None:
+        check_row = conn.execute("PRAGMA integrity_check").fetchone()
+        if check_row is None or check_row[0] != "ok":
+            raise PolicyStoreIntegrityError("sqlite integrity check failed")
+        bad_rows = conn.execute(
+            """
+            SELECT name, COUNT(*) AS active_count
+            FROM bundles
+            WHERE lifecycle = 'active'
+            GROUP BY name
+            HAVING COUNT(*) > 1
+            """
+        ).fetchall()
+        if bad_rows:
+            bundles = ", ".join(f"{row['name']}({row['active_count']})" for row in bad_rows)
+            raise PolicyStoreIntegrityError(f"multiple active bundles detected: {bundles}")
+
+    def _assert_single_active_bundle(self, conn: sqlite3.Connection, bundle_name: str) -> None:
+        row = conn.execute(
+            "SELECT COUNT(*) AS active_count FROM bundles WHERE name = ? AND lifecycle = 'active'",
+            (bundle_name,),
+        ).fetchone()
+        if row is not None and int(row["active_count"]) > 1:
+            raise PolicyStoreIntegrityError(f"multiple active bundles detected for '{bundle_name}'")
 
     @staticmethod
     def _serialize_rule(rule: PolicyRule) -> dict:

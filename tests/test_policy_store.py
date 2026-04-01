@@ -1,11 +1,17 @@
 import sqlite3
 import threading
+import time
 
 import pytest
 
 from sena.core.models import PolicyBundleMetadata
 from sena.policy.parser import load_policy_bundle
-from sena.policy.store import SQLitePolicyBundleRepository
+from sena.policy.store import (
+    PolicyBundleConflictError,
+    PolicyBundleInvalidTransitionError,
+    PolicyStoreIntegrityError,
+    SQLitePolicyBundleRepository,
+)
 
 
 def test_sqlite_repository_register_activate_history_and_fetch(tmp_path) -> None:
@@ -47,7 +53,7 @@ def test_duplicate_registration_rejected(tmp_path) -> None:
     rules, metadata = load_policy_bundle("src/sena/examples/policies")
     metadata.lifecycle = "draft"
     repo.register_bundle(metadata, rules)
-    with pytest.raises(ValueError, match="same name and version"):
+    with pytest.raises(PolicyBundleConflictError, match="same name and version"):
         repo.register_bundle(metadata, rules)
 
 
@@ -59,11 +65,11 @@ def test_invalid_transition_and_active_validation_artifact_required(tmp_path) ->
     metadata.lifecycle = "draft"
     bundle_id = repo.register_bundle(metadata, rules)
 
-    with pytest.raises(ValueError, match="invalid lifecycle transition"):
+    with pytest.raises(PolicyBundleInvalidTransitionError, match="invalid lifecycle transition"):
         repo.transition_bundle(bundle_id, "active", promoted_by="x", promotion_reason="skip")
 
     repo.transition_bundle(bundle_id, "candidate", promoted_by="x", promotion_reason="ok")
-    with pytest.raises(ValueError, match="validation_artifact"):
+    with pytest.raises(PolicyBundleInvalidTransitionError, match="validation_artifact"):
         repo.transition_bundle(bundle_id, "active", promoted_by="x", promotion_reason="no artifact")
 
 
@@ -115,7 +121,7 @@ def test_concurrency_registration_unique(tmp_path) -> None:
                 PolicyBundleMetadata(bundle_name=meta.bundle_name, version=version, loaded_from=meta.loaded_from, lifecycle="draft"),
                 rules,
             )
-        except ValueError as exc:
+        except PolicyBundleConflictError as exc:
             errors.append(str(exc))
 
     threads = [threading.Thread(target=worker, args=("same",)) for _ in range(2)]
@@ -124,3 +130,75 @@ def test_concurrency_registration_unique(tmp_path) -> None:
     for t in threads:
         t.join()
     assert len(errors) == 1
+
+
+def test_concurrent_promotions_preserve_single_active_invariant(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, meta = load_policy_bundle("src/sena/examples/policies")
+
+    def register_candidate(version: str) -> int:
+        bundle_id = repo.register_bundle(
+            PolicyBundleMetadata(bundle_name=meta.bundle_name, version=version, loaded_from=meta.loaded_from, lifecycle="draft"),
+            rules,
+        )
+        repo.transition_bundle(bundle_id, "candidate", promoted_by="ops", promotion_reason="ready")
+        return bundle_id
+
+    bundle_a = register_candidate("1.0.0")
+    bundle_b = register_candidate("1.1.0")
+    errors: list[str] = []
+
+    def promote(bundle_id: int, ticket: str, delay: float) -> None:
+        time.sleep(delay)
+        try:
+            local_repo = SQLitePolicyBundleRepository(str(db_path))
+            local_repo.transition_bundle(
+                bundle_id,
+                "active",
+                promoted_by="ops",
+                promotion_reason="promote",
+                validation_artifact=ticket,
+            )
+        except Exception as exc:  # pragma: no cover - defensive for diagnostics
+            errors.append(str(exc))
+
+    t1 = threading.Thread(target=promote, args=(bundle_a, "CAB-1", 0.02))
+    t2 = threading.Thread(target=promote, args=(bundle_b, "CAB-2", 0.0))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert errors == []
+    with sqlite3.connect(db_path) as conn:
+        active_count = conn.execute(
+            "SELECT COUNT(*) FROM bundles WHERE name = ? AND lifecycle = 'active'",
+            (meta.bundle_name,),
+        ).fetchone()[0]
+    assert active_count == 1
+
+
+def test_startup_integrity_check_detects_multiple_active(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, meta = load_policy_bundle("src/sena/examples/policies")
+    id1 = repo.register_bundle(
+        PolicyBundleMetadata(bundle_name=meta.bundle_name, version="v1", loaded_from=meta.loaded_from, lifecycle="draft"),
+        rules,
+    )
+    id2 = repo.register_bundle(
+        PolicyBundleMetadata(bundle_name=meta.bundle_name, version="v2", loaded_from=meta.loaded_from, lifecycle="draft"),
+        rules,
+    )
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DROP INDEX IF EXISTS idx_bundles_one_active_per_name")
+        conn.execute("UPDATE bundles SET lifecycle = 'active' WHERE id IN (?, ?)", (id1, id2))
+        conn.commit()
+
+    broken = SQLitePolicyBundleRepository(str(db_path))
+    with pytest.raises(PolicyStoreIntegrityError, match="multiple active bundles detected"):
+        broken.initialize()
