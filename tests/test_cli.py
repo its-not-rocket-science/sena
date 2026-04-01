@@ -4,10 +4,12 @@ import subprocess
 import sys
 
 
-def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_cli(args: list[str], extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     cmd = [sys.executable, "-m", "sena.cli.main", *args]
     env = dict(os.environ)
     env["PYTHONPATH"] = f"src:{env.get('PYTHONPATH', '')}".rstrip(":")
+    if extra_env:
+        env.update(extra_env)
     return subprocess.run(cmd, capture_output=True, text=True, env=env)
 
 
@@ -327,3 +329,22 @@ runtime_compatibility:
     result = _run_cli(["policy", "verify-compatibility", "--policy-dir", str(bundle_dir)])
     assert result.returncode != 0
     assert "compatibility check failed" in (result.stderr + result.stdout).lower()
+
+
+def test_production_check_passes_for_default_dev_configuration() -> None:
+    result = _run_cli(["production-check", "--format", "json"])
+    result.check_returncode()
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["fatal_failure_count"] == 0
+
+
+def test_production_check_fails_for_invalid_timeout_configuration() -> None:
+    result = _run_cli(
+        ["production-check", "--format", "json"],
+        extra_env={"SENA_REQUEST_TIMEOUT_SECONDS": "0"},
+    )
+    assert result.returncode != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert "request limits and timeout sanity" in payload["fatal_failures"]

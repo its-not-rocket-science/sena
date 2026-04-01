@@ -107,21 +107,12 @@ export SENA_JIRA_WEBHOOK_SECRET='replace-with-rotated-secret'
   - keyring dir: read-only to SENA runtime identity
   - audit sink dir: append/write for runtime identity only
 
-## Preflight checks script outline
+## Mandatory preflight checks
 
 Run before deployment:
 
 ```bash
-python - <<'PY'
-import os
-required = [
-  "SENA_RUNTIME_MODE",
-  "SENA_API_KEY_ENABLED",
-  "SENA_POLICY_STORE_BACKEND",
-]
-missing = [k for k in required if not os.getenv(k)]
-if missing:
-    raise SystemExit(f"Missing required env vars: {missing}")
-print("preflight env presence: ok")
-PY
+sena production-check --format both
 ```
+
+The deployment pipeline must fail closed if `sena production-check` exits non-zero.
