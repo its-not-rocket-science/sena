@@ -41,6 +41,28 @@ def test_health_endpoint() -> None:
     assert "integrity_sha256" in body["bundle"]
 
 
+def test_unversioned_routes_are_deprecated_and_removed() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    health_response = client.get("/health")
+    assert health_response.status_code == 410
+    assert health_response.json()["error"]["code"] == "route_deprecated"
+    assert health_response.headers["Deprecation"] == "true"
+    assert health_response.headers["Sunset"] == "2026-04-01"
+    assert "/v1/health" in health_response.json()["error"]["message"]
+
+    bundle_response = client.get("/bundle")
+    assert bundle_response.status_code == 410
+    assert bundle_response.json()["error"]["code"] == "route_deprecated"
+    assert "/v1/bundle" in bundle_response.json()["error"]["message"]
+
+    evaluate_response = client.post("/evaluate", json={"action_type": "approve_vendor_payment"})
+    assert evaluate_response.status_code == 410
+    assert evaluate_response.json()["error"]["code"] == "route_deprecated"
+    assert "/v1/evaluate" in evaluate_response.json()["error"]["message"]
+
+
 
 def test_readiness_endpoint() -> None:
     app = create_app(_settings())

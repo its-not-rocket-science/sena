@@ -237,6 +237,13 @@ def create_app(settings: ApiSettings | None = None):
         slack=state.slack_client,
     )
 
+    deprecation_date = "2026-04-01"
+    deprecation_message = (
+        "Unversioned API routes are deprecated and removed. "
+        "Use versioned /v1 routes."
+    )
+    deprecation_doc_url = "https://github.com/openai/sena#api-versioning-policy"
+
     @app.middleware("http")
     async def request_context(request: Request, call_next):
         request_id = request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex[:12]}"
@@ -609,9 +616,33 @@ def create_app(settings: ApiSettings | None = None):
 
     app.include_router(api_v1)
 
-    app.add_api_route("/health", health, methods=["GET"], response_model=HealthResponse)
-    app.add_api_route("/bundle", bundle, methods=["GET"], response_model=BundleInfo)
-    app.add_api_route("/evaluate", evaluate, methods=["POST"])
+    def _deprecated_unversioned_response(versioned_path: str) -> JSONResponse:
+        response = JSONResponse(
+            status_code=410,
+            content=_error_payload(
+                "route_deprecated",
+                f"{deprecation_message} Migrate to '{versioned_path}'.",
+            ),
+        )
+        response.headers["Deprecation"] = "true"
+        response.headers["Sunset"] = deprecation_date
+        response.headers["Warning"] = (
+            f'299 - "{deprecation_message} Migrate to {versioned_path}."'
+        )
+        response.headers["Link"] = f'<{deprecation_doc_url}>; rel="deprecation"'
+        return response
+
+    @app.get("/health")
+    def health_unversioned_deprecated() -> JSONResponse:
+        return _deprecated_unversioned_response("/v1/health")
+
+    @app.get("/bundle")
+    def bundle_unversioned_deprecated() -> JSONResponse:
+        return _deprecated_unversioned_response("/v1/bundle")
+
+    @app.post("/evaluate")
+    def evaluate_unversioned_deprecated() -> JSONResponse:
+        return _deprecated_unversioned_response("/v1/evaluate")
 
     return app
 
