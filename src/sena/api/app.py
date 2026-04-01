@@ -31,6 +31,7 @@ from sena.api.schemas import (
 from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig, PolicyBundleMetadata
 from sena.engine.evaluator import PolicyEvaluator
+from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.integrations.base import DecisionPayload
 from sena.integrations.jira import (
@@ -83,6 +84,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
     },
     "evaluator": {
         ("POST", "/v1/evaluate"),
+        ("POST", "/v1/evaluate/review-package"),
         ("POST", "/v1/evaluate/batch"),
         ("POST", "/v1/integrations/webhook"),
         ("POST", "/v1/integrations/jira/webhook"),
@@ -668,6 +670,36 @@ def create_app(settings: ApiSettings | None = None):
         except Exception as exc:  # pragma: no cover
             raise_api_error("evaluation_error", details={"reason": str(exc)})
 
+
+
+
+    @api_v1.post("/evaluate/review-package")
+    def evaluate_review_package(req: EvaluateRequest, request: Request) -> dict[str, Any]:
+        try:
+            proposal = ActionProposal(
+                action_type=req.action_type,
+                request_id=req.request_id or request.state.request_id,
+                actor_id=req.actor_id,
+                actor_role=req.actor_role,
+                attributes=req.attributes,
+            )
+            evaluator = PolicyEvaluator(
+                state.rules,
+                policy_bundle=state.metadata,
+                config=EvaluatorConfig(
+                    default_decision=_parse_default_decision(req.default_decision),
+                    require_allow_match=req.strict_require_allow,
+                ),
+            )
+            with state.metrics.evaluation_timer(endpoint="/v1/evaluate/review-package"):
+                trace = evaluator.evaluate(proposal, req.facts)
+            state.metrics.observe_decision_outcome(
+                endpoint="/v1/evaluate/review-package",
+                outcome=trace.outcome.value,
+            )
+            return build_decision_review_package(trace)
+        except Exception as exc:  # pragma: no cover
+            raise_api_error("evaluation_error", details={"reason": str(exc)})
 
     @api_v1.post("/integrations/webhook")
     def integrations_webhook(req: WebhookEvaluateRequest, request: Request) -> dict[str, Any]:

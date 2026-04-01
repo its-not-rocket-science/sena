@@ -27,6 +27,21 @@ def test_cli_json_output_contains_audit_fields() -> None:
     assert "decision_hash" in payload
 
 
+
+
+def test_cli_review_package_output() -> None:
+    result = _run_cli([
+        "src/sena/examples/scenarios/demo_vendor_payment_block_unverified.json",
+        "--review-package",
+    ])
+    result.check_returncode()
+    payload = json.loads(result.stdout)
+
+    assert payload["package_type"] == "sena.decision_review_package"
+    assert payload["decision_summary"]["outcome"] == "BLOCKED"
+    assert "matched" in payload["rules"]
+    assert "normalized_source_system_references" in payload
+
 def test_policy_init_validate_and_test_commands(tmp_path) -> None:
     bundle_dir = tmp_path / "bundle"
 
