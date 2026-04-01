@@ -4,6 +4,10 @@ SENA is an **alpha deterministic policy-enforcement engine for AI-assisted enter
 
 It evaluates high-risk workflow actions against structured policy bundles and returns an auditable decision (`APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`) with reasoning and machine-readable traces.
 
+## Version
+
+Current package/API version: `0.3.0` (single source: `src/sena/__init__.py`).
+
 ## Supported product path
 
 - Policy parsing/validation/interpreter: `src/sena/policy/*`
@@ -81,6 +85,7 @@ docker compose up --build
 - Operations/deployment: `docs/OPERATIONS.md`
 - Legacy migration boundary: `docs/MIGRATION.md`
 - Gap analysis: `ENTERPRISE_GAP_ANALYSIS.md`
+- Changelog: `CHANGELOG.md`
 
 ## Alpha honesty
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sena"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Alpha deterministic policy enforcement engine for AI-assisted enterprise approval workflows"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -44,6 +44,9 @@ sena-eval = "sena.cli.main:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+version = { attr = "sena.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

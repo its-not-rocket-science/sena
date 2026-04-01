@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint api docker-up
+.PHONY: install install-dev test lint api docker-up bump-version
 
 install:
 	pip install -e .
@@ -18,3 +18,8 @@ api:
 
 docker-up:
 	docker compose up --build
+
+
+bump-version:
+	@test -n "$(VERSION)" || (echo "Usage: make bump-version VERSION=X.Y.Z" && exit 1)
+	python scripts/bump_version.py $(VERSION)

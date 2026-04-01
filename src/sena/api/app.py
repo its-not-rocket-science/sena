@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from sena import __version__ as SENA_VERSION
 from sena.audit.chain import append_audit_record, verify_audit_chain
 from sena.api.config import ApiSettings, load_settings_from_env
 from sena.api.logging import configure_logging
@@ -79,7 +80,7 @@ def create_app(settings: ApiSettings | None = None):
     except PolicyParseError as exc:
         raise RuntimeError(f"Failed to load policy bundle: {exc}") from exc
 
-    app = FastAPI(title="SENA Compliance Engine API", version="0.3.0")
+    app = FastAPI(title="SENA Compliance Engine API", version=SENA_VERSION)
     state = _EngineState(runtime_settings, rules, metadata)
 
     @app.middleware("http")
