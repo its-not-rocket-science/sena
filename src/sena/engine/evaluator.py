@@ -173,10 +173,38 @@ class PolicyEvaluator:
                 "BLOCK takes precedence over ESCALATE and ALLOW."
             )
 
-        reasoning = DecisionReasoning(
-            precedence_explanation=precedence_explanation,
-            summary=summary,
-        )
+        risk_summary = {
+            "risk_attributes": proposal.attributes.get("risk_attributes", {}),
+            "requested_action": proposal.attributes.get("requested_action"),
+            "workflow_stage": proposal.attributes.get("workflow_stage"),
+            "source_system": proposal.attributes.get("source_system"),
+        }
+        matched_controls = [
+            {
+                "rule_id": result.rule_id,
+                "decision": result.decision.value if result.decision else None,
+                "inviolable": result.inviolable,
+                "reason": result.reason,
+            }
+            for result in matched
+        ]
+        outcome_rationale = [
+            f"Outcome resolved to {outcome.value} using deterministic precedence.",
+            precedence_explanation,
+        ]
+        if schema_errors:
+            outcome_rationale.append("Input context schema validation failed before rule evaluation.")
+        if identity_errors:
+            outcome_rationale.append("Strict identity checks failed before rule evaluation.")
+        reviewer_guidance = [
+            "Verify matched controls align with control owner expectations.",
+            "Retain decision hash and input fingerprint for audit replay.",
+        ]
+        if outcome == DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW:
+            reviewer_guidance.append("Manual approval is required before action execution.")
+        if outcome == DecisionOutcome.BLOCKED:
+            reviewer_guidance.append("Treat as control failure until remediating evidence is attached.")
+
         decision_timestamp = datetime.now(timezone.utc)
         canonical_payload = {
             "proposal": {
@@ -206,6 +234,22 @@ class PolicyEvaluator:
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
+        reasoning = DecisionReasoning(
+            precedence_explanation=precedence_explanation,
+            summary=summary,
+            outcome_rationale=outcome_rationale,
+            matched_controls=matched_controls,
+            risk_summary=risk_summary,
+            reviewer_guidance=reviewer_guidance,
+            provenance={
+                "bundle_name": self.policy_bundle.bundle_name,
+                "bundle_version": self.policy_bundle.version,
+                "schema_version": self.policy_bundle.schema_version,
+                "evaluator_version": SENA_VERSION,
+                "input_fingerprint": input_fingerprint,
+                "decision_hash": decision_hash,
+            },
+        )
 
         source_metadata = {
             key: value

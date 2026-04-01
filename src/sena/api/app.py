@@ -920,6 +920,9 @@ def create_app(settings: ApiSettings | None = None):
                 actor_id=item.actor_id,
                 attributes=item.attributes,
                 facts=item.facts,
+                source_system=item.source_system,
+                workflow_stage=item.workflow_stage,
+                risk_category=item.risk_category,
             )
             for item in req.scenarios
         }

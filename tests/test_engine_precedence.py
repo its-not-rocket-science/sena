@@ -117,3 +117,28 @@ def test_strict_mode_blocks_when_identity_fields_are_missing() -> None:
     assert trace.outcome == DecisionOutcome.BLOCKED
     assert "actor_id" in trace.missing_fields
     assert "actor_role" in trace.missing_fields
+
+
+def test_reasoning_payload_includes_reviewer_and_provenance_fields() -> None:
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
+    trace = evaluator.evaluate(
+        ActionProposal(
+            action_type="approve_vendor_payment",
+            actor_id="u-123",
+            actor_role="finance_analyst",
+            attributes={
+                "amount": 15000,
+                "vendor_verified": False,
+                "source_system": "jira",
+                "workflow_stage": "pending_approval",
+                "risk_attributes": {"approval_amount": 15000},
+            },
+        ),
+        {},
+    )
+    assert trace.reasoning is not None
+    assert trace.reasoning.matched_controls
+    assert trace.reasoning.reviewer_guidance
+    assert trace.reasoning.provenance["bundle_name"] == metadata.bundle_name
+    assert trace.reasoning.provenance["decision_hash"] == trace.decision_hash

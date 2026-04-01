@@ -10,8 +10,12 @@ def format_trace(trace: EvaluationTrace) -> str:
         f"Decision Timestamp: {trace.decision_timestamp.isoformat() if trace.decision_timestamp else 'n/a'}",
         f"Decision Hash: {trace.decision_hash or 'n/a'}",
         f"Precedence: {trace.reasoning.precedence_explanation if trace.reasoning else 'n/a'}",
+        f"Outcome Rationale: {' | '.join(trace.reasoning.outcome_rationale) if trace.reasoning else 'n/a'}",
+        f"Reviewer Guidance: {' | '.join(trace.reasoning.reviewer_guidance) if trace.reasoning else 'n/a'}",
         f"Missing Fields: {', '.join(trace.missing_fields) if trace.missing_fields else 'none'}",
         f"Conflicting Rules: {', '.join(trace.conflicting_rules) if trace.conflicting_rules else 'none'}",
+        f"Risk Summary: {trace.reasoning.risk_summary if trace.reasoning else {}}",
+        f"Provenance: {trace.reasoning.provenance if trace.reasoning else {}}",
         "Rule Evaluations:",
     ]
 

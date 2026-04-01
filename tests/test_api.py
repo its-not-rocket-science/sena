@@ -221,6 +221,9 @@ def test_simulation_endpoint() -> None:
                 {
                     "scenario_id": "s1",
                     "action_type": "approve_vendor_payment",
+                    "source_system": "jira",
+                    "workflow_stage": "pending_approval",
+                    "risk_category": "vendor_payment",
                     "attributes": {"vendor_verified": False},
                     "facts": {},
                 }
@@ -229,6 +232,7 @@ def test_simulation_endpoint() -> None:
     )
     assert response.status_code == 200
     assert response.json()["total_scenarios"] == 1
+    assert response.json()["grouped_changes"]["source_system"]["jira"]["total"] == 1
 
 
 def test_sqlite_policy_store_mode(tmp_path) -> None:

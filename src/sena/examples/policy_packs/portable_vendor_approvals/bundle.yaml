@@ -1,0 +1,12 @@
+bundle_name: portable-vendor-approval-pack
+version: 1.0.0
+lifecycle: candidate
+owner: risk-platform
+schema_version: "1"
+description: Portable approval control pack for Jira and ServiceNow.
+context_schema:
+  source_system: str
+  workflow_stage: str
+  amount: number
+  vendor_verified: bool
+  requester_role: str
