@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_content_length",
+    "message": "Invalid Content-Length header",
+    "request_id": "req-golden",
+    "timestamp": "<timestamp>"
+  }
+}

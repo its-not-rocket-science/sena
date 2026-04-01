@@ -1,0 +1,26 @@
+- id: allow_small_legacy
+  description: allow low-risk small payments
+  severity: low
+  inviolable: false
+  applies_to: [approve_vendor_payment]
+  condition:
+    and:
+      - field: amount
+        lt: 500
+      - field: vendor_verified
+        eq: true
+  decision: ALLOW
+  reason: historical legacy behavior
+- id: block_unverified_legacy
+  description: block large unverified payments
+  severity: high
+  inviolable: true
+  applies_to: [approve_vendor_payment]
+  condition:
+    and:
+      - field: amount
+        gte: 500
+      - field: vendor_verified
+        eq: false
+  decision: BLOCK
+  reason: legacy mandatory control

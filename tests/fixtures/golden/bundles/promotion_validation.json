@@ -1,0 +1,8 @@
+{
+  "valid": false,
+  "errors": [
+    "promotion to active requires validation artifact",
+    "target bundle contains duplicate rule ids",
+    "active bundle must include at least one BLOCK rule"
+  ]
+}
