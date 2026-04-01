@@ -90,6 +90,7 @@ Versioned endpoints:
 - `GET /v1/bundle/inspect`
 - `POST /v1/evaluate`
 - `POST /v1/integrations/webhook`
+- `POST /v1/integrations/slack/interactions`
 - `POST /v1/evaluate/batch`
 - `POST /v1/simulation`
 - `POST /v1/bundle/diff`
@@ -153,6 +154,35 @@ curl -X POST http://127.0.0.1:8000/v1/integrations/webhook \
       "data":{"object":{"amount":25000,"currency":"usd","metadata":{"vendor_verified":false,"requester_role":"finance_analyst","requested_by":"user_9"}}}
     }
   }'
+```
+
+### Slack human-escalation integration
+
+SENA can automatically post Slack approval cards when a policy decision results in `ESCALATE_FOR_HUMAN_REVIEW`.
+
+1) Configure Slack env vars:
+
+```bash
+export SENA_SLACK_BOT_TOKEN='xoxb-...'
+export SENA_SLACK_CHANNEL='#risk-reviews'
+```
+
+2) Ensure your Slack app/bot has `chat:write` scope and is invited to the target channel.
+
+3) Start the API and trigger an escalation via `/v1/evaluate` or `/v1/integrations/webhook`.
+
+The posted message includes `Approve` and `Reject` buttons with deterministic action IDs:
+- `sena_escalation_approve`
+- `sena_escalation_reject`
+
+To receive callbacks from those buttons, configure Slack Interactivity Request URL to:
+
+`POST /v1/integrations/slack/interactions`
+
+Example local callback target:
+
+```text
+https://<your-host>/v1/integrations/slack/interactions
 ```
 
 ### Quickstart (guaranteed working)
