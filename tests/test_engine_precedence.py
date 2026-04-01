@@ -1,5 +1,5 @@
-from sena.core.enums import DecisionOutcome
-from sena.core.models import ActionProposal, EvaluatorConfig
+from sena.core.enums import DecisionOutcome, RuleDecision, Severity
+from sena.core.models import ActionProposal, EvaluatorConfig, PolicyRule
 from sena.engine.evaluator import PolicyEvaluator
 from sena.policy.parser import load_policy_bundle
 
@@ -71,3 +71,27 @@ def test_strict_allow_can_override_escalation_when_no_allow_matches() -> None:
 
     assert trace.outcome == DecisionOutcome.BLOCKED
     assert "strict allow mode" in trace.reasoning.precedence_explanation.lower()
+
+
+def test_actor_role_can_be_evaluated_from_actor_context() -> None:
+    rule = PolicyRule(
+        id="allow_finance_manager",
+        description="Allow finance managers",
+        severity=Severity.LOW,
+        inviolable=False,
+        applies_to=["approve_vendor_payment"],
+        condition={"field": "actor.role", "eq": "finance_manager"},
+        decision=RuleDecision.ALLOW,
+        reason="Finance managers can approve vendor payments.",
+    )
+    evaluator = PolicyEvaluator([rule], config=EvaluatorConfig(require_allow_match=True))
+    proposal = ActionProposal(
+        action_type="approve_vendor_payment",
+        actor_id="u-42",
+        actor_role="finance_manager",
+    )
+
+    trace = evaluator.evaluate(proposal, {})
+
+    assert trace.outcome == DecisionOutcome.APPROVED
+    assert {result.rule_id for result in trace.matched_rules} == {"allow_finance_manager"}

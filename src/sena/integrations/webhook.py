@@ -24,6 +24,7 @@ class WebhookRoute:
     payload_path: str | None = None
     request_id_path: str | None = None
     actor_id_path: str | None = None
+    actor_role_path: str | None = None
     attributes: dict[str, str] | None = None
     static_attributes: dict[str, Any] | None = None
 
@@ -72,6 +73,7 @@ def load_webhook_mapping_config(path: str | Path) -> WebhookMappingConfig:
                     payload_path=route.get("payload_path"),
                     request_id_path=route.get("request_id_path"),
                     actor_id_path=route.get("actor_id_path"),
+                    actor_role_path=route.get("actor_role_path"),
                     attributes=route.get("attributes"),
                     static_attributes=route.get("static_attributes"),
                 )
@@ -112,6 +114,7 @@ class WebhookPayloadMapper(Connector):
             "action_type": proposal.action_type,
             "request_id": proposal.request_id,
             "actor_id": proposal.actor_id,
+            "actor_role": proposal.actor_role,
             "attributes": proposal.attributes,
         }
 
@@ -150,6 +153,9 @@ class WebhookPayloadMapper(Connector):
         actor_id = None
         if route.actor_id_path:
             actor_id = str(_resolve_path(payload, route.actor_id_path))
+        actor_role = None
+        if route.actor_role_path:
+            actor_role = str(_resolve_path(payload, route.actor_role_path))
 
         attributes: dict[str, Any] = {}
         for out_key, in_path in (route.attributes or {}).items():
@@ -160,5 +166,6 @@ class WebhookPayloadMapper(Connector):
             action_type=route.action_type,
             request_id=request_id,
             actor_id=actor_id,
+            actor_role=actor_role,
             attributes=attributes,
         )

@@ -12,6 +12,7 @@ class ActionProposal:
     action_type: str
     request_id: str | None = None
     actor_id: str | None = None
+    actor_role: str | None = None
     attributes: dict[str, Any] = field(default_factory=dict)
 
 

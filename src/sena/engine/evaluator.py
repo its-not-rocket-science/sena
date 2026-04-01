@@ -41,6 +41,11 @@ class PolicyEvaluator:
             "action_type": proposal.action_type,
             "request_id": proposal.request_id,
             "actor_id": proposal.actor_id,
+            "actor_role": proposal.actor_role,
+            "actor": {
+                "id": proposal.actor_id,
+                "role": proposal.actor_role,
+            },
             **proposal.attributes,
             **facts,
         }
@@ -164,6 +169,7 @@ class PolicyEvaluator:
                 "action_type": proposal.action_type,
                 "request_id": proposal.request_id,
                 "actor_id": proposal.actor_id,
+                "actor_role": proposal.actor_role,
                 "attributes": proposal.attributes,
             },
             "facts": facts,

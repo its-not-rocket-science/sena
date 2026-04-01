@@ -389,6 +389,7 @@ def create_app(settings: ApiSettings | None = None):
                 action_type=req.action_type,
                 request_id=req.request_id or request.state.request_id,
                 actor_id=req.actor_id,
+                actor_role=req.actor_role,
                 attributes={**req.attributes, "actor_role": req.actor_role},
             )
             evaluator = PolicyEvaluator(
@@ -426,10 +427,28 @@ def create_app(settings: ApiSettings | None = None):
                     "default_request_id": request.state.request_id,
                 }
             )
+            if req.strict_require_allow:
+                missing_identity = [
+                    field
+                    for field, value in {
+                        "actor_id": mapped["actor_id"],
+                        "actor_role": mapped["actor_role"],
+                    }.items()
+                    if not value
+                ]
+                if missing_identity:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            "strict_require_allow=true requires identity fields: "
+                            f"{', '.join(missing_identity)}"
+                        ),
+                    )
             proposal = ActionProposal(
                 action_type=mapped["action_type"],
                 request_id=mapped["request_id"],
                 actor_id=mapped["actor_id"],
+                actor_role=mapped["actor_role"],
                 attributes=mapped["attributes"],
             )
             evaluator = PolicyEvaluator(

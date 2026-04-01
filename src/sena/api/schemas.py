@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
@@ -20,6 +20,20 @@ class EvaluateRequest(BaseModel):
     )
     strict_require_allow: bool = False
 
+    @model_validator(mode="after")
+    def validate_identity_fields(self) -> "EvaluateRequest":
+        if self.strict_require_allow:
+            missing: list[str] = []
+            if not self.actor_id:
+                missing.append("actor_id")
+            if not self.actor_role:
+                missing.append("actor_role")
+            if missing:
+                raise ValueError(
+                    "strict_require_allow=true requires identity fields: "
+                    f"{', '.join(missing)}"
+                )
+        return self
 
 
 
