@@ -57,6 +57,24 @@ python -m sena.cli.main \
   --json
 ```
 
+## Policy authoring workflow
+
+```bash
+# Create a starter bundle with editable templates
+PYTHONPATH=src python -m sena.cli.main policy init ./my-policy-bundle
+
+# Validate syntax + coverage
+PYTHONPATH=src python -m sena.cli.main policy validate --policy-dir ./my-policy-bundle
+
+# Run expected-outcome tests
+PYTHONPATH=src python -m sena.cli.main policy test   --policy-dir ./my-policy-bundle   --test-file ./my-policy-bundle/tests/policy_tests.json
+```
+
+Generated templates include:
+- `bundle.yaml`
+- `payments.yaml`
+- `tests/policy_tests.json`
+
 ## API quickstart
 
 ### Local
