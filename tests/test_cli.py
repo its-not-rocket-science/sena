@@ -127,3 +127,57 @@ def test_registry_lifecycle_commands(tmp_path) -> None:
     history = _run_cli(base + ["inspect-history", "--bundle-name", "enterprise-compliance-controls"])
     history.check_returncode()
     assert json.loads(history.stdout)["history"]
+
+
+def test_bundle_release_manifest_commands(tmp_path) -> None:
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yaml").write_text("bundle_name: demo\nversion: 1.0.0\n")
+    (bundle_dir / "rules.yaml").write_text(
+        '[{"id":"r1","description":"d","severity":"low","inviolable":false,"applies_to":["a"],"condition":{"field":"x","eq":1},"decision":"BLOCK","reason":"ok"}]'
+    )
+    keyring = tmp_path / "keyring"
+    keyring.mkdir()
+    (keyring / "ops.key").write_text("shared-secret")
+    manifest_path = bundle_dir / "release-manifest.json"
+
+    generate = _run_cli(
+        [
+            "bundle-release",
+            "generate-manifest",
+            "--policy-dir",
+            str(bundle_dir),
+            "--output",
+            str(manifest_path),
+            "--key-id",
+            "ops",
+        ]
+    )
+    generate.check_returncode()
+
+    sign = _run_cli(
+        [
+            "bundle-release",
+            "sign-manifest",
+            "--manifest-path",
+            str(manifest_path),
+            "--key-file",
+            str(keyring / "ops.key"),
+        ]
+    )
+    sign.check_returncode()
+
+    verify = _run_cli(
+        [
+            "bundle-release",
+            "verify-manifest",
+            "--policy-dir",
+            str(bundle_dir),
+            "--manifest-path",
+            str(manifest_path),
+            "--keyring-dir",
+            str(keyring),
+            "--strict",
+        ]
+    )
+    verify.check_returncode()

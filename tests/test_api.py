@@ -318,6 +318,39 @@ def test_bundle_promote_endpoint_enforces_transition_order(tmp_path) -> None:
     assert to_candidate.status_code == 200
 
 
+def test_register_bundle_fails_when_signature_strict_and_manifest_invalid(tmp_path) -> None:
+    policy_dir = tmp_path / "bundle"
+    policy_dir.mkdir()
+    (policy_dir / "bundle.yaml").write_text("bundle_name: strict-demo\nversion: 1.0.0\n")
+    (policy_dir / "rules.yaml").write_text(
+        '[{"id":"r1","description":"d","severity":"low","inviolable":false,"applies_to":["a"],"condition":{"field":"x","eq":1},"decision":"BLOCK","reason":"ok"}]'
+    )
+    (policy_dir / "release-manifest.json").write_text("{}")
+    db_path = tmp_path / "policy_registry.db"
+
+    app = create_app(
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name="strict-demo",
+            bundle_signature_strict=True,
+            bundle_signature_keyring_dir=str(tmp_path / "keyring"),
+        )
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/bundle/register",
+        json={
+            "policy_dir": str(policy_dir),
+            "bundle_name": "strict-demo",
+            "bundle_version": "1.0.0",
+            "lifecycle": "draft",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "bundle_signature_verification_failed"
+
+
 def test_webhook_endpoint_maps_payload_and_returns_reasoning() -> None:
     app = create_app(
         _settings(

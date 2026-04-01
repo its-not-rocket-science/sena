@@ -27,6 +27,7 @@ ERROR_CODE_CATALOG: dict[str, ErrorCatalogEntry] = {
     "bundle_not_found": ErrorCatalogEntry(404, "Bundle was not found."),
     "active_bundle_not_found": ErrorCatalogEntry(404, "No active bundle found."),
     "promotion_validation_failed": ErrorCatalogEntry(400, "Bundle promotion validation failed."),
+    "bundle_signature_verification_failed": ErrorCatalogEntry(400, "Bundle signature verification failed."),
     "evaluation_error": ErrorCatalogEntry(400, "Evaluation failed."),
     "webhook_mapping_not_configured": ErrorCatalogEntry(400, "Webhook mapping config is not set."),
     "webhook_mapping_error": ErrorCatalogEntry(400, "Webhook mapping failed."),

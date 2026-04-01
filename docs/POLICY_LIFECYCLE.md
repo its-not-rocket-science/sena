@@ -102,7 +102,7 @@ Payloads are stable JSON structures and invalid transitions return `promotion_va
 
 Still alpha:
 
-- No cryptographic signing of bundle manifests yet (digest is deterministic but unsigned).
+- Signed release manifests supported for policy bundles (see `docs/BUNDLE_SIGNING.md`), using optional strict verification gates.
 - No multi-step approval workflow engine (artifact is validated for presence, not policy semantics).
 - SQLite-first concurrency model (portable schema designed for Postgres migration).
 - No row-level tenancy partitioning yet.

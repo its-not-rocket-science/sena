@@ -316,6 +316,7 @@ The API image is production-oriented: slim base image, dedicated non-root user, 
 - Audit sink controls: append-only mode, file rotation, and retention policies for enterprise governance.
 - Bundle manifest lifecycle states (`draft` / `candidate` / `active` / `deprecated`) and promotion validation tooling.
 - Bundle-to-bundle simulation and impact analysis via API and CLI.
+- Signed release manifests for bundles with CLI generation/sign/verification and strict promotion gates (see `docs/BUNDLE_SIGNING.md`).
 - Deterministic DSL extensions (`starts_with`, `ends_with`, `matches_regex`, `exists`, `between`) and optional context schema checks.
 
 ## Documentation
