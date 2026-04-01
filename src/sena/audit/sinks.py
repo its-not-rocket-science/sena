@@ -62,8 +62,15 @@ class JsonlFileAuditSink:
 
     def _read_manifest(self) -> dict[str, Any]:
         path = self._manifest_path()
+        manifest_present = path.exists()
         if not path.exists():
-            return {"schema_version": "1", "segments": [], "head_hash": None, "next_sequence": 1}
+            return {
+                "schema_version": "1",
+                "segments": [],
+                "head_hash": None,
+                "next_sequence": 1,
+                "manifest_present": False,
+            }
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
@@ -74,6 +81,7 @@ class JsonlFileAuditSink:
         payload.setdefault("segments", [])
         payload.setdefault("head_hash", None)
         payload.setdefault("next_sequence", 1)
+        payload["manifest_present"] = manifest_present
         return payload
 
     def _write_manifest(self, payload: dict[str, Any]) -> None:
@@ -104,6 +112,14 @@ class JsonlFileAuditSink:
                 records.append(payload)
         return records, malformed
 
+    def _segment_record_count(self, file: Path) -> int:
+        count = 0
+        with file.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.strip():
+                    count += 1
+        return count
+
     def load_records_detailed(self) -> dict[str, Any]:
         sink = self._sink_path()
         if not sink.parent.exists():
@@ -114,7 +130,9 @@ class JsonlFileAuditSink:
         segments_meta: list[dict[str, Any]] = []
         records: list[dict[str, Any]] = []
 
-        for segment in manifest.get("segments", []):
+        manifest_segments = manifest.get("segments", [])
+        previous_last_sequence = None
+        for segment_index, segment in enumerate(manifest_segments, start=1):
             file = sink.parent / segment["file"]
             if not file.exists():
                 issues.append(f"missing_segment:{segment['file']}")
@@ -122,15 +140,53 @@ class JsonlFileAuditSink:
             segment_records, malformed = self._read_lines(file)
             if malformed:
                 issues.extend([f"malformed_record:{item}" for item in malformed])
+            expected_count = segment.get("record_count")
+            if isinstance(expected_count, int) and expected_count != len(segment_records):
+                issues.append(
+                    f"segment_record_count_mismatch:{segment['file']}:expected={expected_count}:actual={len(segment_records)}"
+                )
+            first_seq = segment_records[0].get("storage_sequence_number") if segment_records else None
+            last_seq = segment_records[-1].get("storage_sequence_number") if segment_records else None
+            if segment.get("first_sequence") != first_seq:
+                issues.append(
+                    f"segment_first_sequence_mismatch:{segment['file']}:expected={segment.get('first_sequence')}:actual={first_seq}"
+                )
+            if segment.get("last_sequence") != last_seq:
+                issues.append(
+                    f"segment_last_sequence_mismatch:{segment['file']}:expected={segment.get('last_sequence')}:actual={last_seq}"
+                )
+            if segment_index > 1 and previous_last_sequence is not None and first_seq is not None:
+                if first_seq != previous_last_sequence + 1:
+                    issues.append(
+                        f"segment_sequence_gap:{segment['file']}:previous_last={previous_last_sequence}:first={first_seq}"
+                    )
+            if isinstance(last_seq, int):
+                previous_last_sequence = last_seq
             records.extend(segment_records)
             segments_meta.append({"file": segment["file"], "records": len(segment_records), "rotated": True})
 
+        active_count = 0
         if sink.exists():
             active_records, malformed = self._read_lines(sink)
             if malformed:
                 issues.extend([f"malformed_record:{item}" for item in malformed])
             records.extend(active_records)
-            segments_meta.append({"file": sink.name, "records": len(active_records), "rotated": False})
+            active_count = len(active_records)
+            segments_meta.append({"file": sink.name, "records": active_count, "rotated": False})
+
+        expected_next = manifest.get("next_sequence")
+        if manifest.get("manifest_present", False) and isinstance(expected_next, int):
+            total_from_manifest = 0
+            for segment in manifest_segments:
+                file = sink.parent / segment["file"]
+                if file.exists():
+                    total_from_manifest += self._segment_record_count(file)
+            total_from_manifest += active_count
+            actual_next = total_from_manifest + 1
+            if expected_next != actual_next:
+                issues.append(
+                    f"manifest_next_sequence_mismatch:expected={expected_next}:actual={actual_next}"
+                )
 
         return {"records": records, "issues": issues, "segments": segments_meta, "manifest": manifest}
 
@@ -210,6 +266,11 @@ class JsonlFileAuditSink:
         rotated = sink.with_name(self._segment_name(seq))
         os.replace(sink, rotated)
         records, malformed = self._read_lines(rotated)
+        archive_metadata = {
+            "archive_status": "local_rotated",
+            "archive_class": "warm",
+            "archive_uri": f"file://{rotated.resolve()}",
+        }
         entry = {
             "file": rotated.name,
             "rotated_at": datetime.now(tz=timezone.utc).isoformat(),
@@ -219,6 +280,7 @@ class JsonlFileAuditSink:
             "first_chain_hash": records[0].get("chain_hash") if records else None,
             "last_chain_hash": records[-1].get("chain_hash") if records else None,
             "malformed_records": malformed,
+            "archive": archive_metadata,
         }
         manifest.setdefault("segments", []).append(entry)
         self._write_manifest(manifest)

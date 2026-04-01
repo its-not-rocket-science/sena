@@ -878,6 +878,23 @@ def test_startup_fails_in_production_without_audit_sink() -> None:
         )
 
 
+def test_startup_fails_when_strict_audit_verification_enabled_without_sink() -> None:
+    with pytest.raises(RuntimeError, match="SENA_AUDIT_VERIFY_ON_STARTUP_STRICT=true requires SENA_AUDIT_SINK_JSONL"):
+        create_app(_settings(audit_verify_on_startup_strict=True, audit_sink_jsonl=None))
+
+
+def test_startup_fails_when_strict_audit_verification_detects_corruption(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    audit_path.write_text('{"decision_id":"broken"')
+    with pytest.raises(RuntimeError, match="Startup audit verification failed"):
+        create_app(
+            _settings(
+                audit_verify_on_startup_strict=True,
+                audit_sink_jsonl=str(audit_path),
+            )
+        )
+
+
 def test_startup_fails_in_production_without_signature_strictness(tmp_path) -> None:
     keyring_dir = tmp_path / "keyring"
     keyring_dir.mkdir()

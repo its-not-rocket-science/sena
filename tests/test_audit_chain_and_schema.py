@@ -1,6 +1,6 @@
 import json
 
-from sena.audit.chain import append_audit_record, verify_audit_chain
+from sena.audit.chain import append_audit_record, locate_decision_in_audit, summarize_audit_chain, verify_audit_chain
 from sena.core.enums import DecisionOutcome, RuleDecision, Severity
 from sena.core.models import ActionProposal, EvaluatorConfig, PolicyBundleMetadata, PolicyRule
 from sena.engine.evaluator import PolicyEvaluator
@@ -101,3 +101,19 @@ def test_audit_record_captures_integration_source_metadata() -> None:
     assert trace.audit_record.evaluator_version
     assert trace.audit_record.policy_bundle_release_id == "1"
 
+
+def test_audit_summarize_and_locate_decision(tmp_path) -> None:
+    sink = tmp_path / "audit.jsonl"
+    append_audit_record(str(sink), {"decision_id": "dec-alpha", "outcome": "APPROVED"})
+    append_audit_record(str(sink), {"decision_id": "dec-bravo", "outcome": "BLOCKED"})
+
+    summary = summarize_audit_chain(str(sink))
+    assert summary["valid"] is True
+    assert summary["records"] == 2
+    assert summary["first_decision_id"] == "dec-alpha"
+    assert summary["last_decision_id"] == "dec-bravo"
+
+    located = locate_decision_in_audit(str(sink), "dec-bravo")
+    assert located["found"] is True
+    assert located["record_index"] == 2
+    assert "audit.jsonl" in located["location"]
