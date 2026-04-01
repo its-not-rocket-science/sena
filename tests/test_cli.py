@@ -144,6 +144,46 @@ def test_registry_lifecycle_commands(tmp_path) -> None:
     assert json.loads(history.stdout)["history"]
 
 
+def test_registry_promote_break_glass_without_artifact(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    base = ["registry", "--sqlite-path", str(db_path)]
+    register = _run_cli(
+        base
+        + [
+            "register",
+            "--policy-dir",
+            "src/sena/examples/policies",
+            "--bundle-name",
+            "enterprise-compliance-controls",
+            "--bundle-version",
+            "2026.06",
+        ]
+    )
+    register.check_returncode()
+    bundle_id = json.loads(register.stdout)["bundle_id"]
+    _run_cli(
+        base + ["promote", "--bundle-id", str(bundle_id), "--target-lifecycle", "candidate", "--promoted-by", "ops", "--promotion-reason", "ready"]
+    ).check_returncode()
+    promote = _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "active",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "incident",
+            "--break-glass",
+            "--break-glass-reason",
+            "sev1",
+        ]
+    )
+    promote.check_returncode()
+
+
 def test_bundle_release_manifest_commands(tmp_path) -> None:
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()

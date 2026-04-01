@@ -11,7 +11,11 @@ Supported states and transitions:
 - `active -> deprecated`
 - `rollback` is an explicit controlled action that deprecates current active and re-activates a previous bundle.
 
-Promotion to `active` requires a validation artifact (for example: CI run URL, signed approval record, or change ticket).
+Promotion to `active` is gate-driven and requires either:
+- an attached simulation result (or generated simulation report from provided scenarios), or
+- a validation artifact (for example: CI run URL, signed approval record, or change ticket).
+
+Break-glass promotion is available with explicit `break_glass=true` + reason; the action is annotated and marked in history/audit fields.
 
 ## Persisted bundle record
 
@@ -81,6 +85,7 @@ python -m sena.cli.main registry --sqlite-path /tmp/policy.db inspect-history --
 ```
 
 History records include what changed (transition), who changed it, why, and which active bundle was replaced.
+History also persists promotion evidence JSON, policy diff summary, break-glass flag, and audit marker for active releases.
 
 ## API support
 

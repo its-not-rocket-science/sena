@@ -347,6 +347,107 @@ def test_bundle_promote_endpoint_enforces_transition_order(tmp_path) -> None:
     assert to_candidate.status_code == 200
 
 
+def test_active_promotion_threshold_failure_and_break_glass_history(tmp_path) -> None:
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    db_path = tmp_path / "policy_registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+
+    metadata.lifecycle = "draft"
+    baseline_id = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(baseline_id, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(baseline_id, "active", promoted_by="ops", promotion_reason="go", validation_artifact="CAB-1")
+
+    metadata.version = "2026.05"
+    metadata.lifecycle = "draft"
+    candidate_id = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(candidate_id, "candidate", promoted_by="ops", promotion_reason="ready")
+
+    app = create_app(
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
+    )
+    client = TestClient(app)
+
+    threshold_fail = client.post(
+        "/v1/bundle/promote",
+        json={
+            "bundle_id": candidate_id,
+            "target_lifecycle": "active",
+            "promoted_by": "ops",
+            "promotion_reason": "go",
+            "simulation_result": {
+                "changed_scenarios": 3,
+                "grouped_changes": {"risk_category": {"vendor_payment": {"changed": 2}}},
+                "changes": [{"before_outcome": "BLOCKED", "after_outcome": "APPROVED"}],
+            },
+            "thresholds": {
+                "max_changed_outcomes": 1,
+                "max_block_to_approve_regressions": 0,
+                "max_changed_risk_categories": {"vendor_payment": 0},
+            },
+        },
+    )
+    assert threshold_fail.status_code == 400
+    assert threshold_fail.json()["error"]["code"] == "promotion_validation_failed"
+
+    break_glass = client.post(
+        "/v1/bundle/promote",
+        json={
+            "bundle_id": candidate_id,
+            "target_lifecycle": "active",
+            "promoted_by": "ops",
+            "promotion_reason": "incident override",
+            "break_glass": True,
+            "break_glass_reason": "SEV-1 mitigation",
+        },
+    )
+    assert break_glass.status_code == 200
+
+    history = client.get("/v1/bundles/history", params={"bundle_name": metadata.bundle_name}).json()["history"]
+    latest = history[0]
+    assert latest["action"] == "promote_break_glass"
+    assert latest["break_glass"] == 1
+    assert latest["audit_marker"] == "break_glass_promotion"
+    assert latest["policy_diff_summary"] is not None
+    assert latest["evidence_json"] is not None
+
+
+def test_active_promotion_fails_without_any_evidence(tmp_path) -> None:
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    db_path = tmp_path / "policy_registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    metadata.lifecycle = "draft"
+    bundle_id = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(bundle_id, "candidate", promoted_by="ops", promotion_reason="ready")
+
+    app = create_app(
+        _settings(policy_store_backend="sqlite", policy_store_sqlite_path=str(db_path), bundle_name=metadata.bundle_name)
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/bundle/promote",
+        json={
+            "bundle_id": bundle_id,
+            "target_lifecycle": "active",
+            "promoted_by": "ops",
+            "promotion_reason": "go",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "promotion_validation_failed"
+
+
 def test_register_bundle_fails_when_signature_strict_and_manifest_invalid(tmp_path) -> None:
     policy_dir = tmp_path / "bundle"
     policy_dir.mkdir()

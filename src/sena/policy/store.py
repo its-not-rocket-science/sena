@@ -240,6 +240,10 @@ class SQLitePolicyBundleRepository:
                     reason=creation_reason or "initial registration",
                     replaced_bundle_id=None,
                     validation_artifact=None,
+                    policy_diff_summary=None,
+                    evidence_json=None,
+                    break_glass=False,
+                    audit_marker=None,
                     created_at=datetime.now(timezone.utc).isoformat(),
                 ),
             )
@@ -253,6 +257,10 @@ class SQLitePolicyBundleRepository:
         promoted_by: str,
         promotion_reason: str,
         validation_artifact: str | None = None,
+        policy_diff_summary: str | None = None,
+        evidence_json: str | None = None,
+        break_glass: bool = False,
+        audit_marker: str | None = None,
         action: str = "promote",
     ) -> None:
         with self._write_transaction() as conn:
@@ -265,8 +273,10 @@ class SQLitePolicyBundleRepository:
                     raise PolicyBundleInvalidTransitionError(
                         f"invalid lifecycle transition '{source}' -> '{target_lifecycle}'"
                     )
-                if target_lifecycle == "active" and not validation_artifact:
-                    raise PolicyBundleInvalidTransitionError("promotion to active requires validation_artifact")
+                if target_lifecycle == "active" and not (validation_artifact or evidence_json or break_glass):
+                    raise PolicyBundleInvalidTransitionError(
+                        "promotion to active requires validation_artifact or evidence_json unless break_glass is set"
+                    )
 
                 replaced_bundle_id: int | None = None
                 if target_lifecycle == "active":
@@ -288,6 +298,10 @@ class SQLitePolicyBundleRepository:
                                 reason=f"Replaced by bundle {bundle_id}",
                                 replaced_bundle_id=bundle_id,
                                 validation_artifact=validation_artifact,
+                                policy_diff_summary=policy_diff_summary,
+                                evidence_json=evidence_json,
+                                break_glass=break_glass,
+                                audit_marker=audit_marker,
                                 created_at=datetime.now(timezone.utc).isoformat(),
                             ),
                         )
@@ -314,6 +328,10 @@ class SQLitePolicyBundleRepository:
                         reason=promotion_reason,
                         replaced_bundle_id=replaced_bundle_id,
                         validation_artifact=validation_artifact,
+                        policy_diff_summary=policy_diff_summary,
+                        evidence_json=evidence_json,
+                        break_glass=break_glass,
+                        audit_marker=audit_marker,
                         created_at=datetime.now(timezone.utc).isoformat(),
                     ),
                 )
@@ -371,6 +389,10 @@ class SQLitePolicyBundleRepository:
                         reason=f"Rolled back to bundle {to_bundle_id}",
                         replaced_bundle_id=to_bundle_id,
                         validation_artifact=validation_artifact,
+                        policy_diff_summary=None,
+                        evidence_json=None,
+                        break_glass=False,
+                        audit_marker="rollback_deprecate",
                         created_at=datetime.now(timezone.utc).isoformat(),
                     ),
                 )
@@ -400,6 +422,10 @@ class SQLitePolicyBundleRepository:
                         reason=promotion_reason,
                         replaced_bundle_id=current_id,
                         validation_artifact=validation_artifact,
+                        policy_diff_summary=None,
+                        evidence_json=None,
+                        break_glass=False,
+                        audit_marker="rollback",
                         created_at=datetime.now(timezone.utc).isoformat(),
                     ),
                 )
@@ -511,8 +537,9 @@ class SQLitePolicyBundleRepository:
             """
             INSERT INTO bundle_history (
                 bundle_id, action, from_lifecycle, to_lifecycle, actor, reason,
-                replaced_bundle_id, validation_artifact, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                replaced_bundle_id, validation_artifact, policy_diff_summary, evidence_json,
+                break_glass, audit_marker, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 history.bundle_id,
@@ -523,6 +550,10 @@ class SQLitePolicyBundleRepository:
                 history.reason,
                 history.replaced_bundle_id,
                 history.validation_artifact,
+                history.policy_diff_summary,
+                history.evidence_json,
+                int(history.break_glass),
+                history.audit_marker,
                 history.created_at,
             ),
         )

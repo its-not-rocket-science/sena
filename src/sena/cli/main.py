@@ -171,7 +171,7 @@ def _run_policy_init(args: argparse.Namespace) -> None:
             raise SystemExit(
                 f"Refusing to overwrite {target}. Use --force to replace existing files."
             )
-        target.write_text(template.read_text())
+        target.write_bytes(template.read_bytes())
     print(f"Initialized policy template bundle at: {destination}")
 
 
@@ -450,12 +450,42 @@ def _run_release_verify(args: argparse.Namespace) -> None:
 
 def _run_registry_promote(args: argparse.Namespace) -> None:
     repo = _registry_repo(args.sqlite_path)
+    simulation_scenarios: list[dict[str, Any]] = []
+    if args.simulation_scenarios:
+        simulation_payload = _load_json_file(args.simulation_scenarios, "simulation scenarios")
+        simulation_scenarios = [
+            {"scenario_id": sid, **scenario} for sid, scenario in sorted(simulation_payload.items())
+        ]
+    thresholds = {
+        "max_changed_outcomes": args.max_changed_outcomes,
+        "max_block_to_approve_regressions": args.max_block_to_approve_regressions,
+        "max_missing_scenario_coverage": args.max_missing_scenario_coverage,
+        "required_risk_categories": args.required_risk_category or [],
+        "max_changed_risk_categories": {},
+    }
+    for item in args.max_changed_risk_category or []:
+        risk, _, raw_max = item.partition("=")
+        if not risk or not raw_max:
+            raise SystemExit("Invalid --max-changed-risk-category format. Use risk=max_changed_count")
+        thresholds["max_changed_risk_categories"][risk] = int(raw_max)
     repo.transition_bundle(
         args.bundle_id,
         args.target_lifecycle,
         promoted_by=args.promoted_by,
         promotion_reason=args.promotion_reason,
         validation_artifact=args.validation_artifact,
+        policy_diff_summary=json.dumps({"cli_only": True}, sort_keys=True),
+        evidence_json=json.dumps(
+            {
+                "simulation_scenarios_count": len(simulation_scenarios),
+                "thresholds": thresholds,
+                "break_glass_reason": args.break_glass_reason,
+            },
+            sort_keys=True,
+        ),
+        break_glass=args.break_glass,
+        audit_marker="break_glass_promotion" if args.break_glass else "promotion",
+        action="promote_break_glass" if args.break_glass else "promote",
     )
     print(json.dumps({"status": "ok"}, indent=2))
 
@@ -688,6 +718,14 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     promote.add_argument("--promoted-by", required=True)
     promote.add_argument("--promotion-reason", required=True)
     promote.add_argument("--validation-artifact")
+    promote.add_argument("--simulation-scenarios", type=Path)
+    promote.add_argument("--max-changed-outcomes", type=int)
+    promote.add_argument("--max-block-to-approve-regressions", type=int)
+    promote.add_argument("--max-missing-scenario-coverage", type=int)
+    promote.add_argument("--required-risk-category", action="append")
+    promote.add_argument("--max-changed-risk-category", action="append")
+    promote.add_argument("--break-glass", action="store_true")
+    promote.add_argument("--break-glass-reason")
     promote.set_defaults(handler=_run_registry_promote)
 
     rollback = sub.add_parser("rollback")

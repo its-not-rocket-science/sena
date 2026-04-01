@@ -111,11 +111,23 @@ class BundleRegisterRequest(BaseModel):
 
 
 class BundlePromoteRequest(BaseModel):
+    class PromotionThresholds(BaseModel):
+        max_changed_outcomes: int | None = Field(default=None, ge=0)
+        max_block_to_approve_regressions: int | None = Field(default=None, ge=0)
+        max_missing_scenario_coverage: int | None = Field(default=None, ge=0)
+        max_changed_risk_categories: dict[str, int] = Field(default_factory=dict)
+        required_risk_categories: list[str] = Field(default_factory=list)
+
     bundle_id: int = Field(gt=0)
     target_lifecycle: Literal["candidate", "active", "deprecated"]
     promoted_by: NonEmptyStr
     promotion_reason: NonEmptyStr
     validation_artifact: str | None = None
+    simulation_scenarios: list[SimulationScenarioRequest] = Field(default_factory=list)
+    simulation_result: dict[str, Any] | None = None
+    thresholds: PromotionThresholds | None = None
+    break_glass: bool = False
+    break_glass_reason: str | None = None
 
 
 class BundleRollbackRequest(BaseModel):
