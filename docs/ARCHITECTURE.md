@@ -39,6 +39,19 @@ This path is the source of truth for current capability claims.
 - Supported integration depth: Jira + ServiceNow normalized approval endpoints
 - Experimental integration endpoints: generic webhook + Slack interactions
 
+### API module layout
+- `sena.api.app`: app factory and top-level wiring only.
+- `sena.api.middleware`: request ID, request-size enforcement, timeout, API key auth, and rate limiting middleware.
+- `sena.api.error_handlers`: shared error envelope helper and FastAPI exception handler registration.
+- `sena.api.runtime`: startup validation, bundle loading, and runtime state initialization.
+- `sena.api.dependencies`: shared runtime-state accessor helpers for request-scoped dependencies.
+- `sena.api.routes.health`: health/readiness and bundle introspection routes.
+- `sena.api.routes.evaluate`: evaluation, review package, batch evaluation, and simulation routes.
+- `sena.api.routes.bundles`: bundle registry, promotion/rollback, history, and diff/validation routes.
+- `sena.api.routes.integrations`: webhook/Jira/ServiceNow/Slack integration routes.
+
+This layout keeps route responsibilities coherent while preserving existing API response shapes and error semantics.
+
 ## Policy bundle model
 
 Policy bundles are local directories containing:
