@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from sena.core.models import ActionProposal
+from sena.integrations.base import Connector, DecisionPayload, IntegrationError
 
 try:
     import yaml  # type: ignore
@@ -13,7 +14,7 @@ except ModuleNotFoundError:  # pragma: no cover
     yaml = None
 
 
-class WebhookMappingError(ValueError):
+class WebhookMappingError(IntegrationError):
     """Raised when webhook payloads cannot be mapped deterministically."""
 
 
@@ -82,9 +83,40 @@ def load_webhook_mapping_config(path: str | Path) -> WebhookMappingConfig:
     return WebhookMappingConfig(providers=providers)
 
 
-class WebhookPayloadMapper:
+class WebhookPayloadMapper(Connector):
+    name = "webhook"
     def __init__(self, config: WebhookMappingConfig):
         self._config = config
+
+    def handle_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        provider = str(event.get("provider") or "").strip()
+        event_type = str(event.get("event_type") or "").strip()
+        payload = event.get("payload")
+        default_request_id = str(event.get("default_request_id") or "").strip()
+        if not provider:
+            raise WebhookMappingError("Webhook event provider must be non-empty")
+        if not event_type:
+            raise WebhookMappingError("Webhook event_type must be non-empty")
+        if not isinstance(payload, dict):
+            raise WebhookMappingError("Webhook payload must be an object")
+        if not default_request_id:
+            raise WebhookMappingError("Webhook default_request_id must be non-empty")
+
+        proposal = self.map_payload(
+            provider=provider,
+            event_type=event_type,
+            payload=payload,
+            default_request_id=default_request_id,
+        )
+        return {
+            "action_type": proposal.action_type,
+            "request_id": proposal.request_id,
+            "actor_id": proposal.actor_id,
+            "attributes": proposal.attributes,
+        }
+
+    def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:
+        raise WebhookMappingError("Webhook connector does not support outbound decision delivery")
 
     def map_payload(
         self,

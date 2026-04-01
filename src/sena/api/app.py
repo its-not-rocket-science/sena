@@ -25,6 +25,8 @@ from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig, PolicyBundleMetadata
 from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
+from sena.integrations.base import DecisionPayload
+from sena.integrations.registry import build_connector_registry
 from sena.integrations.webhook import (
     WebhookMappingError,
     WebhookPayloadMapper,
@@ -33,7 +35,6 @@ from sena.integrations.webhook import (
 from sena.integrations.slack import (
     SlackClient,
     SlackIntegrationError,
-    parse_interaction_decision,
 )
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
@@ -75,6 +76,7 @@ class _EngineState:
         self.policy_repo = policy_repo
         self.webhook_mapper: WebhookPayloadMapper | None = None
         self.slack_client: SlackClient | None = None
+        self.connector_registry = build_connector_registry()
 
 
 def _parse_default_decision(raw: str) -> DecisionOutcome:
@@ -133,6 +135,10 @@ def create_app(settings: ApiSettings | None = None):
             bot_token=runtime_settings.slack_bot_token,
             default_channel=runtime_settings.slack_channel,
         )
+    state.connector_registry = build_connector_registry(
+        webhook=state.webhook_mapper,
+        slack=state.slack_client,
+    )
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -266,12 +272,14 @@ def create_app(settings: ApiSettings | None = None):
             def _notify_slack(trace) -> None:
                 if state.slack_client is None:
                     return
-                state.slack_client.post_escalation(
-                    decision_id=trace.decision_id,
-                    request_id=trace.request_id,
-                    action_type=trace.action_type,
-                    matched_rule_ids=[item.rule_id for item in trace.matched_rules],
-                    summary=trace.summary,
+                state.slack_client.send_decision(
+                    DecisionPayload(
+                        decision_id=trace.decision_id,
+                        request_id=trace.request_id,
+                        action_type=trace.action_type,
+                        matched_rule_ids=[item.rule_id for item in trace.matched_rules],
+                        summary=trace.summary,
+                    )
                 )
 
             proposal = ActionProposal(
@@ -305,11 +313,19 @@ def create_app(settings: ApiSettings | None = None):
         if state.webhook_mapper is None:
             raise HTTPException(status_code=400, detail="webhook mapping config is not set")
         try:
-            proposal = state.webhook_mapper.map_payload(
-                provider=req.provider,
-                event_type=req.event_type,
-                payload=req.payload,
-                default_request_id=request.state.request_id,
+            mapped = state.connector_registry.get("webhook").handle_event(
+                {
+                    "provider": req.provider,
+                    "event_type": req.event_type,
+                    "payload": req.payload,
+                    "default_request_id": request.state.request_id,
+                }
+            )
+            proposal = ActionProposal(
+                action_type=mapped["action_type"],
+                request_id=mapped["request_id"],
+                actor_id=mapped["actor_id"],
+                attributes=mapped["attributes"],
             )
             evaluator = PolicyEvaluator(
                 state.rules,
@@ -318,12 +334,14 @@ def create_app(settings: ApiSettings | None = None):
                     default_decision=_parse_default_decision(req.default_decision),
                     require_allow_match=req.strict_require_allow,
                     on_escalation=(
-                        lambda trace: state.slack_client.post_escalation(
-                            decision_id=trace.decision_id,
-                            request_id=trace.request_id,
-                            action_type=trace.action_type,
-                            matched_rule_ids=[item.rule_id for item in trace.matched_rules],
-                            summary=trace.summary,
+                        lambda trace: state.slack_client.send_decision(
+                            DecisionPayload(
+                                decision_id=trace.decision_id,
+                                request_id=trace.request_id,
+                                action_type=trace.action_type,
+                                matched_rule_ids=[item.rule_id for item in trace.matched_rules],
+                                summary=trace.summary,
+                            )
                         )
                         if state.slack_client is not None
                         else None
@@ -355,7 +373,7 @@ def create_app(settings: ApiSettings | None = None):
             payload_json = form_data.get("payload")
             if not isinstance(payload_json, str):
                 raise SlackIntegrationError("Slack interaction payload form field is required")
-            interaction = parse_interaction_decision(payload=json.loads(payload_json))
+            interaction = state.connector_registry.get("slack").handle_event(json.loads(payload_json))
             return {
                 "status": "ok",
                 "decision": interaction["decision"],
