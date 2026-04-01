@@ -17,7 +17,7 @@ from sena.core.models import (
     RuleEvaluationResult,
 )
 from sena.policy.interpreter import evaluate_condition_with_trace
-from sena.policy.validation import validate_context_schema
+from sena.policy.validation import validate_context_schema, validate_identity_fields
 
 
 class PolicyEvaluator:
@@ -41,6 +41,7 @@ class PolicyEvaluator:
             "action_type": proposal.action_type,
             "request_id": proposal.request_id,
             "actor_id": proposal.actor_id,
+            "actor_role": proposal.actor_role,
             **proposal.attributes,
             **facts,
         }
@@ -48,10 +49,13 @@ class PolicyEvaluator:
         evaluated: list[RuleEvaluationResult] = []
         missing_fields: set[str] = set()
         schema_errors: list[str] = []
+        identity_errors: list[str] = []
+        if self.config.require_allow_match:
+            identity_errors = validate_identity_fields(proposal.actor_id, proposal.actor_role)
         if self.config.enforce_context_schema and self.policy_bundle.context_schema:
             schema_errors = validate_context_schema(context, self.policy_bundle.context_schema)
 
-        if not schema_errors:
+        if not schema_errors and not identity_errors:
             for rule in applicable:
                 condition_result = evaluate_condition_with_trace(rule.condition, context)
                 matched = condition_result.matched
@@ -122,6 +126,16 @@ class PolicyEvaluator:
                 f"Decision {decision_id}: BLOCKED due to context schema errors: "
                 f"{'; '.join(schema_errors)}"
             )
+        if identity_errors:
+            outcome = DecisionOutcome.BLOCKED
+            missing_fields.update(identity_errors)
+            precedence_explanation = (
+                "Strict mode requires actor identity context fields before policy evaluation."
+            )
+            summary = (
+                f"Decision {decision_id}: BLOCKED due to missing identity field(s): "
+                f"{', '.join(identity_errors)}"
+            )
         if self.config.require_allow_match and not allows:
             outcome = DecisionOutcome.BLOCKED
             if not matched:
@@ -164,6 +178,7 @@ class PolicyEvaluator:
                 "action_type": proposal.action_type,
                 "request_id": proposal.request_id,
                 "actor_id": proposal.actor_id,
+                "actor_role": proposal.actor_role,
                 "attributes": proposal.attributes,
             },
             "facts": facts,
@@ -193,6 +208,7 @@ class PolicyEvaluator:
             action_type=proposal.action_type,
             request_id=proposal.request_id,
             actor_id=proposal.actor_id,
+            actor_role=proposal.actor_role,
             outcome=outcome,
             policy_bundle=self.policy_bundle,
             matched_rule_ids=[r.rule_id for r in matched],

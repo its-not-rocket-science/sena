@@ -127,3 +127,12 @@ def validate_context_schema(context: dict[str, Any], schema: dict[str, str]) -> 
                 f"field '{field}' expected type '{typename}' but received '{type(value).__name__}'"
             )
     return errors
+
+
+def validate_identity_fields(actor_id: str | None, actor_role: str | None) -> list[str]:
+    missing: list[str] = []
+    if not actor_id:
+        missing.append("actor_id")
+    if not actor_role:
+        missing.append("actor_role")
+    return missing

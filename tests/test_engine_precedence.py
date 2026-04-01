@@ -71,3 +71,49 @@ def test_strict_allow_can_override_escalation_when_no_allow_matches() -> None:
 
     assert trace.outcome == DecisionOutcome.BLOCKED
     assert "strict allow mode" in trace.reasoning.precedence_explanation.lower()
+
+
+def test_actor_role_condition_controls_high_value_payment_escalation() -> None:
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
+
+    director_trace = evaluator.evaluate(
+        ActionProposal(
+            action_type="approve_vendor_payment",
+            actor_role="finance_director",
+            attributes={"amount": 15000, "vendor_verified": True},
+        ),
+        {},
+    )
+    analyst_trace = evaluator.evaluate(
+        ActionProposal(
+            action_type="approve_vendor_payment",
+            actor_role="finance_analyst",
+            attributes={"amount": 15000, "vendor_verified": True},
+        ),
+        {},
+    )
+
+    assert director_trace.outcome == DecisionOutcome.APPROVED
+    assert analyst_trace.outcome == DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
+
+
+def test_strict_mode_blocks_when_identity_fields_are_missing() -> None:
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    evaluator = PolicyEvaluator(
+        rules,
+        policy_bundle=metadata,
+        config=EvaluatorConfig(require_allow_match=True),
+    )
+
+    trace = evaluator.evaluate(
+        ActionProposal(
+            action_type="approve_vendor_payment",
+            attributes={"amount": 500, "vendor_verified": True},
+        ),
+        {},
+    )
+
+    assert trace.outcome == DecisionOutcome.BLOCKED
+    assert "actor_id" in trace.missing_fields
+    assert "actor_role" in trace.missing_fields

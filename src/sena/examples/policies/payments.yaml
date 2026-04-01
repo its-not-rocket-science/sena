@@ -11,14 +11,14 @@
   },
   {
     "id": "payment_escalate_high_amount_non_director",
-    "description": "Escalate high-value payments without finance-director initiator",
+    "description": "Escalate high-value payments without finance-director actor role",
     "severity": "high",
     "inviolable": false,
     "applies_to": ["approve_vendor_payment"],
     "condition": {
       "and": [
         {"field": "amount", "gte": 10000},
-        {"field": "requester_role", "neq": "finance_director"}
+        {"field": "actor_role", "neq": "finance_director"}
       ]
     },
     "decision": "ESCALATE",

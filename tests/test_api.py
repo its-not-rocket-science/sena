@@ -111,6 +111,26 @@ def test_validation_error_shape() -> None:
     assert body["error"]["code"] == "validation_error"
 
 
+def test_strict_mode_requires_actor_identity_fields() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "strict_require_allow": True,
+            "attributes": {"vendor_verified": False},
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"]["code"] == "validation_error"
+    assert "actor_id" in str(body["error"]["message"])
+    assert "actor_role" in str(body["error"]["message"])
+
+
 def test_batch_and_bundle_inspect_endpoints() -> None:
     app = create_app(_settings())
     client = TestClient(app)
