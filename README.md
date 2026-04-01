@@ -1,30 +1,66 @@
 # SENA
 
-SENA is an **alpha deterministic policy-enforcement engine for AI-assisted enterprise approval workflows**.
+SENA is an **alpha deterministic policy-enforcement and governance engine for AI-assisted enterprise workflows**.
 
-It evaluates high-risk workflow actions against structured policy bundles and returns an auditable decision (`APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`) with reasoning and machine-readable traces.
+It evaluates high-risk workflow actions against versioned policy bundles and returns a deterministic decision (`APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`) with machine-readable traces for audit, replay, and operational follow-up.
 
-## Why centralizing control in SENA beats embedded per-tool rules
+## What SENA is
 
-SENA is explicitly designed to outperform embedding approval rules directly inside Jira workflows, ServiceNow Flow Designer, or GRC-specific rule engines:
+- **A deterministic decision engine:** given the same normalized input + bundle version, SENA returns the same result and trace.
+- **An auditable governance layer:** decisions include rationale, matched controls, provenance metadata, and hash-linked audit records.
+- **A policy lifecycle system:** teams can validate, diff, register, and promote policy bundles through explicit lifecycle states.
+- **A normalization boundary across systems:** Jira and ServiceNow events are mapped into one approval model before evaluation.
+- **A replay/simulation toolchain:** historical scenarios can be re-evaluated to understand policy impact before promotion.
+- **A human-escalation router:** policies can require manual review rather than forcing binary allow/deny outcomes.
+- **A release-evidence producer:** bundle identity, compatibility checks, diffs, and audit proofs can be attached to change records.
 
-- **Cross-system normalization:** both Jira and ServiceNow events are normalized into one approval model before policy evaluation.
-- **Portable policy packs:** one bundle can govern multiple source systems with only mapping-layer changes.
-- **Deterministic simulation:** compare baseline vs candidate bundle and see exactly which historical scenarios change, grouped by source system/workflow/risk category.
-- **Risk/compliance explainability:** every decision includes reviewer-focused rationale, matched control details, and provenance (bundle version + decision hash + input fingerprint).
-- **Portable provenance:** the same bundle/control logic can be evidenced across systems with stable audit artifacts.
+## What SENA is not
 
-## Current maturity focus
+- **Not a formal verification system:** SENA provides deterministic evaluation and testable policy behavior, not mathematical proofs of global correctness.
+- **Not a generalized “safe AI” platform:** SENA governs workflow decisions around AI-assisted actions; it does not guarantee model safety across all use cases.
+- **Not an end-to-end enterprise suite today:** SENA is alpha software and does not yet include full enterprise controls like multi-tenant isolation, OIDC/RBAC, or a policy authoring UI.
+- **Not a replacement for domain systems:** SENA is a control layer that complements systems like Jira/ServiceNow by centralizing policy logic.
 
-We are prioritizing depth to move from alpha toward enterprise-credible pilots:
-- deterministic policy evaluation + lifecycle controls,
-- cross-system normalization for **Jira + ServiceNow** approval workflows,
-- failure-mode and migration testing,
-- durable audit + persistence guarantees.
+## Why this beats embedded workflow rules
 
-See the opinionated implementation plan: [`docs/TECHNICAL_MATURITY_PLAN.md`](docs/TECHNICAL_MATURITY_PLAN.md).
+Embedding approval rules directly in each workflow tool creates policy drift, inconsistent evidence, and expensive connector-specific rewrites.
 
-Policy schema evolution and migration guidance: [`docs/POLICY_SCHEMA_EVOLUTION.md`](docs/POLICY_SCHEMA_EVOLUTION.md).
+SENA gives you a stronger operating model:
+
+- **One policy model, multiple systems:** normalize first, evaluate once.
+- **Deterministic governance behavior:** explicit precedence and fail-closed validation reduce hidden branching.
+- **Portable release process for policies:** draft/candidate/active lifecycle with diff + promotion checks.
+- **Decision evidence by default:** traces + provenance + audit chain enable post-hoc review and regulator-facing artifacts.
+- **Safer rollout mechanics:** replay/simulation shows outcome deltas before activating a new bundle.
+- **Structured human fallback:** escalation is a first-class decision outcome, not an ad hoc exception path.
+
+## Current maturity
+
+SENA is currently **alpha** and focused on depth in deterministic governance primitives rather than broad platform surface.
+
+Implemented and tested in the supported path (`src/sena/*`):
+
+- deterministic policy parsing, validation, and evaluation,
+- structured decision traces and provenance metadata,
+- bundle lifecycle metadata and promotion validation endpoints,
+- simulation/diff endpoints for impact analysis,
+- Jira and ServiceNow normalization + webhook evaluation paths,
+- tamper-evident JSONL audit chain + verification endpoint,
+- API/CLI coverage for evaluate, batch evaluate, simulation, diff, and bundle lifecycle workflows.
+
+Not yet implemented as production-complete enterprise controls:
+
+- transactional multi-tenant control plane,
+- built-in RBAC/OIDC administration plane,
+- replicated/WORM audit storage,
+- asynchronous long-running simulation job orchestration,
+- full policy authoring UI and collaborative approval workflows.
+
+See implementation details and boundaries in:
+- [`docs/CONTROL_PLANE.md`](docs/CONTROL_PLANE.md)
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/TECHNICAL_MATURITY_PLAN.md`](docs/TECHNICAL_MATURITY_PLAN.md)
+- [`docs/POLICY_SCHEMA_EVOLUTION.md`](docs/POLICY_SCHEMA_EVOLUTION.md)
 
 ## Version
 
