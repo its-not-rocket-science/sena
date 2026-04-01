@@ -28,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 api = [
   "fastapi>=0.111",
+  "prometheus-client>=0.20",
   "uvicorn>=0.30",
 ]
 legacy = []

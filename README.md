@@ -98,6 +98,7 @@ Versioned endpoints:
 - `POST /v1/bundle/register`
 - `POST /v1/bundle/promote`
 - `GET /v1/audit/verify`
+- `GET /metrics` (Prometheus exposition)
 
 Backward-compatible aliases still exist at `/health`, `/bundle`, `/evaluate`.
 

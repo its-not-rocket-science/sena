@@ -36,6 +36,7 @@ Application versioning: package and FastAPI app version are sourced from `sena._
 - `POST /v1/bundle/diff`: rule-set diff
 - `POST /v1/bundle/promotion/validate`: lifecycle promotion checks
 - `GET /v1/audit/verify`: tamper-evident audit verification
+- `GET /metrics`: Prometheus metrics (`request_count`, `decision_outcome_count`, `evaluation_latency`)
 
 ## Deployment
 ### Docker

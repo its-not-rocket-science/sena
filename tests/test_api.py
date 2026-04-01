@@ -345,3 +345,42 @@ def test_timeout_handling_returns_gateway_timeout(monkeypatch) -> None:
 
     assert response.status_code == 504
     assert response.json()["error"]["code"] == "timeout"
+
+
+def test_metrics_endpoint_exposes_prometheus_metrics() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    evaluate_response = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"amount": 15000, "vendor_verified": False},
+            "facts": {},
+        },
+    )
+    assert evaluate_response.status_code == 200
+
+    metrics_response = client.get("/metrics")
+    assert metrics_response.status_code == 200
+    assert "text/plain" in metrics_response.headers["content-type"]
+    metrics_body = metrics_response.text
+    assert "request_count_total" in metrics_body
+    assert "decision_outcome_count_total" in metrics_body
+    assert 'decision_outcome_count_total{endpoint="/v1/evaluate",outcome="BLOCKED"}' in metrics_body
+    assert 'evaluation_latency_bucket{endpoint="/v1/evaluate",le=' in metrics_body
+
+
+def test_request_id_header_is_preserved_across_evaluate_flow() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/evaluate",
+        headers={"x-request-id": "req-correlation-123"},
+        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert response.headers["x-request-id"] == "req-correlation-123"
+    assert body["request_id"] == "req-correlation-123"
