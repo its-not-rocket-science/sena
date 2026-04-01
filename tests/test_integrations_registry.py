@@ -1,6 +1,7 @@
 import pytest
 
 from sena.integrations.base import ConnectorRegistry, DecisionPayload, IntegrationError
+from sena.integrations.jira import AllowAllJiraWebhookVerifier, JiraConnector, load_jira_mapping_config
 from sena.integrations.registry import build_connector_registry
 from sena.integrations.slack import SlackClient
 from sena.integrations.webhook import WebhookMappingConfig, WebhookPayloadMapper, WebhookRoute
@@ -23,6 +24,15 @@ def test_registry_registers_connectors() -> None:
     assert registry.list_names() == ["slack", "webhook"]
     assert registry.get("slack") is slack
     assert registry.get("webhook") is webhook
+
+
+def test_registry_registers_jira_connector() -> None:
+    jira = JiraConnector(
+        config=load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml"),
+        verifier=AllowAllJiraWebhookVerifier(),
+    )
+    registry = build_connector_registry(jira=jira)
+    assert registry.list_names() == ["jira"]
 
 
 def test_registry_rejects_duplicate_names() -> None:

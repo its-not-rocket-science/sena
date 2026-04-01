@@ -25,6 +25,8 @@ class ApiSettings:
     policy_store_backend: str = "filesystem"
     policy_store_sqlite_path: str | None = None
     webhook_mapping_config_path: str | None = None
+    jira_mapping_config_path: str | None = None
+    jira_webhook_secret: str | None = None
     slack_bot_token: str | None = None
     slack_channel: str | None = None
     rate_limit_requests: int = 120
@@ -89,6 +91,8 @@ def load_settings_from_env() -> ApiSettings:
         policy_store_backend=os.getenv("SENA_POLICY_STORE_BACKEND", "filesystem"),
         policy_store_sqlite_path=os.getenv("SENA_POLICY_STORE_SQLITE_PATH"),
         webhook_mapping_config_path=os.getenv("SENA_WEBHOOK_MAPPING_CONFIG"),
+        jira_mapping_config_path=os.getenv("SENA_JIRA_MAPPING_CONFIG"),
+        jira_webhook_secret=os.getenv("SENA_JIRA_WEBHOOK_SECRET"),
         slack_bot_token=os.getenv("SENA_SLACK_BOT_TOKEN"),
         slack_channel=os.getenv("SENA_SLACK_CHANNEL"),
         rate_limit_requests=_parse_int(os.getenv("SENA_RATE_LIMIT_REQUESTS"), default=120),

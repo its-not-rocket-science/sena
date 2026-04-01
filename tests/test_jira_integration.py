@@ -1,0 +1,118 @@
+import json
+
+import pytest
+
+from sena.integrations.base import DecisionPayload
+from sena.integrations.jira import (
+    AllowAllJiraWebhookVerifier,
+    JiraConnector,
+    JiraIntegrationError,
+    SharedSecretJiraWebhookVerifier,
+    load_jira_mapping_config,
+)
+
+
+def _payload(actor: str = "acct-1") -> dict:
+    return {
+        "webhookEvent": "jira:issue_updated",
+        "timestamp": 1711982000,
+        "issue": {
+            "id": "10001",
+            "key": "RISK-9",
+            "fields": {
+                "customfield_approval_amount": 12000,
+                "customfield_requester_role": "finance_analyst",
+                "customfield_vendor_verified": False,
+            },
+        },
+        "user": {"accountId": actor},
+        "changelog": {"items": [{"field": "status", "toString": "Pending Approval"}]},
+    }
+
+
+def test_load_jira_mapping_config() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    assert "jira:issue_updated" in cfg.routes
+    assert cfg.outbound.mode == "both"
+
+
+def test_jira_connector_maps_payload_to_action_proposal() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+
+    event = connector.handle_event(
+        {
+            "headers": {"x-atlassian-webhook-identifier": "delivery-1"},
+            "payload": _payload(),
+            "raw_body": json.dumps(_payload()).encode("utf-8"),
+        }
+    )
+
+    proposal = event["action_proposal"]
+    assert proposal.action_type == "approve_vendor_payment"
+    assert proposal.request_id == "RISK-9"
+    assert proposal.actor_id == "acct-1"
+    assert proposal.attributes["amount"] == 12000
+
+
+def test_jira_connector_missing_actor_identity_is_deterministic() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+
+    payload = _payload(actor="")
+    with pytest.raises(JiraIntegrationError, match="missing actor identity"):
+        connector.handle_event(
+            {
+                "headers": {"x-atlassian-webhook-identifier": "delivery-2"},
+                "payload": payload,
+                "raw_body": json.dumps(payload).encode("utf-8"),
+            }
+        )
+
+
+def test_jira_connector_duplicate_delivery_is_replay_safe() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+    payload = _payload()
+    envelope = {
+        "headers": {"x-atlassian-webhook-identifier": "delivery-3"},
+        "payload": payload,
+        "raw_body": json.dumps(payload).encode("utf-8"),
+    }
+
+    connector.handle_event(envelope)
+    with pytest.raises(JiraIntegrationError, match="duplicate delivery"):
+        connector.handle_event(envelope)
+
+
+def test_jira_verifier_rejects_invalid_signature() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(
+        config=cfg,
+        verifier=SharedSecretJiraWebhookVerifier("topsecret"),
+    )
+    payload = _payload()
+    with pytest.raises(JiraIntegrationError, match="invalid webhook signature"):
+        connector.handle_event(
+            {
+                "headers": {"x-atlassian-webhook-identifier": "delivery-4", "x-sena-signature": "bad"},
+                "payload": payload,
+                "raw_body": json.dumps(payload).encode("utf-8"),
+            }
+        )
+
+
+def test_jira_send_decision_returns_stable_payload() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+    response = connector.send_decision(
+        DecisionPayload(
+            decision_id="dec_1",
+            request_id="RISK-10",
+            action_type="approve_vendor_payment",
+            matched_rule_ids=["RULE-1"],
+            summary="BLOCKED",
+        )
+    )
+    assert response["status"] == "delivered"
+    assert len(response["results"]) == 2

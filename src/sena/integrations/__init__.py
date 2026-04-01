@@ -2,6 +2,17 @@
 
 from sena.integrations.base import Connector, ConnectorRegistry, DecisionPayload, IntegrationError
 from sena.integrations.registry import build_connector_registry
+from sena.integrations.jira import (
+    AllowAllJiraWebhookVerifier,
+    InMemoryJiraIdempotencyStore,
+    JiraConnector,
+    JiraIntegrationError,
+    JiraMappingConfig,
+    JiraOutboundConfig,
+    JiraEventRoute,
+    SharedSecretJiraWebhookVerifier,
+    load_jira_mapping_config,
+)
 from sena.integrations.slack import (
     SlackClient,
     SlackEscalationMessage,
@@ -21,6 +32,15 @@ __all__ = [
     "DecisionPayload",
     "IntegrationError",
     "build_connector_registry",
+    "JiraConnector",
+    "JiraIntegrationError",
+    "JiraMappingConfig",
+    "JiraOutboundConfig",
+    "JiraEventRoute",
+    "load_jira_mapping_config",
+    "AllowAllJiraWebhookVerifier",
+    "SharedSecretJiraWebhookVerifier",
+    "InMemoryJiraIdempotencyStore",
     "WebhookMappingConfig",
     "WebhookMappingError",
     "WebhookPayloadMapper",
