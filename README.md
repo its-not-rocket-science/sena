@@ -308,6 +308,39 @@ PYTHONPATH=src python examples/design_partner_reference/run_reference.py
 Guide: `examples/design_partner_reference/README.md`
 - Full runbook: `docs/integrations/SERVICENOW.md`
 
+### Evidence pack generator for policy releases
+
+Generate a buyer/auditor-ready evidence pack from the checked-in design partner reference assets:
+
+```bash
+PYTHONPATH=src python scripts/generate_evidence_pack.py \
+  --output-dir /tmp/sena-evidence-pack \
+  --output-zip /tmp/sena-evidence-pack.zip \
+  --clean
+```
+
+Optional CLI entrypoint:
+
+```bash
+PYTHONPATH=src python -m sena.cli.main evidence-pack \
+  --output-dir /tmp/sena-evidence-pack \
+  --output-zip /tmp/sena-evidence-pack.zip \
+  --clean
+```
+
+The pack includes deterministic artifact paths for:
+- bundle metadata,
+- release signature verification,
+- candidate vs active rule diff,
+- simulation summary with grouped changes,
+- promotion validation payload,
+- evaluation trace samples,
+- audit chain verification,
+- integration-specific input/output examples,
+- decision review package examples,
+- runtime metadata,
+- plus a human-readable `SUMMARY.md`.
+
 ### Experimental: Slack human-escalation integration
 
 SENA can automatically post Slack approval cards when a policy decision results in `ESCALATE_FOR_HUMAN_REVIEW`.

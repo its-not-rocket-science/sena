@@ -37,6 +37,15 @@ From repository root:
 PYTHONPATH=src python examples/design_partner_reference/run_reference.py
 ```
 
+Generate a release evidence pack that design partners can hand to procurement, audit, and risk reviewers:
+
+```bash
+PYTHONPATH=src python scripts/generate_evidence_pack.py \
+  --output-dir /tmp/sena-evidence-pack \
+  --output-zip /tmp/sena-evidence-pack.zip \
+  --clean
+```
+
 ## What gets generated
 
 - `artifacts/release-manifest.json` – signed policy bundle release artifact.
@@ -50,3 +59,10 @@ PYTHONPATH=src python examples/design_partner_reference/run_reference.py
 ## Why this is a depth example
 
 This is intentionally a **narrow but deep** story: one integration domain, one policy domain, one promotion flow, one audit trail, and one review output package. It demonstrates how a design partner can run a controlled policy release process with deterministic governance and evidence.
+
+## How design partners use the evidence pack
+
+1. Attach `SUMMARY.md` and the zipped pack to CAB / risk review tickets.
+2. Share `artifacts/promotion_validation.json` and `artifacts/simulation_summary.json` as promotion-gate evidence.
+3. Share `artifacts/audit_verification.json` and sample files under `artifacts/evaluation_traces/` for auditor replay.
+4. Provide `artifacts/integration_examples/*.json` and `artifacts/review_packages/*.json` to downstream control-testing teams.
