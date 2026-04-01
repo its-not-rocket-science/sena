@@ -102,6 +102,50 @@ def test_jira_verifier_rejects_invalid_signature() -> None:
         )
 
 
+
+def test_jira_round_trip_source_payload_to_normalized_to_action_proposal() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+    payload = _payload()
+
+    event = connector.handle_event(
+        {
+            "headers": {"x-atlassian-webhook-identifier": "delivery-roundtrip"},
+            "payload": payload,
+            "raw_body": json.dumps(payload).encode("utf-8"),
+        }
+    )
+
+    normalized = event["normalized_event"]
+    proposal = event["action_proposal"]
+    assert normalized["source_system"] == "jira"
+    assert normalized["source_object_type"] == "jira_issue"
+    assert normalized["source_object_id"] == "10001"
+    assert normalized["workflow_stage"] == "pending_approval"
+    assert normalized["requested_action"] == "approve_vendor_payment"
+    assert normalized["actor"]["actor_id"] == "acct-1"
+    assert proposal.request_id == "RISK-9"
+    assert proposal.attributes["correlation_key"] == "RISK-9"
+
+
+def test_jira_connector_rejects_missing_required_normalized_fields() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    broken_route = cfg.routes["jira:issue_updated"]
+    cfg.routes["jira:issue_updated"] = broken_route.__class__(
+        **{**broken_route.__dict__, "correlation_key_path": "issue.missing_key"}
+    )
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+
+    payload = _payload()
+    with pytest.raises(JiraIntegrationError, match="missing required field path"):
+        connector.handle_event(
+            {
+                "headers": {"x-atlassian-webhook-identifier": "delivery-bad-normalized"},
+                "payload": payload,
+                "raw_body": json.dumps(payload).encode("utf-8"),
+            }
+        )
+
 def test_jira_send_decision_returns_stable_payload() -> None:
     cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
     connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())

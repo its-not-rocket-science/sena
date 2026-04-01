@@ -3,24 +3,33 @@ providers:
     payment_intent.created:
       action_type: approve_vendor_payment
       payload_path: data.object
-      request_id_path: id
-      actor_id_path: data.object.metadata.requested_by
+      actor_id_path: metadata.requested_by
+      static_source_object_type: payment_intent
+      static_workflow_stage: created
+      static_requested_action: approve_vendor_payment
+      correlation_key_path: id
       attributes:
         amount: amount
         currency: currency
         vendor_verified: metadata.vendor_verified
         requester_role: metadata.requester_role
-      static_attributes:
-        source_system: stripe
+      risk_attributes:
+        amount: amount
+        vendor_verified: metadata.vendor_verified
   jira:
     issue_created:
       action_type: approve_customer_data_export
       payload_path: issue.fields
       request_id_path: issue.key
       actor_id_path: user.accountId
+      source_record_id_path: issue.id
+      static_source_object_type: jira_issue
+      static_workflow_stage: intake
+      static_requested_action: approve_customer_data_export
+      correlation_key_path: issue.key
       attributes:
         ticket_key: summary
         requester_role: customfield_requester_role
         target_system: customfield_target_system
-      static_attributes:
-        source_system: jira
+      risk_attributes:
+        target_system: customfield_target_system

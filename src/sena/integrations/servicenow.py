@@ -83,12 +83,23 @@ def load_servicenow_mapping_config(path: str) -> ServiceNowMappingConfig:
             action_type=str(route["action_type"]),
             actor_id_path=str(route["actor_id_path"]),
             actor_role_path=route.get("actor_role_path"),
+            payload_path=route.get("payload_path"),
             request_id_path=route.get("request_id_path"),
             source_record_id_path=route.get("source_record_id_path"),
             attributes={str(k): str(v) for k, v in attrs.items()},
             required_fields=[str(item) for item in required_fields],
             static_attributes=route.get("static_attributes", {}) or {},
             policy_bundle=route.get("policy_bundle"),
+            source_object_type_path=route.get("source_object_type_path"),
+            workflow_stage_path=route.get("workflow_stage_path"),
+            requested_action_path=route.get("requested_action_path"),
+            correlation_key_path=route.get("correlation_key_path"),
+            idempotency_key_path=route.get("idempotency_key_path"),
+            risk_attributes={str(k): str(v) for k, v in (route.get("risk_attributes", {}) or {}).items()},
+            evidence_references_path=route.get("evidence_references_path"),
+            static_source_object_type=route.get("static_source_object_type"),
+            static_workflow_stage=route.get("static_workflow_stage"),
+            static_requested_action=route.get("static_requested_action"),
         )
     outbound_raw = raw.get("outbound", {}) or {}
     mode = str(outbound_raw.get("mode", "callback"))
@@ -157,12 +168,16 @@ class ServiceNowConnector(Connector):
         return build_normalized_approval_event(
             payload=payload,
             route=route,
-            event_type=event_type,
-            delivery_id=delivery_id,
+            source_event_type=event_type,
+            idempotency_key=delivery_id,
             source_system="servicenow",
             default_request_id=default_request_id,
             default_source_record_id=source_record_id,
             error_cls=ServiceNowIntegrationError,
+            default_source_object_type=str(payload.get("table") or payload.get("change_request", {}).get("table") or "change_request"),
+            default_workflow_stage="requested",
+            default_requested_action=route.action_type,
+            default_correlation_key=default_request_id,
             source_metadata={
                 "servicenow_table": payload.get("table") or payload.get("change_request", {}).get("table") or "change_request",
                 "servicenow_change_number": default_request_id,
@@ -170,7 +185,7 @@ class ServiceNowConnector(Connector):
         )
 
     def map_to_proposal(self, event: NormalizedServiceNowEvent):
-        route = self._config.routes[event.event_type]
+        route = self._config.routes[event.source_event_type]
         return to_action_proposal(event, route)
 
     def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:

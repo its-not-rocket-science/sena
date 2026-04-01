@@ -537,12 +537,8 @@ def create_app(settings: ApiSettings | None = None):
                     "default_request_id": request.state.request_id,
                 }
             )
-            proposal = ActionProposal(
-                action_type=mapped["action_type"],
-                request_id=mapped["request_id"],
-                actor_id=mapped["actor_id"],
-                attributes=mapped["attributes"],
-            )
+            normalized = mapped["normalized_event"]
+            proposal = mapped["action_proposal"]
             evaluator = PolicyEvaluator(
                 state.rules,
                 policy_bundle=state.metadata,
@@ -573,6 +569,7 @@ def create_app(settings: ApiSettings | None = None):
             return {
                 "provider": req.provider,
                 "event_type": req.event_type,
+                "normalized_event": normalized,
                 "mapped_action_proposal": {
                     "action_type": proposal.action_type,
                     "request_id": proposal.request_id,
@@ -607,7 +604,7 @@ def create_app(settings: ApiSettings | None = None):
             )
             normalized = mapped["normalized_event"]
             proposal = mapped["action_proposal"]
-            event_route = state.jira_connector.route_for_event_type(normalized["event_type"])
+            event_route = state.jira_connector.route_for_event_type(normalized["source_event_type"])
             if event_route and event_route.policy_bundle and event_route.policy_bundle != state.metadata.bundle_name:
                 raise_api_error(
                     "jira_policy_bundle_not_found",
@@ -684,7 +681,7 @@ def create_app(settings: ApiSettings | None = None):
             )
             normalized = mapped["normalized_event"]
             proposal = mapped["action_proposal"]
-            event_route = state.servicenow_connector.route_for_event_type(normalized["event_type"])
+            event_route = state.servicenow_connector.route_for_event_type(normalized["source_event_type"])
             if event_route and event_route.policy_bundle and event_route.policy_bundle != state.metadata.bundle_name:
                 raise_api_error(
                     "servicenow_policy_bundle_not_found",

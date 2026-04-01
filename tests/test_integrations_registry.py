@@ -13,7 +13,7 @@ def test_registry_registers_connectors() -> None:
         WebhookMappingConfig(
             providers={
                 "partner": {
-                    "created": WebhookRoute(action_type="review")
+                    "created": WebhookRoute(action_type="review", actor_id_path="actor.id", attributes={})
                 }
             }
         )
@@ -58,7 +58,7 @@ def test_registry_rejects_duplicate_names() -> None:
 def test_webhook_send_decision_not_supported() -> None:
     webhook = WebhookPayloadMapper(
         WebhookMappingConfig(
-            providers={"partner": {"created": WebhookRoute(action_type="review")}}
+            providers={"partner": {"created": WebhookRoute(action_type="review", actor_id_path="actor.id", attributes={})}}
         )
     )
 

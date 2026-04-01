@@ -3,6 +3,11 @@ routes:
     action_type: approve_vendor_payment
     actor_id_path: user.accountId
     request_id_path: issue.key
+    source_record_id_path: issue.id
+    static_source_object_type: jira_issue
+    static_workflow_stage: pending_approval
+    static_requested_action: approve_vendor_payment
+    correlation_key_path: issue.key
     required_fields:
       - issue.id
       - issue.key
@@ -13,13 +18,21 @@ routes:
       requester_role: issue.fields.customfield_requester_role
       vendor_verified: issue.fields.customfield_vendor_verified
       jira_transition: changelog.items
+    risk_attributes:
+      approval_amount: issue.fields.customfield_approval_amount
+      vendor_verified: issue.fields.customfield_vendor_verified
+    evidence_references_path: issue.key
     static_attributes:
-      source_system: jira
       approval_workflow: finance
     policy_bundle: enterprise-demo
   jira:issue_created:
     action_type: export_customer_data
     actor_id_path: user.accountId
+    source_record_id_path: issue.id
+    static_source_object_type: jira_issue
+    static_workflow_stage: intake
+    static_requested_action: export_customer_data
+    correlation_key_path: issue.key
     required_fields:
       - issue.id
       - issue.key
@@ -28,7 +41,7 @@ routes:
       requested_fields: issue.fields.customfield_requested_fields
       legal_basis: issue.fields.customfield_legal_basis
       dpo_approved: issue.fields.customfield_dpo_approved
-    static_attributes:
-      source_system: jira
+    risk_attributes:
+      dpo_approved: issue.fields.customfield_dpo_approved
 outbound:
   mode: both
