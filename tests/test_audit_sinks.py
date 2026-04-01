@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -56,12 +57,14 @@ def test_jsonl_sink_rotation_and_verify(tmp_path) -> None:
     sink = JsonlFileAuditSink(
         path=str(tmp_path / "audit.jsonl"),
         append_only=True,
-        rotation=RotationPolicy(max_file_bytes=200),
+        rotation=RotationPolicy(max_file_bytes=300),
     )
     append_audit_record(sink, {"decision_id": "d1", "outcome": "APPROVED"})
     append_audit_record(sink, {"decision_id": "d2", "outcome": "BLOCKED"})
+    append_audit_record(sink, {"decision_id": "d3", "outcome": "BLOCKED"})
     result = verify_audit_chain(sink)
     assert result["valid"] is True
+    assert result["segments"]
 
 
 def test_jsonl_sink_rejects_retention_in_append_only_mode(tmp_path) -> None:
@@ -96,3 +99,46 @@ def test_s3_compatible_sink_with_retention() -> None:
     records = sink.load_records()
     assert records[0]["decision_id"] == "d2"
     assert json.loads(json.dumps(records[0]))["chain_hash"]
+
+
+def test_jsonl_sink_concurrent_writers_preserve_chain(tmp_path) -> None:
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=1_000_000))
+
+    def writer(i: int) -> None:
+        append_audit_record(sink, {"decision_id": f"d{i}", "outcome": "APPROVED"})
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(25)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    result = verify_audit_chain(sink)
+    assert result["valid"] is True
+    assert result["records"] == 25
+
+
+def test_manifest_missing_segment_reported(tmp_path) -> None:
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    for i in range(4):
+        append_audit_record(sink, {"decision_id": f"d{i}", "outcome": "APPROVED"})
+
+    manifest = tmp_path / "audit.jsonl.manifest.json"
+    data = json.loads(manifest.read_text())
+    first_segment = data["segments"][0]["file"]
+    (tmp_path / first_segment).unlink()
+
+    broken = verify_audit_chain(sink)
+    assert broken["valid"] is False
+    assert any("missing_segment" in err for err in broken["errors"])
+
+
+def test_partial_write_line_is_detected(tmp_path) -> None:
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"))
+    append_audit_record(sink, {"decision_id": "d1", "outcome": "APPROVED"})
+    with (tmp_path / "audit.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write('{"decision_id":"broken"')
+
+    result = verify_audit_chain(sink)
+    assert result["valid"] is False
+    assert any("malformed_record" in err for err in result["errors"])

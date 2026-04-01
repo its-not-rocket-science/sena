@@ -44,13 +44,21 @@ Application versioning: package and FastAPI app version are sourced from `sena._
 - `POST /v1/simulation`: baseline/candidate scenario simulation
 - `POST /v1/bundle/diff`: rule-set diff
 - `POST /v1/bundle/promotion/validate`: lifecycle promotion checks
-- `GET /v1/audit/verify`: tamper-evident audit verification
+- `GET /v1/audit/verify`: tamper-evident audit verification (chain, gaps, malformed records, missing segments)
 - `GET /metrics`: Prometheus metrics (`request_count`, `decision_outcome_count`, `evaluation_latency`)
 
 RBAC endpoint groups when `SENA_API_KEYS` is used:
 - `admin`: all endpoints
 - `policy_author`: `POST /v1/bundle/register`, `POST /v1/bundle/promote`, `POST /v1/bundle/diff`, `POST /v1/bundle/promotion/validate`
 - `evaluator`: `POST /v1/evaluate`, `POST /v1/evaluate/batch`, `POST /v1/simulation`, `POST /v1/integrations/webhook`, `POST /v1/integrations/jira/webhook`, `POST /v1/integrations/servicenow/webhook`, `POST /v1/integrations/slack/interactions`
+
+
+## Audit operations
+- Local JSONL sink writes are append-focused with file locking and per-record chain metadata.
+- Rotation is supported via `JsonlFileAuditSink(rotation=RotationPolicy(...))` and creates segment files plus `<audit>.manifest.json`.
+- Verification spans rotated segments and reports missing segments, malformed records, sequence gaps, and hash-chain inconsistencies.
+- Retention deletion is only allowed when append-only mode is disabled (`append_only=False`).
+- See `docs/AUDIT_GUARANTEES.md` for explicit guarantees and limits.
 
 ## Deployment
 ### Docker
