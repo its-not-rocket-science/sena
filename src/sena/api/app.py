@@ -13,6 +13,7 @@ from sena import __version__ as SENA_VERSION
 from sena.audit.chain import append_audit_record, verify_audit_chain
 from sena.api.config import ApiSettings, load_settings_from_env
 from sena.api.logging import configure_logging
+from sena.api.metrics import ApiMetrics
 from sena.api.schemas import (
     BatchEvaluateRequest,
     BundleInfo,
@@ -46,7 +47,7 @@ from sena.policy.store import SQLitePolicyBundleRepository
 try:
     from fastapi import APIRouter, FastAPI, HTTPException, Request
     from fastapi.exceptions import RequestValidationError
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, Response
 except ModuleNotFoundError:  # pragma: no cover
     FastAPI = None  # type: ignore
 
@@ -77,6 +78,7 @@ class _EngineState:
         self.rules = rules
         self.metadata = metadata
         self.policy_repo = policy_repo
+        self.metrics = ApiMetrics()
         self.webhook_mapper: WebhookPayloadMapper | None = None
         self.slack_client: SlackClient | None = None
         self.connector_registry = build_connector_registry()
@@ -181,27 +183,30 @@ def create_app(settings: ApiSettings | None = None):
             client_host = request.client.host if request.client else "unknown"
             client_key = f"anonymous:{client_host}"
 
+        def _json_error(status_code: int, code: str, message: str) -> JSONResponse:
+            error_response = JSONResponse(
+                status_code=status_code,
+                content=_error_payload(code, message, request_id),
+            )
+            state.metrics.observe_request(
+                method=request.method,
+                path=request.url.path,
+                status_code=status_code,
+            )
+            return error_response
+
         content_length = request.headers.get("content-length")
         if content_length:
             try:
                 declared_size = int(content_length)
             except ValueError:
-                return JSONResponse(
-                    status_code=400,
-                    content=_error_payload("invalid_content_length", "Invalid Content-Length header", request_id),
-                )
+                return _json_error(400, "invalid_content_length", "Invalid Content-Length header")
             if declared_size > state.settings.request_max_bytes:
-                return JSONResponse(
-                    status_code=413,
-                    content=_error_payload("payload_too_large", "Request payload exceeds maximum size", request_id),
-                )
+                return _json_error(413, "payload_too_large", "Request payload exceeds maximum size")
 
         body = await request.body()
         if len(body) > state.settings.request_max_bytes:
-            return JSONResponse(
-                status_code=413,
-                content=_error_payload("payload_too_large", "Request payload exceeds maximum size", request_id),
-            )
+            return _json_error(413, "payload_too_large", "Request payload exceeds maximum size")
 
         async def _receive() -> dict[str, Any]:
             return {"type": "http.request", "body": body, "more_body": False}
@@ -211,28 +216,24 @@ def create_app(settings: ApiSettings | None = None):
         if state.settings.enable_api_key_auth:
             provided = request.headers.get("x-api-key")
             if provided != state.settings.api_key:
-                return JSONResponse(
-                    status_code=401,
-                    content=_error_payload("unauthorized", "Missing or invalid API key", request_id),
-                )
+                return _json_error(401, "unauthorized", "Missing or invalid API key")
             client_key = provided
 
         if not rate_limiter.allow(client_key, time.monotonic()):
-            return JSONResponse(
-                status_code=429,
-                content=_error_payload("rate_limited", "Rate limit exceeded", request_id),
-            )
+            return _json_error(429, "rate_limited", "Rate limit exceeded")
 
         try:
             response = await asyncio.wait_for(
                 call_next(request), timeout=state.settings.request_timeout_seconds
             )
         except asyncio.TimeoutError:
-            return JSONResponse(
-                status_code=504,
-                content=_error_payload("timeout", "Request processing timed out", request_id),
-            )
+            return _json_error(504, "timeout", "Request processing timed out")
         response.headers["x-request-id"] = request_id
+        state.metrics.observe_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+        )
         logger.info(
             "request_processed",
             extra={
@@ -375,7 +376,9 @@ def create_app(settings: ApiSettings | None = None):
                     on_escalation=_notify_slack,
                 ),
             )
-            trace = evaluator.evaluate(proposal, req.facts)
+            with state.metrics.evaluation_timer(endpoint="/v1/evaluate"):
+                trace = evaluator.evaluate(proposal, req.facts)
+            state.metrics.observe_decision_outcome(endpoint="/v1/evaluate", outcome=trace.outcome.value)
             payload = trace.to_dict()
             if state.settings.audit_sink_jsonl:
                 payload["audit_record"] = append_audit_record(
@@ -426,7 +429,12 @@ def create_app(settings: ApiSettings | None = None):
                     ),
                 ),
             )
-            trace = evaluator.evaluate(proposal, req.facts)
+            with state.metrics.evaluation_timer(endpoint="/v1/integrations/webhook"):
+                trace = evaluator.evaluate(proposal, req.facts)
+            state.metrics.observe_decision_outcome(
+                endpoint="/v1/integrations/webhook",
+                outcome=trace.outcome.value,
+            )
             return {
                 "provider": req.provider,
                 "event_type": req.event_type,
@@ -511,6 +519,10 @@ def create_app(settings: ApiSettings | None = None):
         if not state.settings.audit_sink_jsonl:
             raise HTTPException(status_code=400, detail="audit sink not configured")
         return verify_audit_chain(state.settings.audit_sink_jsonl)
+
+    @app.get("/metrics")
+    def metrics() -> Response:
+        return Response(content=state.metrics.exposition(), media_type=state.metrics.content_type)
 
     app.include_router(api_v1)
 
