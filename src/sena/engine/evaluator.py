@@ -203,7 +203,7 @@ class PolicyEvaluator:
             decision_hash=decision_hash,
         )
 
-        return EvaluationTrace(
+        trace = EvaluationTrace(
             decision_id=decision_id,
             decision_timestamp=decision_timestamp,
             decision_hash=decision_hash,
@@ -222,3 +222,9 @@ class PolicyEvaluator:
             context=context,
             audit_record=audit_record,
         )
+        if (
+            trace.outcome == DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
+            and self.config.on_escalation is not None
+        ):
+            self.config.on_escalation(trace)
+        return trace

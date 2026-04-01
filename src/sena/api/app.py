@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -28,6 +29,11 @@ from sena.integrations.webhook import (
     WebhookMappingError,
     WebhookPayloadMapper,
     load_webhook_mapping_config,
+)
+from sena.integrations.slack import (
+    SlackClient,
+    SlackIntegrationError,
+    parse_interaction_decision,
 )
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
@@ -68,6 +74,7 @@ class _EngineState:
         self.metadata = metadata
         self.policy_repo = policy_repo
         self.webhook_mapper: WebhookPayloadMapper | None = None
+        self.slack_client: SlackClient | None = None
 
 
 def _parse_default_decision(raw: str) -> DecisionOutcome:
@@ -121,6 +128,11 @@ def create_app(settings: ApiSettings | None = None):
     if runtime_settings.webhook_mapping_config_path:
         mapping_config = load_webhook_mapping_config(runtime_settings.webhook_mapping_config_path)
         state.webhook_mapper = WebhookPayloadMapper(mapping_config)
+    if runtime_settings.slack_bot_token and runtime_settings.slack_channel:
+        state.slack_client = SlackClient(
+            bot_token=runtime_settings.slack_bot_token,
+            default_channel=runtime_settings.slack_channel,
+        )
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -251,6 +263,17 @@ def create_app(settings: ApiSettings | None = None):
     @api_v1.post("/evaluate")
     def evaluate(req: EvaluateRequest, request: Request) -> dict[str, Any]:
         try:
+            def _notify_slack(trace) -> None:
+                if state.slack_client is None:
+                    return
+                state.slack_client.post_escalation(
+                    decision_id=trace.decision_id,
+                    request_id=trace.request_id,
+                    action_type=trace.action_type,
+                    matched_rule_ids=[item.rule_id for item in trace.matched_rules],
+                    summary=trace.summary,
+                )
+
             proposal = ActionProposal(
                 action_type=req.action_type,
                 request_id=req.request_id or request.state.request_id,
@@ -263,6 +286,7 @@ def create_app(settings: ApiSettings | None = None):
                 config=EvaluatorConfig(
                     default_decision=_parse_default_decision(req.default_decision),
                     require_allow_match=req.strict_require_allow,
+                    on_escalation=_notify_slack,
                 ),
             )
             trace = evaluator.evaluate(proposal, req.facts)
@@ -293,6 +317,17 @@ def create_app(settings: ApiSettings | None = None):
                 config=EvaluatorConfig(
                     default_decision=_parse_default_decision(req.default_decision),
                     require_allow_match=req.strict_require_allow,
+                    on_escalation=(
+                        lambda trace: state.slack_client.post_escalation(
+                            decision_id=trace.decision_id,
+                            request_id=trace.request_id,
+                            action_type=trace.action_type,
+                            matched_rule_ids=[item.rule_id for item in trace.matched_rules],
+                            summary=trace.summary,
+                        )
+                        if state.slack_client is not None
+                        else None
+                    ),
                 ),
             )
             trace = evaluator.evaluate(proposal, req.facts)
@@ -312,6 +347,25 @@ def create_app(settings: ApiSettings | None = None):
             raise HTTPException(status_code=400, detail=f"Webhook mapping error: {exc}") from exc
         except Exception as exc:  # pragma: no cover
             raise HTTPException(status_code=400, detail=f"Webhook evaluation error: {exc}") from exc
+
+    @api_v1.post("/integrations/slack/interactions")
+    async def slack_interactions(request: Request) -> dict[str, Any]:
+        try:
+            form_data = await request.form()
+            payload_json = form_data.get("payload")
+            if not isinstance(payload_json, str):
+                raise SlackIntegrationError("Slack interaction payload form field is required")
+            interaction = parse_interaction_decision(payload=json.loads(payload_json))
+            return {
+                "status": "ok",
+                "decision": interaction["decision"],
+                "decision_id": interaction["decision_id"],
+                "reviewer": interaction["reviewer"],
+            }
+        except SlackIntegrationError as exc:
+            raise HTTPException(status_code=400, detail=f"Slack interaction error: {exc}") from exc
+        except Exception as exc:  # pragma: no cover
+            raise HTTPException(status_code=400, detail=f"Slack interaction error: {exc}") from exc
 
     @api_v1.post("/evaluate/batch")
     def evaluate_batch(req: BatchEvaluateRequest, request: Request) -> dict[str, Any]:

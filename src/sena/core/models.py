@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from sena.core.enums import DecisionOutcome, RuleDecision, Severity
 
@@ -55,6 +55,7 @@ class EvaluatorConfig:
     default_decision: DecisionOutcome = DecisionOutcome.APPROVED
     require_allow_match: bool = False
     enforce_context_schema: bool = True
+    on_escalation: Callable[["EvaluationTrace"], None] | None = None
 
 
 @dataclass
