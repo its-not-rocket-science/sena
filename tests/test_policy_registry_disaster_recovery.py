@@ -138,3 +138,39 @@ def test_restore_fails_when_bundle_metadata_mismatches_rule_content(tmp_path) ->
             backup_audit_path=artifacts.backup_audit_path,
             restore_audit_path=tmp_path / "restored-audit.jsonl",
         )
+
+
+
+def test_restore_fails_when_single_active_bundle_invariant_violated(tmp_path) -> None:
+    source_db = tmp_path / "source.db"
+    bundle_name, _ = _create_active_registry(source_db, version="1.0.0")
+
+    repo = SQLitePolicyBundleRepository(str(source_db))
+    rules, meta = load_policy_bundle("src/sena/examples/policies")
+    second_bundle = repo.register_bundle(
+        PolicyBundleMetadata(bundle_name=bundle_name, version="1.1.0", loaded_from=meta.loaded_from, lifecycle="draft"),
+        rules,
+    )
+
+    source_audit = tmp_path / "audit.jsonl"
+    append_audit_record(str(source_audit), {"event": "bundle.promoted", "bundle_id": second_bundle})
+
+    backup_db = tmp_path / "backup.db"
+    artifacts = create_policy_registry_backup(
+        sqlite_path=source_db,
+        output_db_path=backup_db,
+        audit_chain_path=source_audit,
+    )
+
+    with sqlite3.connect(artifacts.backup_db_path) as conn:
+        conn.execute("DROP INDEX IF EXISTS idx_bundles_one_active_per_name")
+        conn.execute("UPDATE bundles SET lifecycle = 'active' WHERE id = ?", (second_bundle,))
+        conn.commit()
+
+    with pytest.raises(DisasterRecoveryError, match="active versions"):
+        restore_policy_registry_backup(
+            backup_db_path=artifacts.backup_db_path,
+            restore_db_path=tmp_path / "restored.db",
+            backup_audit_path=artifacts.backup_audit_path,
+            restore_audit_path=tmp_path / "restored-audit.jsonl",
+        )

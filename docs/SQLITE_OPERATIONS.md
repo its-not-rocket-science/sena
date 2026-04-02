@@ -1,0 +1,79 @@
+# SQLite Policy Registry Operations
+
+This runbook covers operational hardening for the policy registry (`src/sena/policy/store.py`) and disaster-recovery workflows.
+
+## Durability and concurrency defaults
+
+The SQLite policy registry uses explicit PRAGMA settings on every connection:
+
+- `journal_mode=WAL`: allows concurrent readers while writers commit.
+- `synchronous=FULL`: strongest durability posture (calls fsync more aggressively).
+- `busy_timeout=5000`: wait up to 5s on transient lock contention.
+- `wal_autocheckpoint=1000`: checkpoint WAL periodically to cap WAL growth.
+- `temp_store=MEMORY`: reduce temporary-disk churn.
+
+### Tradeoff notes
+
+- `synchronous=FULL` is intentionally conservative for control-plane data where losing committed policy changes is unacceptable.
+- If an environment requires lower write latency and accepts a wider crash-loss window, operators may choose `synchronous=NORMAL` only with CAB approval and documented rollback plans.
+- WAL mode is preferred for mixed read/write workloads. If running on filesystems with known WAL incompatibilities, switch to `DELETE` mode and accept reduced reader concurrency.
+
+## Backup cadence
+
+Recommended baseline:
+
+- **Hourly**: SQLite registry backup + manifest.
+- **Every release/promotion**: ad-hoc backup before and after active promotion.
+- **Daily**: include audit chain file in backup package.
+- **Weekly**: full restore drill in non-production using latest backup set.
+
+Command:
+
+```bash
+python -m sena.cli.main registry --sqlite-path /var/lib/sena/registry.db \
+  backup --output-db /var/backups/sena/registry-$(date +%F-%H%M).db \
+  --audit-chain /var/lib/sena/audit/decisions.jsonl
+```
+
+## Restore drill procedure
+
+1. Select backup DB, backup manifest, and backup audit-chain artifact.
+2. Restore into isolated path.
+3. Run verification command and require `status=ok` before cutover.
+4. Validate active bundle metadata and history.
+5. Record drill evidence (timestamp, operator, artifact hashes, output).
+
+Restore command:
+
+```bash
+python -m sena.cli.main registry --sqlite-path /tmp/drill/restored.db \
+  restore --backup-db /var/backups/sena/registry-2026-04-02-0100.db \
+  --backup-manifest /var/backups/sena/registry-2026-04-02-0100.db.manifest.json \
+  --backup-audit /var/backups/sena/registry-2026-04-02-0100.db.audit.jsonl \
+  --restore-db /tmp/drill/restored.db \
+  --restore-audit /tmp/drill/restored.audit.jsonl
+```
+
+Verification command:
+
+```bash
+python -m sena.cli.main registry --sqlite-path /tmp/drill/restored.db \
+  verify --audit-chain /tmp/drill/restored.audit.jsonl
+```
+
+## Failure expectations
+
+- Corrupt snapshots fail with explicit disaster-recovery errors.
+- Lock contention surfaces policy-domain conflict errors (`PolicyBundleConflictError`) rather than raw sqlite exceptions.
+- Restore verification fails if:
+  - `PRAGMA integrity_check` fails,
+  - any active bundle is missing rules,
+  - bundle digest/hash validation fails,
+  - single-active-bundle invariant is violated,
+  - audit chain validation fails.
+
+## Script equivalents
+
+- `python scripts/backup_policy_registry.py ...`
+- `python scripts/restore_policy_registry.py ...`
+- `python scripts/verify_policy_registry.py ...`

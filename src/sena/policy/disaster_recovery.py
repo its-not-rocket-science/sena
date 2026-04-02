@@ -60,6 +60,32 @@ def _rule_hash_from_content(content: str) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _verify_single_active_bundle_invariant(db_path: Path) -> tuple[dict[str, Any], list[str]]:
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT name, COUNT(*) AS active_count
+            FROM bundles
+            WHERE lifecycle = 'active'
+            GROUP BY name
+            HAVING COUNT(*) > 1
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    violations = [
+        {"bundle_name": row["name"], "active_count": int(row["active_count"])} for row in rows
+    ]
+    errors = [
+        f"bundle '{item['bundle_name']}' has {item['active_count']} active versions"
+        for item in violations
+    ]
+    return {"ok": not violations, "violations": violations}, errors
+
+
 def _verify_bundle_integrity(db_path: Path, *, active_only: bool = True) -> tuple[dict[str, Any], list[str]]:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -192,6 +218,9 @@ def verify_restored_registry(
         checks["audit_chain"] = {"valid": False, "error": "audit chain path not provided"}
         errors.append("audit chain path is required for disaster-recovery verification")
 
+    checks["single_active_bundle_invariant"], invariant_errors = _verify_single_active_bundle_invariant(sqlite_path)
+    errors.extend(invariant_errors)
+
     checks["bundle_signature_verification"] = {"status": "skipped", "reason": "policy_dir or keyring_dir not provided"}
     if policy_dir is not None and keyring_dir is not None:
         manifest_path = policy_dir / "release-manifest.json"
@@ -272,4 +301,42 @@ def build_restore_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--restore-audit", type=Path)
     parser.add_argument("--policy-dir", type=Path)
     parser.add_argument("--keyring-dir", type=Path)
+    return parser
+
+
+
+def verify_policy_registry_snapshot(
+    *,
+    sqlite_path: Path,
+    audit_chain_path: Path | None = None,
+    keyring_dir: Path | None = None,
+    policy_dir: Path | None = None,
+    active_only: bool = False,
+) -> RestoreVerificationResult:
+    """Verify a live or restored policy registry snapshot.
+
+    Unlike restore-time validation, this command can run against any registry file
+    as an operational health check.
+    """
+
+    return verify_restored_registry(
+        sqlite_path=sqlite_path,
+        audit_chain_path=audit_chain_path,
+        keyring_dir=keyring_dir,
+        policy_dir=policy_dir,
+        active_only=active_only,
+    )
+
+
+def build_verify_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Verify policy registry sqlite DB integrity and invariants")
+    parser.add_argument("--sqlite-path", type=Path, required=True)
+    parser.add_argument("--audit-chain", type=Path)
+    parser.add_argument("--policy-dir", type=Path)
+    parser.add_argument("--keyring-dir", type=Path)
+    parser.add_argument(
+        "--active-only",
+        action="store_true",
+        help="Verify only active bundles for digest/rule integrity checks",
+    )
     return parser
