@@ -1,0 +1,44 @@
+name: maturity-scorecard
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  maturity-scorecard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Compute maturity scorecard
+        run: python scripts/maturity_scorecard.py --output-json artifacts/maturity_scorecard.json
+
+      - name: Persist timestamped scorecard
+        run: |
+          mkdir -p artifacts/history
+          cp artifacts/maturity_scorecard.json "artifacts/history/maturity_scorecard_${{ github.run_id }}.json"
+
+      - name: Upload scorecard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maturity-scorecard-${{ github.run_id }}
+          path: artifacts/maturity_scorecard.json
+          if-no-files-found: error
+
+      - name: Upload scorecard history artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maturity-scorecard-history-${{ github.run_id }}
+          path: artifacts/history/maturity_scorecard_${{ github.run_id }}.json
+          if-no-files-found: error
