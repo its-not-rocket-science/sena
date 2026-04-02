@@ -20,6 +20,7 @@ Each package is emitted as JSON with stable top-level keys:
 - `package_generated_at`: ISO-8601 timestamp.
 - `decision_summary`: decision ID, outcome, action, and summary.
 - `rules`: matched/applicable/evaluated rules and conflict IDs.
+- `invariants`: evaluated and violated invariant controls (separate from ordinary rules).
 - `precedence`: precedence explanation and reviewer guidance.
 - `facts_and_actor`: actor metadata, decision facts/context, and missing fields.
   - Includes `request_origin` classification:
@@ -79,3 +80,16 @@ SENA treats AI-assisted actions as a **stricter governed request class**, not as
 - Missing AI governance fields result in deterministic `BLOCKED` outcomes.
 - Rules can declare evidence bundles (`required_evidence`) with deterministic `missing_evidence_decision` behavior (`ESCALATE` or `BLOCK`).
 - Policy allow/block precedence remains unchanged and does not depend on model confidence.
+
+## Why invariants are different from ordinary rules
+
+SENA now supports **policy invariants** as first-class controls in bundle manifests (`bundle.yaml`).
+
+- **Ordinary rules** are part of configurable precedence (`BLOCK` > `ESCALATE` > `ALLOW`) and can model tradeoffs.
+- **Invariants** represent hard safety boundaries. If an invariant condition matches, outcome is always `BLOCKED`.
+- Invariant evaluation is independent from ordinary rule matches and is reported separately in review packages.
+
+This separation gives governance teams a clearer distinction between:
+
+- negotiable or workflow-specific policy behavior (rules), and
+- non-negotiable control boundaries that must never be violated (invariants).

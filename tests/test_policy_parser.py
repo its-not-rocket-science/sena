@@ -36,6 +36,8 @@ def test_load_policy_bundle_includes_integrity_metadata() -> None:
     _, metadata = load_policy_bundle("src/sena/examples/policies")
     assert metadata.integrity_sha256
     assert metadata.policy_file_count >= 1
+    assert metadata.invariants
+    assert metadata.invariants[0].id.startswith("inv_")
 
 
 

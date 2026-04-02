@@ -6,3 +6,47 @@ lifecycle: candidate
 context_schema:
   amount: int?
   vendor_verified: bool?
+invariants:
+  - id: inv_ai_payment_threshold_requires_human
+    description: AI-originated high-value payments must never auto-approve.
+    applies_to: [approve_vendor_payment]
+    condition:
+      and:
+        - field: action_origin
+          eq: ai_suggested
+        - field: amount
+          gte: 25000
+    reason: AI-originated payment over threshold must never auto-approve.
+  - id: inv_privileged_infra_change_requires_rollback_plan
+    description: Privileged infrastructure changes require an explicit rollback plan.
+    applies_to: [apply_infrastructure_change]
+    condition:
+      and:
+        - field: privilege_level
+          eq: privileged
+        - not:
+            field: rollback_plan_ref
+            exists: true
+    reason: Privileged infrastructure change without rollback plan must never approve.
+  - id: inv_production_action_requires_human_owner
+    description: Production-impacting actions require a human owner.
+    applies_to: [approve_vendor_payment, apply_infrastructure_change, export_customer_data]
+    condition:
+      and:
+        - field: impact_scope
+          eq: production
+        - not:
+            field: ai_metadata.human_owner
+            exists: true
+    reason: Production-impacting action without human owner must never approve.
+  - id: inv_ai_recommendation_requires_provenance
+    description: AI recommendations must include model provenance metadata.
+    applies_to: [approve_vendor_payment, export_customer_data]
+    condition:
+      and:
+        - field: action_origin
+          eq: ai_suggested
+        - not:
+            field: ai_metadata.originating_model
+            exists: true
+    reason: Missing provenance on AI-generated recommendation must never approve.

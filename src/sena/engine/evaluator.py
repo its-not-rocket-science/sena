@@ -14,7 +14,9 @@ from sena.core.models import (
     DecisionReasoning,
     EvaluatorConfig,
     EvaluationTrace,
+    InvariantEvaluationResult,
     PolicyBundleMetadata,
+    PolicyInvariant,
     PolicyRule,
     RuleEvaluationResult,
 )
@@ -59,6 +61,7 @@ class PolicyEvaluator:
     def __init__(
         self,
         rules: list[PolicyRule],
+        invariants: list[PolicyInvariant] | None = None,
         policy_bundle: PolicyBundleMetadata | None = None,
         config: EvaluatorConfig | None = None,
     ):
@@ -68,6 +71,7 @@ class PolicyEvaluator:
             version="0.1.0-alpha",
             loaded_from="unknown",
         )
+        self.invariants = invariants if invariants is not None else list(self.policy_bundle.invariants)
         self.config = config or EvaluatorConfig()
         compatibility = evaluate_bundle_compatibility(schema_version=self.policy_bundle.schema_version, runtime_version=SENA_VERSION)
         if compatibility.errors:
@@ -89,7 +93,11 @@ class PolicyEvaluator:
         if proposal.autonomous_metadata is not None:
             context["autonomous_metadata"] = asdict(proposal.autonomous_metadata)
         applicable = [r for r in self.rules if proposal.action_type in r.applies_to]
+        applicable_invariants = [
+            invariant for invariant in self.invariants if proposal.action_type in invariant.applies_to
+        ]
         evaluated: list[RuleEvaluationResult] = []
+        evaluated_invariants: list[InvariantEvaluationResult] = []
         missing_fields: set[str] = set()
         schema_errors: list[str] = []
         identity_errors: list[str] = []
@@ -100,6 +108,17 @@ class PolicyEvaluator:
             schema_errors = validate_context_schema(context, self.policy_bundle.context_schema)
 
         if not schema_errors and not identity_errors and not ai_metadata_errors:
+            for invariant in applicable_invariants:
+                condition_result = evaluate_condition_with_trace(invariant.condition, context)
+                matched = condition_result.matched
+                missing_fields.update(condition_result.missing_fields)
+                evaluated_invariants.append(
+                    InvariantEvaluationResult(
+                        invariant_id=invariant.id,
+                        matched=matched,
+                        reason=invariant.reason if matched else None,
+                    )
+                )
             for rule in applicable:
                 condition_result = evaluate_condition_with_trace(rule.condition, context)
                 matched = condition_result.matched
@@ -141,6 +160,7 @@ class PolicyEvaluator:
                 )
 
         matched = [result for result in evaluated if result.matched]
+        matched_invariants = [result for result in evaluated_invariants if result.matched]
 
         inviolable_blocks = [
             r for r in matched if r.inviolable and r.decision == RuleDecision.BLOCK
@@ -157,7 +177,17 @@ class PolicyEvaluator:
         )
         summary = f"Decision {decision_id}: {outcome.value}. No matching policy rules for action '{proposal.action_type}'."
 
-        if inviolable_blocks:
+        if matched_invariants:
+            outcome = DecisionOutcome.BLOCKED
+            precedence_explanation = (
+                "One or more policy invariants were violated. Invariants are fail-closed "
+                "safety boundaries and always BLOCK independent of ordinary ALLOW/BLOCK/ESCALATE rules."
+            )
+            summary = (
+                f"Decision {decision_id}: BLOCKED due to invariant violation(s) "
+                f"({', '.join(result.invariant_id for result in matched_invariants)})."
+            )
+        elif inviolable_blocks:
             outcome = DecisionOutcome.BLOCKED
             precedence_explanation = (
                 "One or more inviolable BLOCK rules matched. Inviolable BLOCK has highest "
@@ -216,7 +246,7 @@ class PolicyEvaluator:
                 f"Decision {decision_id}: BLOCKED due to missing AI-governance field(s): "
                 f"{', '.join(ai_metadata_errors)}"
             )
-        if self.config.require_allow_match and not allows:
+        if self.config.require_allow_match and not allows and not matched_invariants:
             outcome = DecisionOutcome.BLOCKED
             if not matched:
                 precedence_explanation = (
@@ -266,10 +296,19 @@ class PolicyEvaluator:
             }
             for result in matched
         ]
+        matched_invariant_controls = [
+            {
+                "invariant_id": result.invariant_id,
+                "reason": result.reason,
+            }
+            for result in matched_invariants
+        ]
         outcome_rationale = [
             f"Outcome resolved to {outcome.value} using deterministic precedence.",
             precedence_explanation,
         ]
+        if matched_invariants:
+            outcome_rationale.append("Invariant violations are enforced before ordinary rule precedence.")
         if schema_errors:
             outcome_rationale.append("Input context schema validation failed before rule evaluation.")
         if identity_errors:
@@ -315,6 +354,7 @@ class PolicyEvaluator:
                         "version": self.policy_bundle.version,
                     },
                     "matched_rule_ids": sorted(r.rule_id for r in matched),
+                    "matched_invariant_ids": sorted(r.invariant_id for r in matched_invariants),
                     "outcome": outcome.value,
                 },
                 sort_keys=True,
@@ -326,6 +366,7 @@ class PolicyEvaluator:
             summary=summary,
             outcome_rationale=outcome_rationale,
             matched_controls=matched_controls,
+            matched_invariants=matched_invariant_controls,
             risk_summary=risk_summary,
             reviewer_guidance=reviewer_guidance,
             provenance={
@@ -382,6 +423,8 @@ class PolicyEvaluator:
             applicable_rules=[r.id for r in applicable],
             evaluated_rules=evaluated,
             matched_rules=matched,
+            evaluated_invariants=evaluated_invariants,
+            matched_invariants=matched_invariants,
             conflicting_rules=conflicting_rules,
             missing_fields=sorted(missing_fields),
             context=context,

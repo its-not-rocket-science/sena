@@ -118,6 +118,22 @@ def validate_rule_payload(rule: dict[str, Any]) -> None:
         )
 
 
+def validate_invariant_payload(invariant: dict[str, Any]) -> None:
+    required = {
+        "id",
+        "description",
+        "applies_to",
+        "condition",
+        "reason",
+    }
+    missing = required - set(invariant.keys())
+    if missing:
+        raise PolicyValidationError(f"invariant missing required fields: {sorted(missing)}")
+    if not isinstance(invariant["applies_to"], list) or not invariant["applies_to"]:
+        raise PolicyValidationError("invariant 'applies_to' must be a non-empty list")
+    validate_condition(invariant["condition"])
+
+
 def validate_policy_coverage(
     rules: list[PolicyRule],
     required_action_types: list[str],

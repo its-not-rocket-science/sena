@@ -7,6 +7,7 @@ It evaluates high-risk workflow actions against versioned policy bundles and ret
 ## What SENA is
 
 - **A deterministic decision engine:** given the same normalized input + bundle version, SENA returns the same result and trace.
+- **A first-class invariant layer:** hard safety invariants can never be overridden by ordinary ALLOW/BLOCK/ESCALATE rule matches.
 - **An auditable governance layer:** decisions include rationale, matched controls, provenance metadata, and hash-linked audit records.
 - **A policy lifecycle system:** teams can validate, diff, register, and promote policy bundles through explicit lifecycle states.
 - **A normalization boundary across systems:** Jira and ServiceNow events are mapped into one approval model before evaluation.
