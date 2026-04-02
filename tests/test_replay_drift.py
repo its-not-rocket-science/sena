@@ -1,9 +1,10 @@
 import json
+import pytest
 
 from sena.core.enums import ActionOrigin
 from sena.core.models import ActionProposal
 from sena.engine.evaluator import PolicyEvaluator
-from sena.engine.replay import build_drift_report, evaluate_replay_cases, load_replay_cases
+from sena.engine.replay import ReplayInputError, build_drift_report, evaluate_replay_cases, load_replay_cases
 from sena.policy.parser import load_policy_bundle
 
 
@@ -125,3 +126,13 @@ providers:
 
     assert report["changed_outcomes"] == 1
     assert report["changed_matched_controls"] == 1
+
+
+def test_replay_load_rejects_missing_mapping_config_path() -> None:
+    with pytest.raises(ReplayInputError, match="mapping_config_path is required"):
+        load_replay_cases({"cases": [{"case_id": "c-1", "event": {}}]}, mapping_mode="webhook")
+
+
+def test_replay_load_rejects_trace_without_action_type() -> None:
+    with pytest.raises(ReplayInputError, match="trace payload must include action_type"):
+        load_replay_cases({"cases": [{"case_id": "trace-1", "trace": {"context": {}}}]})

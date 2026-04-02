@@ -5,6 +5,7 @@ import json
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
+from sena.api.error_handlers import error_payload
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, parse_default_decision
 from sena.api.schemas import WebhookEvaluateRequest
@@ -71,7 +72,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             if "duplicate delivery" in reason:
                 return {
                     "status": "duplicate_ignored",
-                    "error": {"code": "jira_duplicate_delivery", "message": reason},
+                    **error_payload("jira_duplicate_delivery", reason, request.state.request_id),
                 }
             if "unsupported jira event type" in reason:
                 raise_api_error("jira_unsupported_event_type", details={"reason": reason})
@@ -113,7 +114,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             if "duplicate delivery" in reason:
                 return {
                     "status": "duplicate_ignored",
-                    "error": {"code": "servicenow_duplicate_delivery", "message": reason},
+                    **error_payload("servicenow_duplicate_delivery", reason, request.state.request_id),
                 }
             if "unsupported servicenow event type" in reason:
                 raise_api_error("servicenow_unsupported_event_type", details={"reason": reason})

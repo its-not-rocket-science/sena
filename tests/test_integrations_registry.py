@@ -6,6 +6,7 @@ from sena.integrations.registry import build_connector_registry
 from sena.integrations.slack import SlackClient
 from sena.integrations.servicenow import ServiceNowConnector, load_servicenow_mapping_config
 from sena.integrations.webhook import WebhookMappingConfig, WebhookPayloadMapper, WebhookRoute
+from sena.integrations.webhook import WebhookMappingError, load_webhook_mapping_config
 
 
 def test_registry_registers_connectors() -> None:
@@ -72,3 +73,29 @@ def test_webhook_send_decision_not_supported() -> None:
                 summary="noop",
             )
         )
+
+
+def test_webhook_mapping_loader_rejects_missing_providers(tmp_path) -> None:
+    config_path = tmp_path / "mapping.yaml"
+    config_path.write_text("providers: {}", encoding="utf-8")
+
+    with pytest.raises(WebhookMappingError, match="non-empty 'providers'"):
+        load_webhook_mapping_config(config_path)
+
+
+def test_webhook_mapping_loader_rejects_non_object_attributes(tmp_path) -> None:
+    config_path = tmp_path / "mapping.yaml"
+    config_path.write_text(
+        """
+providers:
+  stripe:
+    payment_intent.created:
+      action_type: approve_vendor_payment
+      actor_id_path: data.object.metadata.requested_by
+      attributes: amount
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WebhookMappingError, match="attributes must be an object"):
+        load_webhook_mapping_config(config_path)

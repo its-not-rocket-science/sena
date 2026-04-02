@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 import time
+from datetime import datetime
 
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
@@ -723,6 +724,8 @@ def test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response() -> 
     assert second.status_code == 200
     assert second.json()["status"] == "duplicate_ignored"
     assert second.json()["error"]["code"] == "jira_duplicate_delivery"
+    assert second.json()["error"]["request_id"].startswith("req_")
+    datetime.fromisoformat(second.json()["error"]["timestamp"])
 
 
 def test_jira_webhook_missing_actor_identity_returns_deterministic_error() -> None:
@@ -805,6 +808,32 @@ def test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response
     assert second.status_code == 200
     assert second.json()["status"] == "duplicate_ignored"
     assert second.json()["error"]["code"] == "servicenow_duplicate_delivery"
+    assert second.json()["error"]["request_id"].startswith("req_")
+    datetime.fromisoformat(second.json()["error"]["timestamp"])
+
+
+def test_webhook_endpoint_rejects_unknown_provider_fail_closed() -> None:
+    app = create_app(
+        _settings(
+            webhook_mapping_config_path="src/sena/examples/integrations/webhook_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/integrations/webhook",
+        json={
+            "provider": "unknown-provider",
+            "event_type": "payment_intent.created",
+            "payload": {"id": "evt-1"},
+            "facts": {},
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["code"] == "webhook_mapping_error"
+    assert "Unknown webhook provider" in body["error"]["details"]["reason"]
 
 
 def test_servicenow_webhook_missing_actor_identity_returns_deterministic_error() -> None:
@@ -901,7 +930,10 @@ def test_timeout_handling_returns_gateway_timeout(monkeypatch) -> None:
     )
 
     assert response.status_code == 504
-    assert response.json()["error"]["code"] == "timeout"
+    body = response.json()
+    assert body["error"]["code"] == "timeout"
+    assert body["error"]["request_id"].startswith("req_")
+    datetime.fromisoformat(body["error"]["timestamp"])
 
 
 def test_metrics_endpoint_exposes_prometheus_metrics() -> None:
@@ -1122,3 +1154,74 @@ def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
     active = client.get("/v1/bundles/active", params={"bundle_name": metadata.bundle_name})
     assert active.status_code == 200
     assert active.json()["bundle_id"] == id1
+
+
+def test_bundle_promote_invalid_transition_returns_machine_readable_failure(tmp_path) -> None:
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    db_path = tmp_path / "policy_registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    metadata.lifecycle = "active"
+    active_id = repo.register_bundle(metadata, rules)
+
+    app = create_app(
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/bundle/promote",
+        json={
+            "bundle_id": active_id,
+            "target_lifecycle": "draft",
+            "promoted_by": "ops",
+            "promotion_reason": "attempt-invalid-transition",
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["code"] == "promotion_validation_failed"
+    assert "invalid lifecycle transition" in body["error"]["details"]["errors"][0]
+
+
+def test_bundle_rollback_target_not_found_returns_machine_readable_failure(tmp_path) -> None:
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    db_path = tmp_path / "policy_registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    metadata.lifecycle = "active"
+    repo.register_bundle(metadata, rules)
+
+    app = create_app(
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/bundle/rollback",
+        json={
+            "bundle_name": metadata.bundle_name,
+            "to_bundle_id": 9999,
+            "promoted_by": "ops",
+            "promotion_reason": "rollback-missing",
+            "validation_artifact": "CAB-404",
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["code"] == "promotion_validation_failed"
+    assert body["error"]["details"]["errors"] == ["rollback target bundle not found"]

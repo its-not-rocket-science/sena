@@ -96,6 +96,12 @@ pip install -e .[api,dev]
 pytest
 ```
 
+## Failure-mode coverage matrix
+
+| Area | Coverage status | Details |
+|---|---|---|
+| Deterministic governance failure modes | Expanded | See `docs/FAILURE_MODE_MATRIX.md` for tested vs not-yet-tested classes and stable error contracts. |
+
 ## CLI quickstart
 
 ```bash
