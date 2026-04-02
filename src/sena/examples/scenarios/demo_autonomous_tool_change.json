@@ -1,0 +1,20 @@
+{
+  "action_type": "approve_vendor_payment",
+  "request_id": "auto-approval-044",
+  "actor_id": "svc-servicenow",
+  "actor_role": "automation_service",
+  "action_origin": "autonomous_tool",
+  "autonomous_metadata": {
+    "tool_name": "servicenow",
+    "trigger_type": "change_request.updated",
+    "trigger_reference": "CHG0012345",
+    "supervising_owner": "it-change-manager"
+  },
+  "attributes": {
+    "amount": 950,
+    "vendor_verified": true,
+    "source_system": "servicenow",
+    "workflow_stage": "requested"
+  },
+  "facts": {}
+}

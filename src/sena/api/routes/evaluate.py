@@ -21,6 +21,9 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
                 actor_id=req.actor_id,
                 actor_role=req.actor_role,
                 attributes=req.attributes,
+                action_origin=req.action_origin,
+                ai_metadata=req.ai_metadata.model_dump() if req.ai_metadata else None,
+                autonomous_metadata=req.autonomous_metadata.model_dump() if req.autonomous_metadata else None,
             )
             return evaluation_service.evaluate(
                 proposal=proposal,
@@ -47,6 +50,9 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
                 actor_id=req.actor_id,
                 actor_role=req.actor_role,
                 attributes=req.attributes,
+                action_origin=req.action_origin,
+                ai_metadata=req.ai_metadata.model_dump() if req.ai_metadata else None,
+                autonomous_metadata=req.autonomous_metadata.model_dump() if req.autonomous_metadata else None,
             )
             return evaluation_service.evaluate_review_package(
                 proposal=proposal,

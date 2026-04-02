@@ -18,3 +18,9 @@ class DecisionOutcome(str, Enum):
     APPROVED = "APPROVED"
     BLOCKED = "BLOCKED"
     ESCALATE_FOR_HUMAN_REVIEW = "ESCALATE_FOR_HUMAN_REVIEW"
+
+
+class ActionOrigin(str, Enum):
+    HUMAN = "human"
+    AI_SUGGESTED = "ai_suggested"
+    AUTONOMOUS_TOOL = "autonomous_tool"

@@ -95,6 +95,11 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
             "reviewer_guidance": reasoning.reviewer_guidance if reasoning else [],
         },
         "facts_and_actor": {
+            "request_origin": {
+                "classification": str(trace.context.get("action_origin") or "human"),
+                "ai_metadata": trace.context.get("ai_metadata"),
+                "autonomous_metadata": trace.context.get("autonomous_metadata"),
+            },
             "actor": {
                 "actor_id": trace.audit_record.actor_id if trace.audit_record else None,
                 "actor_role": trace.audit_record.actor_role if trace.audit_record else None,

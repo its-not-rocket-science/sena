@@ -4,7 +4,40 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Callable
 
-from sena.core.enums import DecisionOutcome, RuleDecision, Severity
+from sena.core.enums import ActionOrigin, DecisionOutcome, RuleDecision, Severity
+
+
+@dataclass
+class RiskClassification:
+    category: str
+    level: str
+    tags: list[str] = field(default_factory=list)
+    rationale: str | None = None
+
+
+@dataclass
+class AIActionMetadata:
+    originating_system: str
+    originating_model: str | None = None
+    prompt_context_ref: str | None = None
+    confidence: float | None = None
+    uncertainty: str | None = None
+    requested_tool: str | None = None
+    requested_action: str | None = None
+    evidence_references: list[str] = field(default_factory=list)
+    citation_references: list[str] = field(default_factory=list)
+    human_requester: str | None = None
+    human_owner: str | None = None
+    human_approver: str | None = None
+    risk_classification: RiskClassification | None = None
+
+
+@dataclass
+class AutonomousToolMetadata:
+    tool_name: str
+    trigger_type: str
+    trigger_reference: str | None = None
+    supervising_owner: str | None = None
 
 
 @dataclass
@@ -14,6 +47,9 @@ class ActionProposal:
     actor_id: str | None = None
     actor_role: str | None = None
     attributes: dict[str, Any] = field(default_factory=dict)
+    action_origin: ActionOrigin = ActionOrigin.HUMAN
+    ai_metadata: AIActionMetadata | None = None
+    autonomous_metadata: AutonomousToolMetadata | None = None
 
 
 @dataclass

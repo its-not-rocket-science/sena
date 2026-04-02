@@ -79,11 +79,17 @@
       "requested_fields": [
         "date_of_birth"
       ],
-      "dpo_approved": false
+      "dpo_approved": false,
+      "action_origin": "human"
     },
     "missing_fields": [
       "legal_basis"
-    ]
+    ],
+    "request_origin": {
+      "classification": "human",
+      "ai_metadata": null,
+      "autonomous_metadata": null
+    }
   },
   "policy_bundle_metadata": {
     "bundle_name": "enterprise-compliance-controls",
