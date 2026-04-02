@@ -13,6 +13,7 @@ from sena.api.production_check import run_production_readiness_check
 from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig
 from sena.engine.evaluator import PolicyEvaluator
+from sena.engine.replay import build_drift_report, evaluate_replay_cases, load_replay_cases
 from sena.engine.explain import format_trace
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
@@ -606,6 +607,40 @@ def _run_evidence_pack(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
+def _run_replay_drift(args: argparse.Namespace) -> None:
+    replay_payload = _load_json_file(args.replay_file, "replay fixture")
+    baseline_rules, baseline_meta = load_policy_bundle(args.baseline_policy_dir)
+    candidate_rules = baseline_rules
+    candidate_meta = baseline_meta
+    if args.candidate_policy_dir:
+        candidate_rules, candidate_meta = load_policy_bundle(args.candidate_policy_dir)
+
+    baseline_cases = load_replay_cases(
+        replay_payload,
+        mapping_mode=args.baseline_mapping_mode,
+        mapping_config_path=str(args.baseline_mapping_config_path) if args.baseline_mapping_config_path else None,
+    )
+    candidate_cases = load_replay_cases(
+        replay_payload,
+        mapping_mode=args.candidate_mapping_mode or args.baseline_mapping_mode,
+        mapping_config_path=(
+            str(args.candidate_mapping_config_path)
+            if args.candidate_mapping_config_path
+            else (str(args.baseline_mapping_config_path) if args.baseline_mapping_config_path else None)
+        ),
+    )
+    baseline_result = evaluate_replay_cases(cases=baseline_cases, rules=baseline_rules, metadata=baseline_meta)
+    candidate_result = evaluate_replay_cases(cases=candidate_cases, rules=candidate_rules, metadata=candidate_meta)
+    report = build_drift_report(
+        cases=baseline_cases,
+        baseline=baseline_result,
+        candidate=candidate_result,
+        baseline_label=f"{baseline_meta.bundle_name}:{baseline_meta.version}",
+        candidate_label=f"{candidate_meta.bundle_name}:{candidate_meta.version}",
+    )
+    print(json.dumps(report, indent=2))
+
+
 def _build_evaluate_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -911,6 +946,21 @@ def main() -> None:
         return
     if len(sys.argv) > 1 and sys.argv[1] == "evidence-pack":
         parser = _build_evidence_pack_parser()
+        args = parser.parse_args(sys.argv[2:])
+        args.handler(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "replay":
+        parser = argparse.ArgumentParser(description="SENA replay and drift detection commands")
+        sub = parser.add_subparsers(dest="replay_command", required=True)
+        drift = sub.add_parser("drift")
+        drift.add_argument("--replay-file", type=Path, required=True)
+        drift.add_argument("--baseline-policy-dir", type=Path, required=True)
+        drift.add_argument("--candidate-policy-dir", type=Path)
+        drift.add_argument("--baseline-mapping-mode", choices=["jira", "servicenow", "webhook"])
+        drift.add_argument("--baseline-mapping-config-path", type=Path)
+        drift.add_argument("--candidate-mapping-mode", choices=["jira", "servicenow", "webhook"])
+        drift.add_argument("--candidate-mapping-config-path", type=Path)
+        drift.set_defaults(handler=_run_replay_drift)
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return

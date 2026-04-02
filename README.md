@@ -46,7 +46,7 @@ Implemented and tested in the supported path (`src/sena/*`):
 - simulation/diff endpoints for impact analysis,
 - Jira and ServiceNow normalization + webhook evaluation paths,
 - tamper-evident JSONL audit chain + verification endpoint,
-- API/CLI coverage for evaluate, batch evaluate, simulation, diff, and bundle lifecycle workflows.
+- API/CLI coverage for evaluate, batch evaluate, simulation, replay drift, diff, and bundle lifecycle workflows.
 
 Not yet implemented as production-complete enterprise controls:
 
@@ -137,6 +137,12 @@ PYTHONPATH=src python -m sena.cli.main policy verify-compatibility --policy-dir 
 # Preview and apply deterministic schema migration
 PYTHONPATH=src python -m sena.cli.main policy migrate --policy-dir ./my-policy-bundle --dry-run
 PYTHONPATH=src python -m sena.cli.main policy migrate --policy-dir ./my-policy-bundle
+
+# Replay historical/canonical cases and detect policy or mapping drift
+PYTHONPATH=src python -m sena.cli.main replay drift \
+  --replay-file ./my-policy-bundle/tests/replay_cases.json \
+  --baseline-policy-dir src/sena/examples/policies \
+  --candidate-policy-dir src/sena/examples/policies
 ```
 
 Generated templates include:
@@ -162,6 +168,7 @@ Versioned endpoints:
 - `POST /v1/integrations/servicenow/webhook`
 - `POST /v1/evaluate/batch`
 - `POST /v1/simulation`
+- `POST /v1/replay/drift`
 - `POST /v1/bundle/diff`
 - `POST /v1/bundle/promotion/validate`
 - `POST /v1/bundle/register`

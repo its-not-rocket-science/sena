@@ -267,6 +267,46 @@ def test_audit_commands_verify_summarize_locate(tmp_path) -> None:
     assert locate_payload["decision_id"] == "dec-2"
 
 
+def test_replay_drift_command(tmp_path) -> None:
+    replay_path = tmp_path / "replay.json"
+    replay_path.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "case_id": "c1",
+                        "proposal": {
+                            "action_type": "approve_vendor_payment",
+                            "request_id": "req-1",
+                            "actor_id": "user-1",
+                            "actor_role": "finance_analyst",
+                            "attributes": {"amount": 500, "vendor_verified": True, "source_system": "jira"},
+                            "action_origin": "human",
+                        },
+                        "facts": {},
+                    }
+                ]
+            }
+        )
+    )
+    result = _run_cli(
+        [
+            "replay",
+            "drift",
+            "--replay-file",
+            str(replay_path),
+            "--baseline-policy-dir",
+            "src/sena/examples/policies",
+            "--candidate-policy-dir",
+            "src/sena/examples/policies",
+        ]
+    )
+    result.check_returncode()
+    payload = json.loads(result.stdout)
+    assert payload["replay_type"] == "sena.ai_workflow_drift"
+    assert payload["changed_outcomes"] == 0
+
+
 def test_policy_schema_migration_commands(tmp_path) -> None:
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()

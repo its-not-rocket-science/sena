@@ -260,6 +260,38 @@ def test_simulation_endpoint() -> None:
     assert response.json()["grouped_changes"]["source_system"]["jira"]["total"] == 1
 
 
+def test_replay_drift_endpoint() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    response = client.post(
+        "/v1/replay/drift",
+        json={
+            "baseline_policy_dir": "src/sena/examples/policies",
+            "candidate_policy_dir": "src/sena/examples/policies",
+            "replay_payload": {
+                "cases": [
+                    {
+                        "case_id": "api-replay-1",
+                        "proposal": {
+                            "action_type": "approve_vendor_payment",
+                            "request_id": "api-r1",
+                            "actor_id": "actor-api",
+                            "actor_role": "finance_analyst",
+                            "attributes": {"amount": 250, "vendor_verified": True, "source_system": "jira"},
+                            "action_origin": "human",
+                        },
+                        "facts": {},
+                    }
+                ]
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["replay_type"] == "sena.ai_workflow_drift"
+    assert body["changed_outcomes"] == 0
+
+
 def test_sqlite_policy_store_mode(tmp_path) -> None:
     db_path = tmp_path / "policy_registry.db"
 

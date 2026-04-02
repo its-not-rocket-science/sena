@@ -12,6 +12,7 @@ from sena.core.models import (
     RiskClassification,
 )
 from sena.engine.evaluator import PolicyEvaluator
+from sena.engine.replay import build_drift_report, evaluate_replay_cases, load_replay_cases
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.integrations.base import DecisionPayload
@@ -161,4 +162,41 @@ class EvaluationService:
             candidate_rules,
             baseline_meta,
             candidate_meta,
+        )
+
+    @staticmethod
+    def replay_policy_drift(
+        *,
+        replay_payload: dict[str, Any],
+        baseline_policy_dir: str,
+        candidate_policy_dir: str | None = None,
+        baseline_mapping_mode: str | None = None,
+        baseline_mapping_config_path: str | None = None,
+        candidate_mapping_mode: str | None = None,
+        candidate_mapping_config_path: str | None = None,
+    ) -> dict[str, Any]:
+        baseline_rules, baseline_meta = load_policy_bundle(baseline_policy_dir)
+        candidate_rules = baseline_rules
+        candidate_meta = baseline_meta
+        if candidate_policy_dir is not None:
+            candidate_rules, candidate_meta = load_policy_bundle(candidate_policy_dir)
+
+        baseline_cases = load_replay_cases(
+            replay_payload,
+            mapping_mode=baseline_mapping_mode,
+            mapping_config_path=baseline_mapping_config_path,
+        )
+        candidate_cases = load_replay_cases(
+            replay_payload,
+            mapping_mode=candidate_mapping_mode or baseline_mapping_mode,
+            mapping_config_path=candidate_mapping_config_path or baseline_mapping_config_path,
+        )
+        baseline_result = evaluate_replay_cases(cases=baseline_cases, rules=baseline_rules, metadata=baseline_meta)
+        candidate_result = evaluate_replay_cases(cases=candidate_cases, rules=candidate_rules, metadata=candidate_meta)
+        return build_drift_report(
+            cases=baseline_cases,
+            baseline=baseline_result,
+            candidate=candidate_result,
+            baseline_label=f"{baseline_meta.bundle_name}:{baseline_meta.version}",
+            candidate_label=f"{candidate_meta.bundle_name}:{candidate_meta.version}",
         )
