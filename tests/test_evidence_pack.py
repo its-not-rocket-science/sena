@@ -14,23 +14,39 @@ def _run_cmd(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _relative_file_set(root: Path) -> set[str]:
-    return {
-        str(path.relative_to(root))
-        for path in root.rglob("*")
-        if path.is_file()
-    }
+    return {str(path.relative_to(root)) for path in root.rglob("*") if path.is_file()}
 
 
-def test_generate_evidence_pack_script_and_deterministic_structure(tmp_path: Path) -> None:
+def test_generate_evidence_pack_script_and_deterministic_structure(
+    tmp_path: Path,
+) -> None:
     out1 = tmp_path / "pack-1"
     out2 = tmp_path / "pack-2"
 
-    _run_cmd([sys.executable, "scripts/generate_evidence_pack.py", "--output-dir", str(out1), "--clean"])
-    _run_cmd([sys.executable, "scripts/generate_evidence_pack.py", "--output-dir", str(out2), "--clean"])
+    _run_cmd(
+        [
+            sys.executable,
+            "scripts/generate_evidence_pack.py",
+            "--output-dir",
+            str(out1),
+            "--clean",
+        ]
+    )
+    _run_cmd(
+        [
+            sys.executable,
+            "scripts/generate_evidence_pack.py",
+            "--output-dir",
+            str(out2),
+            "--clean",
+        ]
+    )
 
     assert _relative_file_set(out1) == _relative_file_set(out2)
 
-    promotion = json.loads((out1 / "artifacts" / "promotion_validation.json").read_text())
+    promotion = json.loads(
+        (out1 / "artifacts" / "promotion_validation.json").read_text()
+    )
     assert promotion["promotion_validation"]["valid"] is True
 
     audit = json.loads((out1 / "artifacts" / "audit_verification.json").read_text())

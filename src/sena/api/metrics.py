@@ -5,7 +5,13 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Iterator
 
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Histogram, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Histogram,
+    generate_latest,
+)
 
 
 @dataclass(frozen=True)
@@ -41,7 +47,9 @@ class ApiMetrics:
         )
 
     def observe_request(self, *, method: str, path: str, status_code: int) -> None:
-        labels = _RequestMetricLabels(method=method, path=path, status_code=str(status_code))
+        labels = _RequestMetricLabels(
+            method=method, path=path, status_code=str(status_code)
+        )
         self.request_count.labels(
             method=labels.method,
             path=labels.path,
@@ -57,7 +65,9 @@ class ApiMetrics:
         try:
             yield
         finally:
-            self.evaluation_latency.labels(endpoint=endpoint).observe(perf_counter() - start)
+            self.evaluation_latency.labels(endpoint=endpoint).observe(
+                perf_counter() - start
+            )
 
     def exposition(self) -> bytes:
         return generate_latest(self.registry)

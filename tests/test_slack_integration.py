@@ -48,7 +48,11 @@ def test_parse_interaction_decision_extracts_approve() -> None:
 
     parsed = parse_interaction_decision(payload)
 
-    assert parsed == {"decision": "APPROVE", "decision_id": "dec_123", "reviewer": "U123"}
+    assert parsed == {
+        "decision": "APPROVE",
+        "decision_id": "dec_123",
+        "reviewer": "U123",
+    }
 
 
 def test_evaluate_sends_slack_on_escalation(monkeypatch) -> None:

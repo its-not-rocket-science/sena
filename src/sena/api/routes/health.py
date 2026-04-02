@@ -11,7 +11,9 @@ def create_health_router(state: EngineState) -> APIRouter:
 
     @router.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
-        return HealthResponse(status="ok", bundle=BundleInfo.model_validate(state.metadata.__dict__))
+        return HealthResponse(
+            status="ok", bundle=BundleInfo.model_validate(state.metadata.__dict__)
+        )
 
     @router.get("/ready", response_model=ReadinessResponse)
     def ready() -> ReadinessResponse:
@@ -22,7 +24,9 @@ def create_health_router(state: EngineState) -> APIRouter:
         }
         if state.settings.runtime_mode == "production":
             checks["production_guardrails_enforced"] = "ok"
-        return ReadinessResponse(status="ready", mode=state.settings.runtime_mode, checks=checks)
+        return ReadinessResponse(
+            status="ready", mode=state.settings.runtime_mode, checks=checks
+        )
 
     @router.get("/bundle", response_model=BundleInfo)
     def bundle() -> BundleInfo:

@@ -95,7 +95,9 @@ def _parse_regression_budgets(raw: str | None) -> tuple[tuple[str, int], ...]:
         return ()
     payload = json.loads(raw)
     if not isinstance(payload, dict):
-        raise ValueError("SENA_PROMOTION_GATE_MAX_REGRESSIONS_BY_OUTCOME_TYPE must be a JSON object")
+        raise ValueError(
+            "SENA_PROMOTION_GATE_MAX_REGRESSIONS_BY_OUTCOME_TYPE must be a JSON object"
+        )
     parsed: list[tuple[str, int]] = []
     for key, value in payload.items():
         parsed.append((str(key), int(value)))
@@ -114,7 +116,9 @@ def load_settings_from_env() -> ApiSettings:
         bundle_name=os.getenv("SENA_BUNDLE_NAME", "enterprise-compliance-controls"),
         bundle_version=os.getenv("SENA_BUNDLE_VERSION", "2026.03"),
         log_level=os.getenv("SENA_LOG_LEVEL", "INFO").upper(),
-        enable_api_key_auth=_parse_bool(os.getenv("SENA_API_KEY_ENABLED"), default=False),
+        enable_api_key_auth=_parse_bool(
+            os.getenv("SENA_API_KEY_ENABLED"), default=False
+        ),
         api_key=os.getenv("SENA_API_KEY"),
         api_keys=_parse_api_keys(os.getenv("SENA_API_KEYS")),
         audit_sink_jsonl=os.getenv("SENA_AUDIT_SINK_JSONL"),
@@ -126,11 +130,15 @@ def load_settings_from_env() -> ApiSettings:
         servicenow_mapping_config_path=os.getenv("SENA_SERVICENOW_MAPPING_CONFIG"),
         slack_bot_token=os.getenv("SENA_SLACK_BOT_TOKEN"),
         slack_channel=os.getenv("SENA_SLACK_CHANNEL"),
-        rate_limit_requests=_parse_int(os.getenv("SENA_RATE_LIMIT_REQUESTS"), default=120),
+        rate_limit_requests=_parse_int(
+            os.getenv("SENA_RATE_LIMIT_REQUESTS"), default=120
+        ),
         rate_limit_window_seconds=_parse_int(
             os.getenv("SENA_RATE_LIMIT_WINDOW_SECONDS"), default=60
         ),
-        request_max_bytes=_parse_int(os.getenv("SENA_REQUEST_MAX_BYTES"), default=1_048_576),
+        request_max_bytes=_parse_int(
+            os.getenv("SENA_REQUEST_MAX_BYTES"), default=1_048_576
+        ),
         request_timeout_seconds=_parse_float(
             os.getenv("SENA_REQUEST_TIMEOUT_SECONDS"), default=15.0
         ),

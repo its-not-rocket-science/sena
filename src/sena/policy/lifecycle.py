@@ -45,12 +45,16 @@ class PromotionGatePolicy:
     break_glass_enabled: bool = True
 
 
-def validate_lifecycle_transition(source_lifecycle: str, target_lifecycle: str) -> PromotionValidation:
+def validate_lifecycle_transition(
+    source_lifecycle: str, target_lifecycle: str
+) -> PromotionValidation:
     if (source_lifecycle, target_lifecycle) in ALLOWED_LIFECYCLE_TRANSITIONS:
         return PromotionValidation(valid=True, errors=[])
     return PromotionValidation(
         valid=False,
-        errors=[f"invalid lifecycle transition '{source_lifecycle}' -> '{target_lifecycle}'"],
+        errors=[
+            f"invalid lifecycle transition '{source_lifecycle}' -> '{target_lifecycle}'"
+        ],
     )
 
 
@@ -75,9 +79,12 @@ def diff_rule_sets(current: list[PolicyRule], target: list[PolicyRule]) -> Bundl
     changed = sorted(
         rule_id
         for rule_id in set(current_map).intersection(target_map)
-        if _rule_fingerprint(current_map[rule_id]) != _rule_fingerprint(target_map[rule_id])
+        if _rule_fingerprint(current_map[rule_id])
+        != _rule_fingerprint(target_map[rule_id])
     )
-    return BundleDiff(added_rule_ids=added, removed_rule_ids=removed, changed_rule_ids=changed)
+    return BundleDiff(
+        added_rule_ids=added, removed_rule_ids=removed, changed_rule_ids=changed
+    )
 
 
 def validate_promotion(
@@ -96,7 +103,9 @@ def validate_promotion(
     diff = diff_rule_sets(source_rules, target_rules)
     if target_lifecycle == "active" and not validation_artifact:
         errors.append("promotion to active requires validation artifact")
-    if target_lifecycle == "active" and not (diff.added_rule_ids or diff.changed_rule_ids):
+    if target_lifecycle == "active" and not (
+        diff.added_rule_ids or diff.changed_rule_ids
+    ):
         errors.append("promotion to active requires at least one added or changed rule")
 
     target_ids = {rule.id for rule in target_rules}
@@ -104,11 +113,19 @@ def validate_promotion(
         errors.append("target bundle contains duplicate rule ids")
 
     if target_lifecycle == "active":
-        blocking_rules = [rule for rule in target_rules if rule.decision == RuleDecision.BLOCK]
+        blocking_rules = [
+            rule for rule in target_rules if rule.decision == RuleDecision.BLOCK
+        ]
         if not blocking_rules:
             errors.append("active bundle must include at least one BLOCK rule")
-    if target_lifecycle == "active" and signature_verification_strict and not signature_verified:
-        errors.append("active promotion requires a valid signed release manifest in strict mode")
+    if (
+        target_lifecycle == "active"
+        and signature_verification_strict
+        and not signature_verified
+    ):
+        errors.append(
+            "active promotion requires a valid signed release manifest in strict mode"
+        )
 
     return PromotionValidation(valid=not errors, errors=errors)
 
@@ -183,7 +200,10 @@ def evaluate_promotion_gate(
                 PromotionFailure(
                     code="changed_outcome_budget_exceeded",
                     message="changed outcome budget exceeded",
-                    details={"observed": changed, "max_allowed": policy.max_changed_outcomes},
+                    details={
+                        "observed": changed,
+                        "max_allowed": policy.max_changed_outcomes,
+                    },
                 )
             )
 
@@ -211,7 +231,11 @@ def evaluate_promotion_gate(
                 PromotionFailure(
                     code="regression_budget_exceeded",
                     message=f"regression budget exceeded for {transition}",
-                    details={"transition": transition, "observed": observed, "max_allowed": max_allowed},
+                    details={
+                        "transition": transition,
+                        "observed": observed,
+                        "max_allowed": max_allowed,
+                    },
                 )
             )
     return failures

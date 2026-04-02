@@ -60,7 +60,9 @@ def _rule_hash_from_content(content: str) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _verify_single_active_bundle_invariant(db_path: Path) -> tuple[dict[str, Any], list[str]]:
+def _verify_single_active_bundle_invariant(
+    db_path: Path,
+) -> tuple[dict[str, Any], list[str]]:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
@@ -77,7 +79,8 @@ def _verify_single_active_bundle_invariant(db_path: Path) -> tuple[dict[str, Any
         conn.close()
 
     violations = [
-        {"bundle_name": row["name"], "active_count": int(row["active_count"])} for row in rows
+        {"bundle_name": row["name"], "active_count": int(row["active_count"])}
+        for row in rows
     ]
     errors = [
         f"bundle '{item['bundle_name']}' has {item['active_count']} active versions"
@@ -86,7 +89,9 @@ def _verify_single_active_bundle_invariant(db_path: Path) -> tuple[dict[str, Any
     return {"ok": not violations, "violations": violations}, errors
 
 
-def _verify_bundle_integrity(db_path: Path, *, active_only: bool = True) -> tuple[dict[str, Any], list[str]]:
+def _verify_bundle_integrity(
+    db_path: Path, *, active_only: bool = True
+) -> tuple[dict[str, Any], list[str]]:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
@@ -98,7 +103,8 @@ def _verify_bundle_integrity(db_path: Path, *, active_only: bool = True) -> tupl
         errors: list[str] = []
         for bundle in bundles:
             rule_rows = conn.execute(
-                "SELECT rule_id, hash, content FROM rules WHERE bundle_id = ? ORDER BY rule_id ASC", (bundle["id"],)
+                "SELECT rule_id, hash, content FROM rules WHERE bundle_id = ? ORDER BY rule_id ASC",
+                (bundle["id"],),
             ).fetchall()
             computed_rule_hashes: list[str] = []
             hash_errors: list[str] = []
@@ -106,7 +112,9 @@ def _verify_bundle_integrity(db_path: Path, *, active_only: bool = True) -> tupl
                 try:
                     computed = _rule_hash_from_content(row["content"])
                 except (json.JSONDecodeError, TypeError) as exc:
-                    hash_errors.append(f"invalid rule content for {row['rule_id']}: {exc}")
+                    hash_errors.append(
+                        f"invalid rule content for {row['rule_id']}: {exc}"
+                    )
                     continue
                 computed_rule_hashes.append(computed)
                 if computed != row["hash"]:
@@ -116,7 +124,9 @@ def _verify_bundle_integrity(db_path: Path, *, active_only: bool = True) -> tupl
             digest_ok = computed_digest == bundle["integrity_digest"]
             rules_present = len(rule_rows) > 0
             signature_required = bool(bundle["signature_verification_strict"])
-            signature_ok = (not signature_required) or bool(bundle["signature_verified"])
+            signature_ok = (not signature_required) or bool(
+                bundle["signature_verified"]
+            )
 
             check = {
                 "bundle_id": bundle["id"],
@@ -140,7 +150,9 @@ def _verify_bundle_integrity(db_path: Path, *, active_only: bool = True) -> tupl
             if hash_errors:
                 errors.extend(f"bundle {bundle['id']} {e}" for e in hash_errors)
             if not signature_ok:
-                errors.append(f"bundle {bundle['id']} requires signature verification but is not verified")
+                errors.append(
+                    f"bundle {bundle['id']} requires signature verification but is not verified"
+                )
 
         if active_only and not bundles:
             errors.append("no active bundle found for restore validation")
@@ -168,10 +180,14 @@ def create_policy_registry_backup(
 
     backup_audit_path: Path | None = None
     if audit_chain_path is not None and audit_chain_path.exists():
-        backup_audit_path = output_db_path.with_suffix(output_db_path.suffix + ".audit.jsonl")
+        backup_audit_path = output_db_path.with_suffix(
+            output_db_path.suffix + ".audit.jsonl"
+        )
         shutil.copy2(audit_chain_path, backup_audit_path)
 
-    manifest_path = output_manifest_path or output_db_path.with_suffix(output_db_path.suffix + ".manifest.json")
+    manifest_path = output_manifest_path or output_db_path.with_suffix(
+        output_db_path.suffix + ".manifest.json"
+    )
     integrity = _sqlite_integrity_check(output_db_path)
     manifest = {
         "schema_version": "1",
@@ -181,7 +197,9 @@ def create_policy_registry_backup(
         "backup_db_sha256": _sha256_file(output_db_path),
         "backup_db_integrity": integrity,
         "backup_audit_path": str(backup_audit_path) if backup_audit_path else None,
-        "backup_audit_sha256": _sha256_file(backup_audit_path) if backup_audit_path else None,
+        "backup_audit_sha256": _sha256_file(backup_audit_path)
+        if backup_audit_path
+        else None,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     return BackupArtifacts(
@@ -206,7 +224,9 @@ def verify_restored_registry(
     if not checks["db_integrity"]["ok"]:
         errors.append("sqlite integrity check failed")
 
-    bundle_checks, bundle_errors = _verify_bundle_integrity(sqlite_path, active_only=active_only)
+    bundle_checks, bundle_errors = _verify_bundle_integrity(
+        sqlite_path, active_only=active_only
+    )
     checks["active_bundle_validation"] = bundle_checks
     errors.extend(bundle_errors)
 
@@ -215,13 +235,21 @@ def verify_restored_registry(
         if not checks["audit_chain"].get("valid", False):
             errors.append("audit chain verification failed")
     else:
-        checks["audit_chain"] = {"valid": False, "error": "audit chain path not provided"}
+        checks["audit_chain"] = {
+            "valid": False,
+            "error": "audit chain path not provided",
+        }
         errors.append("audit chain path is required for disaster-recovery verification")
 
-    checks["single_active_bundle_invariant"], invariant_errors = _verify_single_active_bundle_invariant(sqlite_path)
+    checks["single_active_bundle_invariant"], invariant_errors = (
+        _verify_single_active_bundle_invariant(sqlite_path)
+    )
     errors.extend(invariant_errors)
 
-    checks["bundle_signature_verification"] = {"status": "skipped", "reason": "policy_dir or keyring_dir not provided"}
+    checks["bundle_signature_verification"] = {
+        "status": "skipped",
+        "reason": "policy_dir or keyring_dir not provided",
+    }
     if policy_dir is not None and keyring_dir is not None:
         manifest_path = policy_dir / "release-manifest.json"
         result = verify_release_manifest(
@@ -230,7 +258,10 @@ def verify_restored_registry(
             keyring_dir=keyring_dir,
             strict=True,
         )
-        checks["bundle_signature_verification"] = {"status": "ok" if result.valid else "failed", "errors": result.errors}
+        checks["bundle_signature_verification"] = {
+            "status": "ok" if result.valid else "failed",
+            "errors": result.errors,
+        }
         if not result.valid:
             errors.append("bundle signature verification failed")
 
@@ -279,12 +310,16 @@ def restore_policy_registry_backup(
         policy_dir=policy_dir,
     )
     if not result.valid:
-        raise DisasterRecoveryError("restore verification failed: " + "; ".join(result.errors))
+        raise DisasterRecoveryError(
+            "restore verification failed: " + "; ".join(result.errors)
+        )
     return result
 
 
 def build_backup_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Backup policy registry sqlite DB and audit chain")
+    parser = argparse.ArgumentParser(
+        description="Backup policy registry sqlite DB and audit chain"
+    )
     parser.add_argument("--sqlite-path", type=Path, required=True)
     parser.add_argument("--output-db", type=Path, required=True)
     parser.add_argument("--audit-chain", type=Path)
@@ -293,7 +328,9 @@ def build_backup_arg_parser() -> argparse.ArgumentParser:
 
 
 def build_restore_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Restore policy registry sqlite DB and verify disaster recovery")
+    parser = argparse.ArgumentParser(
+        description="Restore policy registry sqlite DB and verify disaster recovery"
+    )
     parser.add_argument("--backup-db", type=Path, required=True)
     parser.add_argument("--restore-db", type=Path, required=True)
     parser.add_argument("--backup-manifest", type=Path)
@@ -302,7 +339,6 @@ def build_restore_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy-dir", type=Path)
     parser.add_argument("--keyring-dir", type=Path)
     return parser
-
 
 
 def verify_policy_registry_snapshot(
@@ -329,7 +365,9 @@ def verify_policy_registry_snapshot(
 
 
 def build_verify_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Verify policy registry sqlite DB integrity and invariants")
+    parser = argparse.ArgumentParser(
+        description="Verify policy registry sqlite DB integrity and invariants"
+    )
     parser.add_argument("--sqlite-path", type=Path, required=True)
     parser.add_argument("--audit-chain", type=Path)
     parser.add_argument("--policy-dir", type=Path)

@@ -8,18 +8,32 @@ import pytest
 
 from sena.audit.chain import append_audit_record, verify_audit_chain
 from sena.core.enums import DecisionOutcome, RuleDecision, Severity
-from sena.core.models import ActionProposal, EvaluatorConfig, PolicyBundleMetadata, PolicyRule
+from sena.core.models import (
+    ActionProposal,
+    EvaluatorConfig,
+    PolicyBundleMetadata,
+    PolicyRule,
+)
 from sena.engine.evaluator import PolicyEvaluator
-from sena.integrations.approval import ApprovalEventRoute, build_normalized_approval_event
+from sena.integrations.approval import (
+    ApprovalEventRoute,
+    build_normalized_approval_event,
+)
 from sena.integrations.base import IntegrationError
-from sena.policy.lifecycle import diff_rule_sets, validate_lifecycle_transition, validate_promotion
+from sena.policy.lifecycle import (
+    diff_rule_sets,
+    validate_lifecycle_transition,
+    validate_promotion,
+)
 from sena.policy.migrations import SQLiteMigrationManager
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.store import SQLitePolicyBundleRepository
 
 
 def test_malformed_policy_bundle_rejected(tmp_path: Path) -> None:
-    (tmp_path / "bundle.yaml").write_text("bundle_name: malformed\nversion: 1\nlifecycle: draft\n", encoding="utf-8")
+    (tmp_path / "bundle.yaml").write_text(
+        "bundle_name: malformed\nversion: 1\nlifecycle: draft\n", encoding="utf-8"
+    )
     (tmp_path / "policy.yaml").write_text("{id: not-a-list}", encoding="utf-8")
 
     with pytest.raises(PolicyParseError, match="must contain a list of rules"):
@@ -61,11 +75,18 @@ def test_missing_identity_and_no_match_strict_allow_mode_blocks() -> None:
     evaluator = PolicyEvaluator(
         rules,
         policy_bundle=metadata,
-        config=EvaluatorConfig(default_decision=DecisionOutcome.APPROVED, require_allow_match=True),
+        config=EvaluatorConfig(
+            default_decision=DecisionOutcome.APPROVED, require_allow_match=True
+        ),
     )
 
     trace = evaluator.evaluate(
-        ActionProposal(action_type="approve_vendor_payment", actor_id=None, actor_role=None, attributes={"amount": 5}),
+        ActionProposal(
+            action_type="approve_vendor_payment",
+            actor_id=None,
+            actor_role=None,
+            attributes={"amount": 5},
+        ),
         facts={},
     )
 
@@ -98,9 +119,16 @@ def test_conflicting_rules_are_reported_and_block_precedence_applies() -> None:
             reason="block",
         ),
     ]
-    evaluator = PolicyEvaluator(rules, policy_bundle=PolicyBundleMetadata(bundle_name="b", version="1", loaded_from="tmp"))
+    evaluator = PolicyEvaluator(
+        rules,
+        policy_bundle=PolicyBundleMetadata(
+            bundle_name="b", version="1", loaded_from="tmp"
+        ),
+    )
 
-    trace = evaluator.evaluate(ActionProposal(action_type="act", attributes={"x": 1}), facts={})
+    trace = evaluator.evaluate(
+        ActionProposal(action_type="act", attributes={"x": 1}), facts={}
+    )
 
     assert trace.outcome == DecisionOutcome.BLOCKED
     assert trace.conflicting_rules == ["block-rule"]
@@ -115,7 +143,9 @@ def test_invalid_integration_payload_reports_missing_required_fields() -> None:
         attributes={"amount": "payment.amount"},
     )
 
-    with pytest.raises(IntegrationError, match="missing required fields: ticket.id,requester.id"):
+    with pytest.raises(
+        IntegrationError, match="missing required fields: ticket.id,requester.id"
+    ):
         build_normalized_approval_event(
             payload={"payment": {"amount": 5}},
             route=route,
@@ -145,7 +175,9 @@ def test_bad_migration_state_duplicate_versions_rejected(tmp_path: Path) -> None
 
 def test_legacy_storage_state_fixture_migrates_forward(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy.db"
-    sql = Path("tests/fixtures/migrations/storage_states/legacy_registry_v1.sql").read_text(encoding="utf-8")
+    sql = Path(
+        "tests/fixtures/migrations/storage_states/legacy_registry_v1.sql"
+    ).read_text(encoding="utf-8")
 
     with sqlite3.connect(db_path) as conn:
         conn.executescript(sql)
@@ -155,14 +187,23 @@ def test_legacy_storage_state_fixture_migrates_forward(tmp_path: Path) -> None:
 
     with sqlite3.connect(db_path) as conn:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(bundles)")}
-        migration_versions = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
+        migration_versions = {
+            row[0] for row in conn.execute("SELECT version FROM schema_migrations")
+        }
 
-    assert {"release_manifest_path", "signature_verified", "created_by", "integrity_digest"}.issubset(columns)
+    assert {
+        "release_manifest_path",
+        "signature_verified",
+        "created_by",
+        "integrity_digest",
+    }.issubset(columns)
     assert migration_versions == {1, 2, 3, 4, 5}
 
 
 def test_legacy_bundle_fixture_can_be_loaded_and_diffed() -> None:
-    legacy_rules, legacy_meta = load_policy_bundle("tests/fixtures/migrations/legacy_bundle_v1")
+    legacy_rules, legacy_meta = load_policy_bundle(
+        "tests/fixtures/migrations/legacy_bundle_v1"
+    )
     current_rules, _ = load_policy_bundle("src/sena/examples/policies")
 
     diff = diff_rule_sets(legacy_rules, current_rules)
@@ -209,7 +250,9 @@ def test_invalid_content_length_payload_limit_timeout_and_unauthorized() -> None
     assert oversized.status_code == 413
     assert oversized.json()["error"]["code"] == "payload_too_large"
 
-    unauthorized = client.post("/v1/evaluate", json={"action_type": "approve_vendor_payment"})
+    unauthorized = client.post(
+        "/v1/evaluate", json={"action_type": "approve_vendor_payment"}
+    )
     assert unauthorized.status_code == 401
     assert unauthorized.json()["error"]["code"] == "unauthorized"
 

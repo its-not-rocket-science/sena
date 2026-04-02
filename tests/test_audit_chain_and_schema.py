@@ -1,8 +1,18 @@
 import json
 
-from sena.audit.chain import append_audit_record, locate_decision_in_audit, summarize_audit_chain, verify_audit_chain
+from sena.audit.chain import (
+    append_audit_record,
+    locate_decision_in_audit,
+    summarize_audit_chain,
+    verify_audit_chain,
+)
 from sena.core.enums import DecisionOutcome, RuleDecision, Severity
-from sena.core.models import ActionProposal, EvaluatorConfig, PolicyBundleMetadata, PolicyRule
+from sena.core.models import (
+    ActionProposal,
+    EvaluatorConfig,
+    PolicyBundleMetadata,
+    PolicyRule,
+)
 from sena.engine.evaluator import PolicyEvaluator
 from sena.policy.validation import PolicyValidationError, validate_condition
 
@@ -94,7 +104,10 @@ def test_audit_record_captures_integration_source_metadata() -> None:
 
     assert trace.audit_record is not None
     assert trace.audit_record.source_metadata["source_system"] == "servicenow"
-    assert trace.audit_record.source_metadata["source_event_type"] == "change_approval.requested"
+    assert (
+        trace.audit_record.source_metadata["source_event_type"]
+        == "change_approval.requested"
+    )
     assert trace.audit_record.source_metadata["servicenow_change_number"] == "CHG0001"
     assert trace.audit_record.event_type == "change_approval.requested"
     assert trace.audit_record.request_correlation_id == "CHG0001"

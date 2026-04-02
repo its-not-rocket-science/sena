@@ -7,20 +7,37 @@ from pathlib import Path
 from typing import Any
 
 from sena import __version__ as SENA_VERSION
-from sena.audit.chain import locate_decision_in_audit, summarize_audit_chain, verify_audit_chain
-from sena.audit.archive import create_audit_archive, restore_audit_archive, verify_audit_archive
+from sena.audit.chain import (
+    locate_decision_in_audit,
+    summarize_audit_chain,
+    verify_audit_chain,
+)
+from sena.audit.archive import (
+    create_audit_archive,
+    restore_audit_archive,
+    verify_audit_archive,
+)
 from sena.api.config import load_settings_from_env
 from sena.api.production_check import run_production_readiness_check
 from sena.core.enums import DecisionOutcome
 from sena.core.models import ActionProposal, EvaluatorConfig
 from sena.engine.evaluator import PolicyEvaluator
-from sena.engine.replay import build_drift_report, evaluate_replay_cases, load_replay_cases
+from sena.engine.replay import (
+    build_drift_report,
+    evaluate_replay_cases,
+    load_replay_cases,
+)
 from sena.engine.explain import format_trace
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.evidence_pack import build_evidence_pack, stable_zip_dir
 from sena.examples import DEFAULT_POLICY_DIR
-from sena.policy.lifecycle import PromotionGatePolicy, diff_rule_sets, evaluate_promotion_gate, validate_promotion
+from sena.policy.lifecycle import (
+    PromotionGatePolicy,
+    diff_rule_sets,
+    evaluate_promotion_gate,
+    validate_promotion,
+)
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.schema_evolution import (
     CURRENT_BUNDLE_SCHEMA_VERSION,
@@ -46,7 +63,9 @@ from sena.policy.disaster_recovery import (
 from sena.policy.store import SQLitePolicyBundleRepository
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
 
-TEMPLATES_ROOT = Path(__file__).resolve().parent.parent / "examples" / "policy_templates"
+TEMPLATES_ROOT = (
+    Path(__file__).resolve().parent.parent / "examples" / "policy_templates"
+)
 
 
 def parse_default_decision(raw: str) -> DecisionOutcome:
@@ -64,9 +83,13 @@ def _load_json_file(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        raise SystemExit(_format_error(f"Failed to load {label} JSON from {path}", exc)) from exc
+        raise SystemExit(
+            _format_error(f"Failed to load {label} JSON from {path}", exc)
+        ) from exc
     if not isinstance(payload, dict):
-        raise SystemExit(f"Failed to load {label} JSON from {path}:\n  - Expected a JSON object")
+        raise SystemExit(
+            f"Failed to load {label} JSON from {path}:\n  - Expected a JSON object"
+        )
     return payload
 
 
@@ -94,7 +117,9 @@ def _run_evaluate(args: argparse.Namespace) -> None:
             strict=args.coverage_strict,
         )
     except PolicyValidationError as exc:
-        raise SystemExit(_format_error("Policy coverage validation failed", exc)) from exc
+        raise SystemExit(
+            _format_error("Policy coverage validation failed", exc)
+        ) from exc
     if uncovered:
         print(
             f"Policy coverage warning: missing required coverage for action_type(s): {sorted(uncovered)}",
@@ -110,13 +135,17 @@ def _run_evaluate(args: argparse.Namespace) -> None:
         if args.validate_promotion:
             print(
                 json.dumps(
-                    validate_promotion(metadata.lifecycle, compare_meta.lifecycle, rules, compare_rules).__dict__,
+                    validate_promotion(
+                        metadata.lifecycle, compare_meta.lifecycle, rules, compare_rules
+                    ).__dict__,
                     indent=2,
                 ),
                 file=sys.stderr,
             )
         if args.simulate_scenarios:
-            scenarios_payload = _load_json_file(args.simulate_scenarios, "simulation scenarios")
+            scenarios_payload = _load_json_file(
+                args.simulate_scenarios, "simulation scenarios"
+            )
             scenarios = {
                 scenario_id: SimulationScenario(
                     action_type=item["action_type"],
@@ -261,7 +290,9 @@ def _run_policy_test(args: argparse.Namespace) -> None:
 
 def _run_policy_schema_version(args: argparse.Namespace) -> None:
     _, metadata = load_policy_bundle(args.policy_dir)
-    compatibility = evaluate_bundle_compatibility(schema_version=metadata.schema_version)
+    compatibility = evaluate_bundle_compatibility(
+        schema_version=metadata.schema_version
+    )
     print(
         json.dumps(
             {
@@ -314,8 +345,6 @@ def _run_policy_verify_compatibility(args: argparse.Namespace) -> None:
         raise SystemExit("Bundle is incompatible with runtime")
 
 
-
-
 def _registry_repo(sqlite_path: Path) -> SQLitePolicyBundleRepository:
     repo = _registry_raw_repo(sqlite_path)
     repo.initialize()
@@ -349,7 +378,9 @@ def _resolve_signature_verification(
 
 def _run_registry_register(args: argparse.Namespace) -> None:
     repo = _registry_repo(args.sqlite_path)
-    rules, metadata = load_policy_bundle(args.policy_dir, bundle_name=args.bundle_name, version=args.bundle_version)
+    rules, metadata = load_policy_bundle(
+        args.policy_dir, bundle_name=args.bundle_name, version=args.bundle_version
+    )
     metadata.lifecycle = args.lifecycle
     signature_ok, signature_errors, manifest_path = _resolve_signature_verification(
         policy_dir=args.policy_dir,
@@ -358,7 +389,9 @@ def _run_registry_register(args: argparse.Namespace) -> None:
         strict=args.signature_strict,
     )
     if args.signature_strict and not signature_ok:
-        raise SystemExit(f"Bundle signature verification failed: {', '.join(signature_errors)}")
+        raise SystemExit(
+            f"Bundle signature verification failed: {', '.join(signature_errors)}"
+        )
     bundle_id = repo.register_bundle(
         metadata,
         rules,
@@ -388,7 +421,15 @@ def _run_registry_register(args: argparse.Namespace) -> None:
 
 def _run_registry_history(args: argparse.Namespace) -> None:
     repo = _registry_repo(args.sqlite_path)
-    print(json.dumps({"bundle_name": args.bundle_name, "history": repo.get_history(args.bundle_name)}, indent=2))
+    print(
+        json.dumps(
+            {
+                "bundle_name": args.bundle_name,
+                "history": repo.get_history(args.bundle_name),
+            },
+            indent=2,
+        )
+    )
 
 
 def _run_registry_diff(args: argparse.Namespace) -> None:
@@ -440,10 +481,17 @@ def _run_release_generate(args: argparse.Namespace) -> None:
 
 
 def _run_release_sign(args: argparse.Namespace) -> None:
-    manifest = BundleReleaseManifest.model_validate(json.loads(args.manifest_path.read_text()))
+    manifest = BundleReleaseManifest.model_validate(
+        json.loads(args.manifest_path.read_text())
+    )
     signed = sign_release_manifest(manifest, key_path=args.key_file)
     write_release_manifest(signed, args.output or args.manifest_path)
-    print(json.dumps({"status": "ok", "manifest_path": str(args.output or args.manifest_path)}, indent=2))
+    print(
+        json.dumps(
+            {"status": "ok", "manifest_path": str(args.output or args.manifest_path)},
+            indent=2,
+        )
+    )
 
 
 def _run_release_verify(args: argparse.Namespace) -> None:
@@ -469,9 +517,12 @@ def _run_registry_promote(args: argparse.Namespace) -> None:
     simulation_scenarios: list[dict[str, Any]] = []
     simulation_report: dict[str, Any] | None = None
     if args.simulation_scenarios:
-        simulation_payload = _load_json_file(args.simulation_scenarios, "simulation scenarios")
+        simulation_payload = _load_json_file(
+            args.simulation_scenarios, "simulation scenarios"
+        )
         simulation_scenarios = [
-            {"scenario_id": sid, **scenario} for sid, scenario in sorted(simulation_payload.items())
+            {"scenario_id": sid, **scenario}
+            for sid, scenario in sorted(simulation_payload.items())
         ]
         source_rules = bundle.rules
         source_metadata = bundle.metadata
@@ -510,7 +561,9 @@ def _run_registry_promote(args: argparse.Namespace) -> None:
     for item in args.max_changed_risk_category or []:
         risk, _, raw_max = item.partition("=")
         if not risk or not raw_max:
-            raise SystemExit("Invalid --max-changed-risk-category format. Use risk=max_changed_count")
+            raise SystemExit(
+                "Invalid --max-changed-risk-category format. Use risk=max_changed_count"
+            )
         thresholds["max_changed_risk_categories"][risk] = int(raw_max)
 
     settings = load_settings_from_env()
@@ -520,7 +573,9 @@ def _run_registry_promote(args: argparse.Namespace) -> None:
     for item in args.max_regression_budget or []:
         transition, _, raw_max = item.partition("=")
         if not transition or not raw_max:
-            raise SystemExit("Invalid --max-regression-budget format. Use BEFORE->AFTER=max_count")
+            raise SystemExit(
+                "Invalid --max-regression-budget format. Use BEFORE->AFTER=max_count"
+            )
         regression_budget[transition] = int(raw_max)
     gate_failures = evaluate_promotion_gate(
         target_lifecycle=args.target_lifecycle,
@@ -542,7 +597,8 @@ def _run_registry_promote(args: argparse.Namespace) -> None:
         ),
     )
     must_block = (not args.break_glass) or any(
-        item.code in {"break_glass_reason_required", "break_glass_disabled"} for item in gate_failures
+        item.code in {"break_glass_reason_required", "break_glass_disabled"}
+        for item in gate_failures
     )
     if gate_failures and must_block:
         raise SystemExit(
@@ -596,20 +652,45 @@ def _run_registry_fetch_active(args: argparse.Namespace) -> None:
     bundle = repo.get_active_bundle(args.bundle_name)
     if bundle is None:
         raise SystemExit("No active bundle")
-    print(json.dumps({"bundle_id": bundle.id, "bundle_name": bundle.metadata.bundle_name, "version": bundle.metadata.version}, indent=2))
+    print(
+        json.dumps(
+            {
+                "bundle_id": bundle.id,
+                "bundle_name": bundle.metadata.bundle_name,
+                "version": bundle.metadata.version,
+            },
+            indent=2,
+        )
+    )
 
 
 def _run_registry_fetch(args: argparse.Namespace) -> None:
     repo = _registry_repo(args.sqlite_path)
-    bundle = repo.get_bundle(args.bundle_id) if args.bundle_id else repo.get_bundle_by_version(args.bundle_name, args.version)
+    bundle = (
+        repo.get_bundle(args.bundle_id)
+        if args.bundle_id
+        else repo.get_bundle_by_version(args.bundle_name, args.version)
+    )
     if bundle is None:
         raise SystemExit("Bundle not found")
-    print(json.dumps({"bundle_id": bundle.id, "bundle_name": bundle.metadata.bundle_name, "version": bundle.metadata.version, "lifecycle": bundle.metadata.lifecycle}, indent=2))
+    print(
+        json.dumps(
+            {
+                "bundle_id": bundle.id,
+                "bundle_name": bundle.metadata.bundle_name,
+                "version": bundle.metadata.version,
+                "lifecycle": bundle.metadata.lifecycle,
+            },
+            indent=2,
+        )
+    )
 
 
 def _run_registry_upgrade(args: argparse.Namespace) -> None:
     repo = _registry_raw_repo(args.sqlite_path)
-    result = repo.upgrade_schema(dry_run=args.dry_run, target_version=args.target_version)
+    result = repo.upgrade_schema(
+        dry_run=args.dry_run, target_version=args.target_version
+    )
     print(
         json.dumps(
             {
@@ -642,7 +723,9 @@ def _run_registry_backup(args: argparse.Namespace) -> None:
                 "status": "ok",
                 "backup_db_path": str(artifacts.backup_db_path),
                 "backup_manifest_path": str(artifacts.backup_manifest_path),
-                "backup_audit_path": str(artifacts.backup_audit_path) if artifacts.backup_audit_path else None,
+                "backup_audit_path": str(artifacts.backup_audit_path)
+                if artifacts.backup_audit_path
+                else None,
             },
             indent=2,
         )
@@ -657,7 +740,11 @@ def _run_registry_verify(args: argparse.Namespace) -> None:
         policy_dir=args.policy_dir,
         active_only=args.active_only,
     )
-    payload = {"status": "ok" if result.valid else "failed", "checks": result.checks, "errors": result.errors}
+    payload = {
+        "status": "ok" if result.valid else "failed",
+        "checks": result.checks,
+        "errors": result.errors,
+    }
     print(json.dumps(payload, indent=2))
     if not result.valid:
         raise SystemExit("registry verification failed")
@@ -714,8 +801,14 @@ def _run_audit_verify_archive(args: argparse.Namespace) -> None:
 
 
 def _run_audit_restore_archive(args: argparse.Namespace) -> None:
-    restored = restore_audit_archive(str(args.archive_manifest), str(args.restore_audit_path))
-    verify_result = verify_audit_chain(str(args.restore_audit_path)) if args.verify_after_restore else None
+    restored = restore_audit_archive(
+        str(args.archive_manifest), str(args.restore_audit_path)
+    )
+    verify_result = (
+        verify_audit_chain(str(args.restore_audit_path))
+        if args.verify_after_restore
+        else None
+    )
     payload: dict[str, Any] = {"restore": restored}
     if verify_result is not None:
         payload["verify"] = verify_result
@@ -766,7 +859,9 @@ def _run_replay_drift(args: argparse.Namespace) -> None:
     baseline_cases = load_replay_cases(
         replay_payload,
         mapping_mode=args.baseline_mapping_mode,
-        mapping_config_path=str(args.baseline_mapping_config_path) if args.baseline_mapping_config_path else None,
+        mapping_config_path=str(args.baseline_mapping_config_path)
+        if args.baseline_mapping_config_path
+        else None,
     )
     candidate_cases = load_replay_cases(
         replay_payload,
@@ -774,11 +869,19 @@ def _run_replay_drift(args: argparse.Namespace) -> None:
         mapping_config_path=(
             str(args.candidate_mapping_config_path)
             if args.candidate_mapping_config_path
-            else (str(args.baseline_mapping_config_path) if args.baseline_mapping_config_path else None)
+            else (
+                str(args.baseline_mapping_config_path)
+                if args.baseline_mapping_config_path
+                else None
+            )
         ),
     )
-    baseline_result = evaluate_replay_cases(cases=baseline_cases, rules=baseline_rules, metadata=baseline_meta)
-    candidate_result = evaluate_replay_cases(cases=candidate_cases, rules=candidate_rules, metadata=candidate_meta)
+    baseline_result = evaluate_replay_cases(
+        cases=baseline_cases, rules=baseline_rules, metadata=baseline_meta
+    )
+    candidate_result = evaluate_replay_cases(
+        cases=candidate_cases, rules=candidate_rules, metadata=candidate_meta
+    )
     report = build_drift_report(
         cases=baseline_cases,
         baseline=baseline_result,
@@ -813,7 +916,9 @@ def _build_evaluate_parser() -> argparse.ArgumentParser:
         default="2026.03",
         help="Version string for the policy bundle metadata in output",
     )
-    parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output")
+    parser.add_argument(
+        "--json", action="store_true", help="Print machine-readable JSON output"
+    )
     parser.add_argument(
         "--review-package",
         action="store_true",
@@ -874,43 +979,79 @@ def _build_policy_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="SENA policy authoring commands")
     sub = parser.add_subparsers(dest="policy_command", required=True)
 
-    init_parser = sub.add_parser("init", help="Initialize a policy bundle from templates")
-    init_parser.add_argument("path", type=Path, help="Destination directory for policy files")
-    init_parser.add_argument("--force", action="store_true", help="Overwrite existing files")
+    init_parser = sub.add_parser(
+        "init", help="Initialize a policy bundle from templates"
+    )
+    init_parser.add_argument(
+        "path", type=Path, help="Destination directory for policy files"
+    )
+    init_parser.add_argument(
+        "--force", action="store_true", help="Overwrite existing files"
+    )
     init_parser.set_defaults(handler=_run_policy_init)
 
-    validate_parser = sub.add_parser("validate", help="Validate policy syntax and coverage")
-    validate_parser.add_argument("--policy-dir", type=Path, required=True, help="Policy directory")
+    validate_parser = sub.add_parser(
+        "validate", help="Validate policy syntax and coverage"
+    )
+    validate_parser.add_argument(
+        "--policy-dir", type=Path, required=True, help="Policy directory"
+    )
     validate_parser.add_argument("--require-action-type", action="append", default=[])
-    validate_parser.add_argument("--explicitly-allowed-action-type", action="append", default=[])
-    validate_parser.add_argument("--strict", action="store_true", help="Fail on missing coverage")
+    validate_parser.add_argument(
+        "--explicitly-allowed-action-type", action="append", default=[]
+    )
+    validate_parser.add_argument(
+        "--strict", action="store_true", help="Fail on missing coverage"
+    )
     validate_parser.set_defaults(handler=_run_policy_validate)
 
-    test_parser = sub.add_parser("test", help="Run behavior tests against a policy bundle")
-    test_parser.add_argument("--policy-dir", type=Path, required=True, help="Policy directory")
-    test_parser.add_argument("--test-file", type=Path, required=True, help="JSON file with policy cases")
+    test_parser = sub.add_parser(
+        "test", help="Run behavior tests against a policy bundle"
+    )
+    test_parser.add_argument(
+        "--policy-dir", type=Path, required=True, help="Policy directory"
+    )
+    test_parser.add_argument(
+        "--test-file", type=Path, required=True, help="JSON file with policy cases"
+    )
     test_parser.set_defaults(handler=_run_policy_test)
 
-    schema_parser = sub.add_parser("schema-version", help="Inspect bundle schema version")
-    schema_parser.add_argument("--policy-dir", type=Path, required=True, help="Policy directory")
+    schema_parser = sub.add_parser(
+        "schema-version", help="Inspect bundle schema version"
+    )
+    schema_parser.add_argument(
+        "--policy-dir", type=Path, required=True, help="Policy directory"
+    )
     schema_parser.set_defaults(handler=_run_policy_schema_version)
 
-    migrate_parser = sub.add_parser("migrate", help="Migrate bundle manifest/rules to a target schema")
-    migrate_parser.add_argument("--policy-dir", type=Path, required=True, help="Policy directory")
-    migrate_parser.add_argument("--target-schema-version", default=CURRENT_BUNDLE_SCHEMA_VERSION)
-    migrate_parser.add_argument("--dry-run", action="store_true", help="Preview migration changes only")
+    migrate_parser = sub.add_parser(
+        "migrate", help="Migrate bundle manifest/rules to a target schema"
+    )
+    migrate_parser.add_argument(
+        "--policy-dir", type=Path, required=True, help="Policy directory"
+    )
+    migrate_parser.add_argument(
+        "--target-schema-version", default=CURRENT_BUNDLE_SCHEMA_VERSION
+    )
+    migrate_parser.add_argument(
+        "--dry-run", action="store_true", help="Preview migration changes only"
+    )
     migrate_parser.set_defaults(handler=_run_policy_migrate)
 
-    compatibility_parser = sub.add_parser("verify-compatibility", help="Verify runtime compatibility")
-    compatibility_parser.add_argument("--policy-dir", type=Path, required=True, help="Policy directory")
-    compatibility_parser.add_argument("--runtime-version", default=SENA_VERSION, help="Evaluator runtime version")
+    compatibility_parser = sub.add_parser(
+        "verify-compatibility", help="Verify runtime compatibility"
+    )
+    compatibility_parser.add_argument(
+        "--policy-dir", type=Path, required=True, help="Policy directory"
+    )
+    compatibility_parser.add_argument(
+        "--runtime-version", default=SENA_VERSION, help="Evaluator runtime version"
+    )
     compatibility_parser.add_argument("--min-evaluator-version")
     compatibility_parser.add_argument("--max-evaluator-version")
     compatibility_parser.set_defaults(handler=_run_policy_verify_compatibility)
 
     return parser
-
-
 
 
 def _build_registry_parser() -> argparse.ArgumentParser:
@@ -920,17 +1061,25 @@ def _build_registry_parser() -> argparse.ArgumentParser:
 
     upgrade = sub.add_parser("upgrade", help="Apply ordered registry schema migrations")
     upgrade.add_argument("--target-version", type=int)
-    upgrade.add_argument("--dry-run", action="store_true", help="Plan migrations without applying")
+    upgrade.add_argument(
+        "--dry-run", action="store_true", help="Plan migrations without applying"
+    )
     upgrade.set_defaults(handler=_run_registry_upgrade)
 
-    schema_status = sub.add_parser("schema-status", help="Inspect current schema migration state")
+    schema_status = sub.add_parser(
+        "schema-status", help="Inspect current schema migration state"
+    )
     schema_status.set_defaults(handler=_run_registry_schema_status)
 
     register = sub.add_parser("register")
     register.add_argument("--policy-dir", type=Path, required=True)
     register.add_argument("--bundle-name", required=True)
     register.add_argument("--bundle-version", required=True)
-    register.add_argument("--lifecycle", default="draft", choices=["draft", "candidate", "active", "deprecated"])
+    register.add_argument(
+        "--lifecycle",
+        default="draft",
+        choices=["draft", "candidate", "active", "deprecated"],
+    )
     register.add_argument("--created-by", default="system")
     register.add_argument("--creation-reason")
     register.add_argument("--source-bundle-id", type=int)
@@ -953,13 +1102,21 @@ def _build_registry_parser() -> argparse.ArgumentParser:
 
     validate = sub.add_parser("validate-promotion")
     validate.add_argument("--bundle-id", type=int, required=True)
-    validate.add_argument("--target-lifecycle", required=True, choices=["candidate", "active", "deprecated"])
+    validate.add_argument(
+        "--target-lifecycle",
+        required=True,
+        choices=["candidate", "active", "deprecated"],
+    )
     validate.add_argument("--validation-artifact")
     validate.set_defaults(handler=_run_registry_validate)
 
     promote = sub.add_parser("promote")
     promote.add_argument("--bundle-id", type=int, required=True)
-    promote.add_argument("--target-lifecycle", required=True, choices=["candidate", "active", "deprecated"])
+    promote.add_argument(
+        "--target-lifecycle",
+        required=True,
+        choices=["candidate", "active", "deprecated"],
+    )
     promote.add_argument("--promoted-by", required=True)
     promote.add_argument("--promotion-reason", required=True)
     promote.add_argument("--validation-artifact")
@@ -1019,7 +1176,9 @@ def _build_registry_parser() -> argparse.ArgumentParser:
 
 
 def _build_release_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="SENA bundle release manifest commands")
+    parser = argparse.ArgumentParser(
+        description="SENA bundle release manifest commands"
+    )
     sub = parser.add_subparsers(dest="release_command", required=True)
 
     generate = sub.add_parser("generate-manifest")
@@ -1049,30 +1208,47 @@ def _build_release_parser() -> argparse.ArgumentParser:
 
 
 def _build_audit_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="SENA audit chain operational commands")
-    parser.add_argument("--audit-path", type=Path, required=True, help="Path to active JSONL audit sink")
+    parser = argparse.ArgumentParser(
+        description="SENA audit chain operational commands"
+    )
+    parser.add_argument(
+        "--audit-path", type=Path, required=True, help="Path to active JSONL audit sink"
+    )
     sub = parser.add_subparsers(dest="audit_command", required=True)
 
-    verify = sub.add_parser("verify", help="Verify full chain integrity across rotated segments")
+    verify = sub.add_parser(
+        "verify", help="Verify full chain integrity across rotated segments"
+    )
     verify.set_defaults(handler=_run_audit_verify)
 
     summarize = sub.add_parser("summarize", help="Summarize chain/manifest status")
     summarize.set_defaults(handler=_run_audit_summarize)
 
-    locate = sub.add_parser("locate-decision", help="Locate a specific decision id within audit chain")
+    locate = sub.add_parser(
+        "locate-decision", help="Locate a specific decision id within audit chain"
+    )
     locate.add_argument("decision_id")
     locate.set_defaults(handler=_run_audit_locate_decision)
 
-    archive = sub.add_parser("archive", help="Create deterministic local archive artifacts for rotated/live segments")
+    archive = sub.add_parser(
+        "archive",
+        help="Create deterministic local archive artifacts for rotated/live segments",
+    )
     archive.add_argument("--archive-dir", type=Path, required=True)
-    archive.add_argument("--rotated-only", action="store_true", help="Archive rotated segments only")
+    archive.add_argument(
+        "--rotated-only", action="store_true", help="Archive rotated segments only"
+    )
     archive.set_defaults(handler=_run_audit_archive)
 
-    verify_archive = sub.add_parser("verify-archive", help="Verify archive manifest checksums and chain continuity")
+    verify_archive = sub.add_parser(
+        "verify-archive", help="Verify archive manifest checksums and chain continuity"
+    )
     verify_archive.add_argument("--archive-manifest", type=Path, required=True)
     verify_archive.set_defaults(handler=_run_audit_verify_archive)
 
-    restore_archive = sub.add_parser("restore-archive", help="Restore an archived chain into a local audit sink path")
+    restore_archive = sub.add_parser(
+        "restore-archive", help="Restore an archived chain into a local audit sink path"
+    )
     restore_archive.add_argument("--archive-manifest", type=Path, required=True)
     restore_archive.add_argument("--restore-audit-path", type=Path, required=True)
     restore_archive.add_argument("--verify-after-restore", action="store_true")
@@ -1081,19 +1257,29 @@ def _build_audit_parser() -> argparse.ArgumentParser:
 
 
 def _build_evidence_pack_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="SENA policy release evidence pack commands")
-    default_reference = Path(__file__).resolve().parents[3] / "examples" / "design_partner_reference"
+    parser = argparse.ArgumentParser(
+        description="SENA policy release evidence pack commands"
+    )
+    default_reference = (
+        Path(__file__).resolve().parents[3] / "examples" / "design_partner_reference"
+    )
     parser.add_argument("--reference-root", type=Path, default=default_reference)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--output-zip", type=Path)
-    parser.add_argument("--clean", action="store_true", help="Delete existing output directory before generating")
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Delete existing output directory before generating",
+    )
     parser.set_defaults(handler=_run_evidence_pack)
     return parser
 
 
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "production-check":
-        parser = argparse.ArgumentParser(description="SENA production-readiness validation")
+        parser = argparse.ArgumentParser(
+            description="SENA production-readiness validation"
+        )
         parser.add_argument(
             "--format",
             choices=["text", "json", "both"],
@@ -1129,15 +1315,21 @@ def main() -> None:
         args.handler(args)
         return
     if len(sys.argv) > 1 and sys.argv[1] == "replay":
-        parser = argparse.ArgumentParser(description="SENA replay and drift detection commands")
+        parser = argparse.ArgumentParser(
+            description="SENA replay and drift detection commands"
+        )
         sub = parser.add_subparsers(dest="replay_command", required=True)
         drift = sub.add_parser("drift")
         drift.add_argument("--replay-file", type=Path, required=True)
         drift.add_argument("--baseline-policy-dir", type=Path, required=True)
         drift.add_argument("--candidate-policy-dir", type=Path)
-        drift.add_argument("--baseline-mapping-mode", choices=["jira", "servicenow", "webhook"])
+        drift.add_argument(
+            "--baseline-mapping-mode", choices=["jira", "servicenow", "webhook"]
+        )
         drift.add_argument("--baseline-mapping-config-path", type=Path)
-        drift.add_argument("--candidate-mapping-mode", choices=["jira", "servicenow", "webhook"])
+        drift.add_argument(
+            "--candidate-mapping-mode", choices=["jira", "servicenow", "webhook"]
+        )
         drift.add_argument("--candidate-mapping-config-path", type=Path)
         drift.set_defaults(handler=_run_replay_drift)
         args = parser.parse_args(sys.argv[2:])

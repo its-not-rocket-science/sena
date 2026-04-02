@@ -12,7 +12,11 @@ from sena.core.models import (
     RiskClassification,
 )
 from sena.engine.evaluator import PolicyEvaluator
-from sena.engine.replay import build_drift_report, evaluate_replay_cases, load_replay_cases
+from sena.engine.replay import (
+    build_drift_report,
+    evaluate_replay_cases,
+    load_replay_cases,
+)
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.integrations.base import DecisionPayload
@@ -57,7 +61,9 @@ class EvaluationService:
             )
         normalized_autonomous_metadata = None
         if autonomous_metadata is not None:
-            normalized_autonomous_metadata = AutonomousToolMetadata(**autonomous_metadata)
+            normalized_autonomous_metadata = AutonomousToolMetadata(
+                **autonomous_metadata
+            )
         return ActionProposal(
             action_type=action_type,
             request_id=request_id,
@@ -104,7 +110,9 @@ class EvaluationService:
         )
         with self.state.metrics.evaluation_timer(endpoint=endpoint):
             trace = evaluator.evaluate(proposal, facts)
-        self.state.metrics.observe_decision_outcome(endpoint=endpoint, outcome=trace.outcome.value)
+        self.state.metrics.observe_decision_outcome(
+            endpoint=endpoint, outcome=trace.outcome.value
+        )
         payload = trace.to_dict()
         if append_audit:
             appended = self.audit_service.append_record(payload["audit_record"])
@@ -131,7 +139,9 @@ class EvaluationService:
         )
         with self.state.metrics.evaluation_timer(endpoint=endpoint):
             trace = evaluator.evaluate(proposal, facts)
-        self.state.metrics.observe_decision_outcome(endpoint=endpoint, outcome=trace.outcome.value)
+        self.state.metrics.observe_decision_outcome(
+            endpoint=endpoint, outcome=trace.outcome.value
+        )
         return build_decision_review_package(trace)
 
     @staticmethod
@@ -189,10 +199,15 @@ class EvaluationService:
         candidate_cases = load_replay_cases(
             replay_payload,
             mapping_mode=candidate_mapping_mode or baseline_mapping_mode,
-            mapping_config_path=candidate_mapping_config_path or baseline_mapping_config_path,
+            mapping_config_path=candidate_mapping_config_path
+            or baseline_mapping_config_path,
         )
-        baseline_result = evaluate_replay_cases(cases=baseline_cases, rules=baseline_rules, metadata=baseline_meta)
-        candidate_result = evaluate_replay_cases(cases=candidate_cases, rules=candidate_rules, metadata=candidate_meta)
+        baseline_result = evaluate_replay_cases(
+            cases=baseline_cases, rules=baseline_rules, metadata=baseline_meta
+        )
+        candidate_result = evaluate_replay_cases(
+            cases=candidate_cases, rules=candidate_rules, metadata=candidate_meta
+        )
         return build_drift_report(
             cases=baseline_cases,
             baseline=baseline_result,

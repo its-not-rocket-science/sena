@@ -13,8 +13,15 @@ from sena.core.models import (
     PolicyRule,
 )
 from sena.engine.evaluator import PolicyEvaluator
-from sena.integrations.jira import AllowAllJiraWebhookVerifier, JiraConnector, load_jira_mapping_config
-from sena.integrations.servicenow import ServiceNowConnector, load_servicenow_mapping_config
+from sena.integrations.jira import (
+    AllowAllJiraWebhookVerifier,
+    JiraConnector,
+    load_jira_mapping_config,
+)
+from sena.integrations.servicenow import (
+    ServiceNowConnector,
+    load_servicenow_mapping_config,
+)
 from sena.integrations.webhook import WebhookPayloadMapper, load_webhook_mapping_config
 
 
@@ -80,7 +87,9 @@ def _normalize_action_origin(raw: str | None) -> ActionOrigin:
 def _proposal_from_payload(payload: dict[str, Any]) -> ActionProposal:
     ai_payload = payload.get("ai_metadata")
     autonomous_payload = payload.get("autonomous_metadata")
-    ai_metadata = AIActionMetadata(**ai_payload) if isinstance(ai_payload, dict) else None
+    ai_metadata = (
+        AIActionMetadata(**ai_payload) if isinstance(ai_payload, dict) else None
+    )
     autonomous_metadata = (
         AutonomousToolMetadata(**autonomous_payload)
         if isinstance(autonomous_payload, dict)
@@ -98,20 +107,28 @@ def _proposal_from_payload(payload: dict[str, Any]) -> ActionProposal:
     )
 
 
-def _proposal_from_trace_payload(payload: dict[str, Any]) -> tuple[ActionProposal, dict[str, Any]]:
+def _proposal_from_trace_payload(
+    payload: dict[str, Any],
+) -> tuple[ActionProposal, dict[str, Any]]:
     context = payload.get("context") or {}
     if not isinstance(context, dict):
         raise ReplayInputError("trace payload requires object 'context'")
 
-    attributes = {key: value for key, value in context.items() if key not in _CONTEXT_KEYS}
+    attributes = {
+        key: value for key, value in context.items() if key not in _CONTEXT_KEYS
+    }
     proposal = ActionProposal(
         action_type=str(payload.get("action_type") or context.get("action_type") or ""),
         request_id=payload.get("request_id") or context.get("request_id"),
         actor_id=context.get("actor_id"),
         actor_role=context.get("actor_role"),
         attributes=attributes,
-        action_origin=_normalize_action_origin(str(context.get("action_origin") or "human")),
-        ai_metadata=AIActionMetadata(**context["ai_metadata"]) if isinstance(context.get("ai_metadata"), dict) else None,
+        action_origin=_normalize_action_origin(
+            str(context.get("action_origin") or "human")
+        ),
+        ai_metadata=AIActionMetadata(**context["ai_metadata"])
+        if isinstance(context.get("ai_metadata"), dict)
+        else None,
         autonomous_metadata=(
             AutonomousToolMetadata(**context["autonomous_metadata"])
             if isinstance(context.get("autonomous_metadata"), dict)
@@ -123,12 +140,17 @@ def _proposal_from_trace_payload(payload: dict[str, Any]) -> tuple[ActionProposa
     return proposal, {}
 
 
-def _proposal_from_mapping_case(case: dict[str, Any], mapping_mode: str, mapping_config_path: str) -> tuple[ActionProposal, dict[str, Any]]:
+def _proposal_from_mapping_case(
+    case: dict[str, Any], mapping_mode: str, mapping_config_path: str
+) -> tuple[ActionProposal, dict[str, Any]]:
     event = case.get("event")
     if not isinstance(event, dict):
         raise ReplayInputError("mapping case requires object 'event'")
     if mapping_mode == "jira":
-        connector = JiraConnector(config=load_jira_mapping_config(mapping_config_path), verifier=AllowAllJiraWebhookVerifier())
+        connector = JiraConnector(
+            config=load_jira_mapping_config(mapping_config_path),
+            verifier=AllowAllJiraWebhookVerifier(),
+        )
         normalized = connector.handle_event(
             {
                 "headers": event.get("headers") or {},
@@ -137,7 +159,9 @@ def _proposal_from_mapping_case(case: dict[str, Any], mapping_mode: str, mapping
             }
         )
     elif mapping_mode == "servicenow":
-        connector = ServiceNowConnector(config=load_servicenow_mapping_config(mapping_config_path))
+        connector = ServiceNowConnector(
+            config=load_servicenow_mapping_config(mapping_config_path)
+        )
         normalized = connector.handle_event(
             {
                 "headers": event.get("headers") or {},
@@ -146,13 +170,16 @@ def _proposal_from_mapping_case(case: dict[str, Any], mapping_mode: str, mapping
             }
         )
     elif mapping_mode == "webhook":
-        connector = WebhookPayloadMapper(config=load_webhook_mapping_config(mapping_config_path))
+        connector = WebhookPayloadMapper(
+            config=load_webhook_mapping_config(mapping_config_path)
+        )
         normalized = connector.handle_event(
             {
                 "provider": event.get("provider"),
                 "event_type": event.get("event_type"),
                 "payload": event.get("payload") or {},
-                "default_request_id": event.get("default_request_id") or case.get("case_id", "replay"),
+                "default_request_id": event.get("default_request_id")
+                or case.get("case_id", "replay"),
             }
         )
     else:
@@ -165,7 +192,9 @@ def _proposal_from_mapping_case(case: dict[str, Any], mapping_mode: str, mapping
         proposal_payload["action_origin"] = "autonomous_tool"
         proposal = _proposal_from_payload(proposal_payload)
     else:
-        raise ReplayInputError("connector mapping output must contain an ActionProposal")
+        raise ReplayInputError(
+            "connector mapping output must contain an ActionProposal"
+        )
     return proposal, dict(case.get("facts") or {})
 
 
@@ -187,8 +216,12 @@ def load_replay_cases(
 
         if mapping_mode:
             if not mapping_config_path:
-                raise ReplayInputError("mapping_config_path is required when mapping_mode is used")
-            proposal, facts = _proposal_from_mapping_case(case, mapping_mode, mapping_config_path)
+                raise ReplayInputError(
+                    "mapping_config_path is required when mapping_mode is used"
+                )
+            proposal, facts = _proposal_from_mapping_case(
+                case, mapping_mode, mapping_config_path
+            )
         elif isinstance(case.get("proposal"), dict):
             proposal = _proposal_from_payload(case["proposal"])
             facts = dict(case.get("facts") or {})
@@ -234,7 +267,9 @@ def evaluate_replay_cases(
     metadata: PolicyBundleMetadata,
     config: EvaluatorConfig | None = None,
 ) -> dict[str, ReplayEvaluation]:
-    evaluator = PolicyEvaluator(rules, policy_bundle=metadata, config=config or EvaluatorConfig())
+    evaluator = PolicyEvaluator(
+        rules, policy_bundle=metadata, config=config or EvaluatorConfig()
+    )
     results: dict[str, ReplayEvaluation] = {}
     for case in cases:
         trace = evaluator.evaluate(case.proposal, case.facts)
@@ -275,10 +310,12 @@ def build_drift_report(
                 outcome_changed=before.outcome != after.outcome,
                 before_matched_controls=before.matched_controls,
                 after_matched_controls=after.matched_controls,
-                matched_controls_changed=before.matched_controls != after.matched_controls,
+                matched_controls_changed=before.matched_controls
+                != after.matched_controls,
                 before_missing_evidence=before.missing_evidence,
                 after_missing_evidence=after.missing_evidence,
-                missing_evidence_changed=before.missing_evidence != after.missing_evidence,
+                missing_evidence_changed=before.missing_evidence
+                != after.missing_evidence,
                 source_system=case.source_system,
                 workflow_stage=case.workflow_stage,
                 risk_category=case.risk_category,

@@ -8,7 +8,10 @@ import pytest
 from sena.core.models import PolicyBundleMetadata
 from sena.policy.migrations import SQLiteMigrationManager
 from sena.policy.parser import load_policy_bundle
-from sena.policy.store import PostgresPolicyBundleRepository, SQLitePolicyBundleRepository
+from sena.policy.store import (
+    PostgresPolicyBundleRepository,
+    SQLitePolicyBundleRepository,
+)
 
 
 def _sqlite_repo(tmp_path):
@@ -27,7 +30,9 @@ def test_sqlite_migrations_are_explicit_and_versioned(tmp_path) -> None:
     assert all(m.checksum for m in migrations)
 
     with sqlite3.connect(db_path) as conn:
-        rows = conn.execute("SELECT version, checksum FROM schema_migrations ORDER BY version").fetchall()
+        rows = conn.execute(
+            "SELECT version, checksum FROM schema_migrations ORDER BY version"
+        ).fetchall()
     assert [r[0] for r in rows] == [m.version for m in migrations]
     assert [r[1] for r in rows] == [m.checksum for m in migrations]
 
@@ -63,7 +68,9 @@ def test_repository_contract_register_promote_and_history(tmp_path) -> None:
         signature_key_id="ops",
         signature_verified_at="2026-04-01T00:00:00+00:00",
     )
-    repo.transition_bundle(bundle_id, "candidate", promoted_by="contract-user", promotion_reason="ready")
+    repo.transition_bundle(
+        bundle_id, "candidate", promoted_by="contract-user", promotion_reason="ready"
+    )
     repo.transition_bundle(
         bundle_id,
         "active",

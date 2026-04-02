@@ -64,20 +64,28 @@ def load_servicenow_mapping_config(path: str) -> ServiceNowMappingConfig:
     raw = yaml.safe_load(text) if yaml else json.loads(text)
     routes_raw = raw.get("routes")
     if not isinstance(routes_raw, dict) or not routes_raw:
-        raise ServiceNowIntegrationError("ServiceNow mapping config must define non-empty routes")
+        raise ServiceNowIntegrationError(
+            "ServiceNow mapping config must define non-empty routes"
+        )
 
     routes: dict[str, ServiceNowEventRoute] = {}
     for event_type, route in routes_raw.items():
         if not isinstance(route, dict):
             raise ServiceNowIntegrationError(f"route '{event_type}' must be an object")
         if "action_type" not in route or "actor_id_path" not in route:
-            raise ServiceNowIntegrationError(f"route '{event_type}' missing required keys")
+            raise ServiceNowIntegrationError(
+                f"route '{event_type}' missing required keys"
+            )
         attrs = route.get("attributes", {})
         if not isinstance(attrs, dict):
-            raise ServiceNowIntegrationError(f"route '{event_type}' attributes must be an object")
+            raise ServiceNowIntegrationError(
+                f"route '{event_type}' attributes must be an object"
+            )
         required_fields = route.get("required_fields", [])
         if not isinstance(required_fields, list):
-            raise ServiceNowIntegrationError(f"route '{event_type}' required_fields must be a list")
+            raise ServiceNowIntegrationError(
+                f"route '{event_type}' required_fields must be a list"
+            )
 
         routes[event_type] = ServiceNowEventRoute(
             action_type=str(route["action_type"]),
@@ -95,7 +103,10 @@ def load_servicenow_mapping_config(path: str) -> ServiceNowMappingConfig:
             requested_action_path=route.get("requested_action_path"),
             correlation_key_path=route.get("correlation_key_path"),
             idempotency_key_path=route.get("idempotency_key_path"),
-            risk_attributes={str(k): str(v) for k, v in (route.get("risk_attributes", {}) or {}).items()},
+            risk_attributes={
+                str(k): str(v)
+                for k, v in (route.get("risk_attributes", {}) or {}).items()
+            },
             evidence_references_path=route.get("evidence_references_path"),
             static_source_object_type=route.get("static_source_object_type"),
             static_workflow_stage=route.get("static_workflow_stage"),
@@ -104,8 +115,12 @@ def load_servicenow_mapping_config(path: str) -> ServiceNowMappingConfig:
     outbound_raw = raw.get("outbound", {}) or {}
     mode = str(outbound_raw.get("mode", "callback"))
     if mode not in {"callback", "none"}:
-        raise ServiceNowIntegrationError("ServiceNow outbound.mode must be one of: callback,none")
-    return ServiceNowMappingConfig(routes=routes, outbound=ServiceNowOutboundConfig(mode=mode))
+        raise ServiceNowIntegrationError(
+            "ServiceNow outbound.mode must be one of: callback,none"
+        )
+    return ServiceNowMappingConfig(
+        routes=routes, outbound=ServiceNowOutboundConfig(mode=mode)
+    )
 
 
 class ServiceNowConnector(Connector):
@@ -126,11 +141,18 @@ class ServiceNowConnector(Connector):
         headers = event.get("headers") or {}
         payload = event.get("payload") or {}
         raw_body = event.get("raw_body") or b""
-        if not isinstance(headers, dict) or not isinstance(payload, dict) or not isinstance(raw_body, bytes):
+        if (
+            not isinstance(headers, dict)
+            or not isinstance(payload, dict)
+            or not isinstance(raw_body, bytes)
+        ):
             raise ServiceNowIntegrationError("invalid servicenow event envelope")
         normalized = self.normalize_event(headers=headers, payload=payload)
         proposal = self.map_to_proposal(normalized)
-        return {"normalized_event": normalized.model_dump(), "action_proposal": proposal}
+        return {
+            "normalized_event": normalized.model_dump(),
+            "action_proposal": proposal,
+        }
 
     def normalize_event(
         self,
@@ -144,7 +166,9 @@ class ServiceNowConnector(Connector):
             raise ServiceNowIntegrationError("missing event_type")
         route = self._config.routes.get(event_type)
         if route is None:
-            raise ServiceNowIntegrationError(f"unsupported servicenow event type '{event_type}'")
+            raise ServiceNowIntegrationError(
+                f"unsupported servicenow event type '{event_type}'"
+            )
 
         source_record_id = str(
             payload.get("sys_id")
@@ -153,7 +177,13 @@ class ServiceNowConnector(Connector):
             or ""
         ).strip()
         if not source_record_id:
-            source_record_id = str(resolve_path(payload, "change_request.sys_id", error_cls=ServiceNowIntegrationError))
+            source_record_id = str(
+                resolve_path(
+                    payload,
+                    "change_request.sys_id",
+                    error_cls=ServiceNowIntegrationError,
+                )
+            )
         delivery_id = (
             lowered_headers.get("x-servicenow-delivery-id")
             or lowered_headers.get("x-request-id")
@@ -163,7 +193,9 @@ class ServiceNowConnector(Connector):
             raise ServiceNowIntegrationError(f"duplicate delivery '{delivery_id}'")
 
         default_request_id = str(
-            payload.get("number") or payload.get("change_request", {}).get("number") or source_record_id
+            payload.get("number")
+            or payload.get("change_request", {}).get("number")
+            or source_record_id
         )
         return build_normalized_approval_event(
             payload=payload,
@@ -174,12 +206,18 @@ class ServiceNowConnector(Connector):
             default_request_id=default_request_id,
             default_source_record_id=source_record_id,
             error_cls=ServiceNowIntegrationError,
-            default_source_object_type=str(payload.get("table") or payload.get("change_request", {}).get("table") or "change_request"),
+            default_source_object_type=str(
+                payload.get("table")
+                or payload.get("change_request", {}).get("table")
+                or "change_request"
+            ),
             default_workflow_stage="requested",
             default_requested_action=route.action_type,
             default_correlation_key=default_request_id,
             source_metadata={
-                "servicenow_table": payload.get("table") or payload.get("change_request", {}).get("table") or "change_request",
+                "servicenow_table": payload.get("table")
+                or payload.get("change_request", {}).get("table")
+                or "change_request",
                 "servicenow_change_number": default_request_id,
             },
         )

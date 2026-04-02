@@ -28,15 +28,21 @@ def validate_condition(node: Any) -> None:
     unknown_keys = [
         key
         for key in node
-        if key not in LOGICAL_OPERATORS and key not in COMPARISON_OPERATORS and key != "field"
+        if key not in LOGICAL_OPERATORS
+        and key not in COMPARISON_OPERATORS
+        and key != "field"
     ]
     if unknown_keys:
-        raise PolicyValidationError(f"unsupported operator(s) in condition: {unknown_keys}")
+        raise PolicyValidationError(
+            f"unsupported operator(s) in condition: {unknown_keys}"
+        )
 
     if any(op in node for op in LOGICAL_OPERATORS):
         keys = [k for k in node if k in LOGICAL_OPERATORS]
         if len(keys) != 1:
-            raise PolicyValidationError("condition must contain exactly one logical operator")
+            raise PolicyValidationError(
+                "condition must contain exactly one logical operator"
+            )
         op = keys[0]
         payload = node[op]
         if op in {"and", "or"}:
@@ -54,13 +60,17 @@ def validate_condition(node: Any) -> None:
 
     ops = [k for k in node if k in COMPARISON_OPERATORS]
     if len(ops) != 1:
-        raise PolicyValidationError("leaf condition must include exactly one comparison operator")
+        raise PolicyValidationError(
+            "leaf condition must include exactly one comparison operator"
+        )
     op = ops[0]
     value = node[op]
     if op == "between":
         if not isinstance(value, list | tuple) or len(value) != 2:
             raise PolicyValidationError("'between' operator expects exactly two bounds")
-    if op in {"starts_with", "ends_with", "matches_regex"} and not isinstance(value, str):
+    if op in {"starts_with", "ends_with", "matches_regex"} and not isinstance(
+        value, str
+    ):
         raise PolicyValidationError(f"'{op}' operator expects a string value")
     if op == "exists" and not isinstance(value, bool):
         raise PolicyValidationError("'exists' operator expects true/false")
@@ -92,7 +102,9 @@ def validate_rule_payload(rule: dict[str, Any]) -> None:
     if not isinstance(required_evidence, list):
         raise PolicyValidationError("'required_evidence' must be a list when provided")
     unsupported = sorted(
-        class_name for class_name in required_evidence if class_name not in SUPPORTED_EVIDENCE_CLASSES
+        class_name
+        for class_name in required_evidence
+        if class_name not in SUPPORTED_EVIDENCE_CLASSES
     )
     if unsupported:
         raise PolicyValidationError(
@@ -109,10 +121,14 @@ def validate_rule_payload(rule: dict[str, Any]) -> None:
         if isinstance(missing_evidence_decision, RuleDecision)
         else missing_evidence_decision
     )
-    if normalized_missing_evidence_decision is not None and normalized_missing_evidence_decision not in {
-        "BLOCK",
-        "ESCALATE",
-    }:
+    if (
+        normalized_missing_evidence_decision is not None
+        and normalized_missing_evidence_decision
+        not in {
+            "BLOCK",
+            "ESCALATE",
+        }
+    ):
         raise PolicyValidationError(
             "'missing_evidence_decision' must be BLOCK or ESCALATE when provided"
         )
@@ -128,7 +144,9 @@ def validate_invariant_payload(invariant: dict[str, Any]) -> None:
     }
     missing = required - set(invariant.keys())
     if missing:
-        raise PolicyValidationError(f"invariant missing required fields: {sorted(missing)}")
+        raise PolicyValidationError(
+            f"invariant missing required fields: {sorted(missing)}"
+        )
     if not isinstance(invariant["applies_to"], list) or not invariant["applies_to"]:
         raise PolicyValidationError("invariant 'applies_to' must be a non-empty list")
     validate_condition(invariant["condition"])
@@ -146,7 +164,8 @@ def validate_policy_coverage(
     missing = [
         action_type
         for action_type in required_action_types
-        if action_type not in covered_action_types and action_type not in explicitly_allowed
+        if action_type not in covered_action_types
+        and action_type not in explicitly_allowed
     ]
     if missing and strict:
         raise PolicyValidationError(
@@ -165,9 +184,18 @@ def _resolve_field(field: str, context: dict[str, Any]) -> Any:
     return value
 
 
-def validate_context_schema(context: dict[str, Any], schema: dict[str, str]) -> list[str]:
+def validate_context_schema(
+    context: dict[str, Any], schema: dict[str, str]
+) -> list[str]:
     errors: list[str] = []
-    expected = {"str": str, "int": int, "float": float, "bool": bool, "dict": dict, "list": list}
+    expected = {
+        "str": str,
+        "int": int,
+        "float": float,
+        "bool": bool,
+        "dict": dict,
+        "list": list,
+    }
     for field, typename in schema.items():
         optional = typename.endswith("?")
         normalized_type = typename[:-1] if optional else typename

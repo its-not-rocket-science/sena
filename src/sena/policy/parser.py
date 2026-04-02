@@ -60,13 +60,16 @@ def _load_bundle_manifest(base: Path) -> BundleManifest | None:
         if manifest_path.exists():
             raw_manifest = _load_mapping(manifest_path.read_text(), manifest_path)
             if not isinstance(raw_manifest, dict):
-                raise PolicyParseError(f"bundle manifest {manifest_path} must be a mapping")
+                raise PolicyParseError(
+                    f"bundle manifest {manifest_path} must be a mapping"
+                )
             try:
                 return BundleManifest.model_validate(raw_manifest)
             except ValidationError as exc:
-                raise PolicyParseError(f"invalid bundle manifest {manifest_path}: {exc}") from exc
+                raise PolicyParseError(
+                    f"invalid bundle manifest {manifest_path}: {exc}"
+                ) from exc
     return None
-
 
 
 def _load_mapping(raw_text: str, source: Path) -> Any:
@@ -78,7 +81,6 @@ def _load_mapping(raw_text: str, source: Path) -> Any:
         raise PolicyParseError(
             f"Cannot parse {source}. Install PyYAML or provide JSON-compatible YAML."
         ) from exc
-
 
 
 def parse_policy_file(path: str | Path) -> list[PolicyRule]:
@@ -108,7 +110,9 @@ def parse_policy_file(path: str | Path) -> list[PolicyRule]:
                     condition=dict(normalized_item["condition"]),
                     decision=RuleDecision(normalized_item["decision"]),
                     reason=normalized_item["reason"],
-                    required_evidence=list(normalized_item.get("required_evidence", [])),
+                    required_evidence=list(
+                        normalized_item.get("required_evidence", [])
+                    ),
                     missing_evidence_decision=(
                         RuleDecision(normalized_item["missing_evidence_decision"])
                         if normalized_item.get("missing_evidence_decision") is not None
@@ -121,7 +125,6 @@ def parse_policy_file(path: str | Path) -> list[PolicyRule]:
     return rules
 
 
-
 def _bundle_integrity_digest(files: list[Path]) -> str:
     digest = hashlib.sha256()
     for policy_file in files:
@@ -130,10 +133,8 @@ def _bundle_integrity_digest(files: list[Path]) -> str:
     return digest.hexdigest()
 
 
-
 def load_policies_from_dir(path: str | Path) -> list[PolicyRule]:
     return load_policy_bundle(path)[0]
-
 
 
 def load_policy_bundle(
@@ -143,7 +144,9 @@ def load_policy_bundle(
 ) -> tuple[list[PolicyRule], PolicyBundleMetadata]:
     base = Path(path)
     if not base.exists() or not base.is_dir():
-        raise PolicyParseError(f"policy directory does not exist or is not a directory: {base}")
+        raise PolicyParseError(
+            f"policy directory does not exist or is not a directory: {base}"
+        )
 
     manifest = _load_bundle_manifest(base)
 
@@ -191,7 +194,10 @@ def load_policy_bundle(
         compatibility=compatibility,
     )
     if compatibility_report.errors:
-        raise PolicyParseError("bundle compatibility check failed: " + "; ".join(compatibility_report.errors))
+        raise PolicyParseError(
+            "bundle compatibility check failed: "
+            + "; ".join(compatibility_report.errors)
+        )
 
     return all_rules, metadata
 

@@ -39,7 +39,9 @@ def test_legacy_import_blocked_in_production(monkeypatch: pytest.MonkeyPatch) ->
         importlib.import_module("sena.legacy")
 
 
-def test_legacy_import_can_be_overridden_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_legacy_import_can_be_overridden_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("SENA_STRICT_LEGACY_IMPORTS", raising=False)
     monkeypatch.setenv("SENA_RUNTIME_MODE", "production")
     monkeypatch.setenv("SENA_ALLOW_LEGACY_IN_PRODUCTION", "true")

@@ -1,7 +1,12 @@
 import pytest
 
 from sena.core.enums import DecisionOutcome, RuleDecision, Severity
-from sena.core.models import ActionProposal, EvaluatorConfig, PolicyBundleMetadata, PolicyRule
+from sena.core.models import (
+    ActionProposal,
+    EvaluatorConfig,
+    PolicyBundleMetadata,
+    PolicyRule,
+)
 from sena.engine.evaluator import PolicyEvaluator
 from sena.policy.interpreter import evaluate_condition_with_trace
 from sena.policy.parser import PolicyParseError, parse_policy_file
@@ -140,7 +145,9 @@ def test_strict_allow_mode_blocks_when_only_escalation_matches() -> None:
 
 def test_strict_mode_identity_block_happens_before_rule_evaluation() -> None:
     evaluator = PolicyEvaluator(
-        rules=[_rule("allow_verified", condition={"field": "vendor_verified", "eq": True})],
+        rules=[
+            _rule("allow_verified", condition={"field": "vendor_verified", "eq": True})
+        ],
         config=EvaluatorConfig(require_allow_match=True),
     )
 

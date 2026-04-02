@@ -32,22 +32,32 @@ def evaluate_condition_with_trace(
     condition: dict[str, Any], context: dict[str, Any]
 ) -> ConditionEvaluation:
     if "and" in condition:
-        child_results = [evaluate_condition_with_trace(item, context) for item in condition["and"]]
-        missing_fields = {field for result in child_results for field in result.missing_fields}
+        child_results = [
+            evaluate_condition_with_trace(item, context) for item in condition["and"]
+        ]
+        missing_fields = {
+            field for result in child_results for field in result.missing_fields
+        }
         return ConditionEvaluation(
             matched=all(result.matched for result in child_results),
             missing_fields=missing_fields,
         )
     if "or" in condition:
-        child_results = [evaluate_condition_with_trace(item, context) for item in condition["or"]]
-        missing_fields = {field for result in child_results for field in result.missing_fields}
+        child_results = [
+            evaluate_condition_with_trace(item, context) for item in condition["or"]
+        ]
+        missing_fields = {
+            field for result in child_results for field in result.missing_fields
+        }
         return ConditionEvaluation(
             matched=any(result.matched for result in child_results),
             missing_fields=missing_fields,
         )
     if "not" in condition:
         result = evaluate_condition_with_trace(condition["not"], context)
-        return ConditionEvaluation(matched=not result.matched, missing_fields=result.missing_fields)
+        return ConditionEvaluation(
+            matched=not result.matched, missing_fields=result.missing_fields
+        )
 
     field = condition["field"]
     left = resolve_field(field, context)

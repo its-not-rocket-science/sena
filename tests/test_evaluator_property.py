@@ -48,8 +48,15 @@ def _proposal_strategy() -> st.SearchStrategy[ActionProposal]:
 
 
 @settings(max_examples=200)
-@given(proposal=_proposal_strategy(), facts=st.dictionaries(st.text(min_size=1, max_size=20), _json_value_strategy(), max_size=8))
-def test_evaluator_is_deterministic_for_same_inputs(proposal: ActionProposal, facts: dict[str, object]) -> None:
+@given(
+    proposal=_proposal_strategy(),
+    facts=st.dictionaries(
+        st.text(min_size=1, max_size=20), _json_value_strategy(), max_size=8
+    ),
+)
+def test_evaluator_is_deterministic_for_same_inputs(
+    proposal: ActionProposal, facts: dict[str, object]
+) -> None:
     rules, metadata = load_policy_bundle("src/sena/examples/policies")
     evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
 
@@ -67,7 +74,12 @@ def test_evaluator_is_deterministic_for_same_inputs(proposal: ActionProposal, fa
 
 
 @settings(max_examples=300)
-@given(proposal=_proposal_strategy(), facts=st.dictionaries(st.text(min_size=1, max_size=20), _json_value_strategy(), max_size=8))
+@given(
+    proposal=_proposal_strategy(),
+    facts=st.dictionaries(
+        st.text(min_size=1, max_size=20), _json_value_strategy(), max_size=8
+    ),
+)
 def test_evaluator_does_not_crash_on_random_json_like_inputs(
     proposal: ActionProposal, facts: dict[str, object]
 ) -> None:

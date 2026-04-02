@@ -48,9 +48,9 @@ class EvaluateRequest(BaseModel):
     ai_metadata: AIActionMetadataRequest | None = None
     autonomous_metadata: AutonomousMetadataRequest | None = None
     facts: dict[str, Any] = Field(default_factory=dict)
-    default_decision: Literal["APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"] = (
-        "APPROVED"
-    )
+    default_decision: Literal[
+        "APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"
+    ] = "APPROVED"
     strict_require_allow: bool = False
 
     @model_validator(mode="after")
@@ -66,13 +66,19 @@ class EvaluateRequest(BaseModel):
             raise ValueError(
                 "action_origin=ai_suggested requires ai_metadata with deterministic governance fields"
             )
-        if self.action_origin != ActionOrigin.AI_SUGGESTED and self.ai_metadata is not None:
+        if (
+            self.action_origin != ActionOrigin.AI_SUGGESTED
+            and self.ai_metadata is not None
+        ):
             raise ValueError("ai_metadata is only valid for action_origin=ai_suggested")
-        if self.action_origin == ActionOrigin.AUTONOMOUS_TOOL and self.autonomous_metadata is None:
-            raise ValueError("action_origin=autonomous_tool requires autonomous_metadata")
+        if (
+            self.action_origin == ActionOrigin.AUTONOMOUS_TOOL
+            and self.autonomous_metadata is None
+        ):
+            raise ValueError(
+                "action_origin=autonomous_tool requires autonomous_metadata"
+            )
         return self
-
-
 
 
 class WebhookEvaluateRequest(BaseModel):
@@ -80,10 +86,11 @@ class WebhookEvaluateRequest(BaseModel):
     event_type: NonEmptyStr
     payload: dict[str, Any] = Field(default_factory=dict)
     facts: dict[str, Any] = Field(default_factory=dict)
-    default_decision: Literal["APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"] = (
-        "APPROVED"
-    )
+    default_decision: Literal[
+        "APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"
+    ] = "APPROVED"
     strict_require_allow: bool = False
+
 
 class BatchEvaluateRequest(BaseModel):
     items: list[EvaluateRequest] = Field(min_length=1, max_length=500)

@@ -15,11 +15,9 @@ class AuditSinkError(RuntimeError):
 class AuditSink(Protocol):
     """Pluggable storage contract for tamper-evident audit records."""
 
-    def load_records(self) -> list[dict[str, Any]]:
-        ...
+    def load_records(self) -> list[dict[str, Any]]: ...
 
-    def append(self, payload: dict[str, Any]) -> None:
-        ...
+    def append(self, payload: dict[str, Any]) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -141,12 +139,22 @@ class JsonlFileAuditSink:
             if malformed:
                 issues.extend([f"malformed_record:{item}" for item in malformed])
             expected_count = segment.get("record_count")
-            if isinstance(expected_count, int) and expected_count != len(segment_records):
+            if isinstance(expected_count, int) and expected_count != len(
+                segment_records
+            ):
                 issues.append(
                     f"segment_record_count_mismatch:{segment['file']}:expected={expected_count}:actual={len(segment_records)}"
                 )
-            first_seq = segment_records[0].get("storage_sequence_number") if segment_records else None
-            last_seq = segment_records[-1].get("storage_sequence_number") if segment_records else None
+            first_seq = (
+                segment_records[0].get("storage_sequence_number")
+                if segment_records
+                else None
+            )
+            last_seq = (
+                segment_records[-1].get("storage_sequence_number")
+                if segment_records
+                else None
+            )
             if segment.get("first_sequence") != first_seq:
                 issues.append(
                     f"segment_first_sequence_mismatch:{segment['file']}:expected={segment.get('first_sequence')}:actual={first_seq}"
@@ -155,7 +163,11 @@ class JsonlFileAuditSink:
                 issues.append(
                     f"segment_last_sequence_mismatch:{segment['file']}:expected={segment.get('last_sequence')}:actual={last_seq}"
                 )
-            if segment_index > 1 and previous_last_sequence is not None and first_seq is not None:
+            if (
+                segment_index > 1
+                and previous_last_sequence is not None
+                and first_seq is not None
+            ):
                 if first_seq != previous_last_sequence + 1:
                     issues.append(
                         f"segment_sequence_gap:{segment['file']}:previous_last={previous_last_sequence}:first={first_seq}"
@@ -163,7 +175,13 @@ class JsonlFileAuditSink:
             if isinstance(last_seq, int):
                 previous_last_sequence = last_seq
             records.extend(segment_records)
-            segments_meta.append({"file": segment["file"], "records": len(segment_records), "rotated": True})
+            segments_meta.append(
+                {
+                    "file": segment["file"],
+                    "records": len(segment_records),
+                    "rotated": True,
+                }
+            )
 
         active_count = 0
         if sink.exists():
@@ -172,7 +190,9 @@ class JsonlFileAuditSink:
                 issues.extend([f"malformed_record:{item}" for item in malformed])
             records.extend(active_records)
             active_count = len(active_records)
-            segments_meta.append({"file": sink.name, "records": active_count, "rotated": False})
+            segments_meta.append(
+                {"file": sink.name, "records": active_count, "rotated": False}
+            )
 
         expected_next = manifest.get("next_sequence")
         if manifest.get("manifest_present", False) and isinstance(expected_next, int):
@@ -188,7 +208,12 @@ class JsonlFileAuditSink:
                     f"manifest_next_sequence_mismatch:expected={expected_next}:actual={actual_next}"
                 )
 
-        return {"records": records, "issues": issues, "segments": segments_meta, "manifest": manifest}
+        return {
+            "records": records,
+            "issues": issues,
+            "segments": segments_meta,
+            "manifest": manifest,
+        }
 
     def load_records(self) -> list[dict[str, Any]]:
         return self.load_records_detailed()["records"]
@@ -198,9 +223,10 @@ class JsonlFileAuditSink:
         sink.parent.mkdir(parents=True, exist_ok=True)
         lock_handle = self._acquire_lock()
         try:
-            encoded = (json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str) + "\n").encode(
-                "utf-8"
-            )
+            encoded = (
+                json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+                + "\n"
+            ).encode("utf-8")
             if self.rotation and self.rotation.max_file_bytes and sink.exists():
                 next_size = sink.stat().st_size + len(encoded)
                 if next_size > self.rotation.max_file_bytes:
@@ -230,15 +256,18 @@ class JsonlFileAuditSink:
             line_payload["write_timestamp"] = datetime.now(tz=timezone.utc).isoformat()
             line_payload["previous_chain_hash"] = previous_chain_hash
             record_for_hash = {
-                k: v
-                for k, v in line_payload.items()
-                if k not in {"chain_hash"}
+                k: v for k, v in line_payload.items() if k not in {"chain_hash"}
             }
-            line_payload["chain_hash"] = compute_hash(record_for_hash, previous_chain_hash)
-
-            encoded = (json.dumps(line_payload, sort_keys=True, separators=(",", ":"), default=str) + "\n").encode(
-                "utf-8"
+            line_payload["chain_hash"] = compute_hash(
+                record_for_hash, previous_chain_hash
             )
+
+            encoded = (
+                json.dumps(
+                    line_payload, sort_keys=True, separators=(",", ":"), default=str
+                )
+                + "\n"
+            ).encode("utf-8")
             if self.rotation and self.rotation.max_file_bytes and sink.exists():
                 next_size = sink.stat().st_size + len(encoded)
                 if next_size > self.rotation.max_file_bytes:
@@ -275,8 +304,12 @@ class JsonlFileAuditSink:
             "file": rotated.name,
             "rotated_at": datetime.now(tz=timezone.utc).isoformat(),
             "record_count": len(records),
-            "first_sequence": records[0].get("storage_sequence_number") if records else None,
-            "last_sequence": records[-1].get("storage_sequence_number") if records else None,
+            "first_sequence": records[0].get("storage_sequence_number")
+            if records
+            else None,
+            "last_sequence": records[-1].get("storage_sequence_number")
+            if records
+            else None,
             "first_chain_hash": records[0].get("chain_hash") if records else None,
             "last_chain_hash": records[-1].get("chain_hash") if records else None,
             "malformed_records": malformed,
@@ -297,7 +330,9 @@ class JsonlFileAuditSink:
         if not sink.parent.exists():
             return
 
-        candidates = sorted(sink.parent.glob(f"{sink.name}*"), key=lambda p: p.stat().st_mtime)
+        candidates = sorted(
+            sink.parent.glob(f"{sink.name}*"), key=lambda p: p.stat().st_mtime
+        )
         now = datetime.now(tz=timezone.utc)
 
         if self.retention.max_age_days is not None:
@@ -308,7 +343,10 @@ class JsonlFileAuditSink:
                     file.unlink(missing_ok=True)
                     candidates.remove(file)
 
-        if self.retention.max_records is not None and len(candidates) > self.retention.max_records:
+        if (
+            self.retention.max_records is not None
+            and len(candidates) > self.retention.max_records
+        ):
             excess = len(candidates) - self.retention.max_records
             for file in candidates[:excess]:
                 file.unlink(missing_ok=True)
@@ -348,8 +386,12 @@ class S3CompatibleAuditSink:
         client = self._client()
         now = datetime.now(tz=timezone.utc)
         key = f"{self.key_prefix.rstrip('/')}/{now.strftime('%Y/%m/%d/%H%M%S.%f')}.json"
-        body = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-        client.put_object(Bucket=self.bucket, Key=key, Body=body, ContentType="application/json")
+        body = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), default=str
+        ).encode("utf-8")
+        client.put_object(
+            Bucket=self.bucket, Key=key, Body=body, ContentType="application/json"
+        )
         self._enforce_retention(client)
 
     def _enforce_retention(self, client: Any) -> None:
@@ -371,11 +413,16 @@ class S3CompatibleAuditSink:
                 if now - item["LastModified"] > max_age:
                     to_delete.append({"Key": item["Key"]})
 
-        if self.retention.max_records is not None and len(objects) > self.retention.max_records:
+        if (
+            self.retention.max_records is not None
+            and len(objects) > self.retention.max_records
+        ):
             excess = len(objects) - self.retention.max_records
             for item in objects[:excess]:
                 to_delete.append({"Key": item["Key"]})
 
         if to_delete:
             unique = {item["Key"]: item for item in to_delete}
-            client.delete_objects(Bucket=self.bucket, Delete={"Objects": list(unique.values())})
+            client.delete_objects(
+                Bucket=self.bucket, Delete={"Objects": list(unique.values())}
+            )

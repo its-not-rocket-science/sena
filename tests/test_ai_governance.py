@@ -63,11 +63,20 @@ def test_ai_suggested_actions_evaluate_deterministically_when_fields_present() -
 
     assert trace.outcome == DecisionOutcome.APPROVED
     package = build_decision_review_package(trace)
-    assert package["facts_and_actor"]["request_origin"]["classification"] == "ai_suggested"
-    assert package["facts_and_actor"]["request_origin"]["ai_metadata"]["originating_system"] == "copilot"
+    assert (
+        package["facts_and_actor"]["request_origin"]["classification"] == "ai_suggested"
+    )
+    assert (
+        package["facts_and_actor"]["request_origin"]["ai_metadata"][
+            "originating_system"
+        ]
+        == "copilot"
+    )
 
 
-def test_ai_assisted_high_risk_action_blocks_when_evidence_bundle_is_incomplete() -> None:
+def test_ai_assisted_high_risk_action_blocks_when_evidence_bundle_is_incomplete() -> (
+    None
+):
     evaluator = _evaluator()
     trace = evaluator.evaluate(
         ActionProposal(

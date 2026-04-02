@@ -7,7 +7,11 @@ from fastapi import APIRouter
 
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, verify_bundle_signature
-from sena.api.schemas import BundlePromoteRequest, BundleRegisterRequest, BundleRollbackRequest
+from sena.api.schemas import (
+    BundlePromoteRequest,
+    BundleRegisterRequest,
+    BundleRollbackRequest,
+)
 from sena.services.bundle_service import BundleService
 
 
@@ -27,8 +31,12 @@ def create_bundles_router(state: EngineState) -> APIRouter:
         try:
             return service.register_bundle(payload)
         except PermissionError as exc:
-            errors = str(exc).split(":", 1)[1].split("; ") if ":" in str(exc) else [str(exc)]
-            raise_api_error("bundle_signature_verification_failed", details={"errors": errors})
+            errors = (
+                str(exc).split(":", 1)[1].split("; ") if ":" in str(exc) else [str(exc)]
+            )
+            raise_api_error(
+                "bundle_signature_verification_failed", details={"errors": errors}
+            )
         except ValueError as exc:
             raise_api_error("http_bad_request", details={"reason": str(exc)})
 
@@ -40,8 +48,12 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             return service.promote_bundle(payload)
         except ValueError as exc:
             if str(exc) == "bundle_not_found":
-                raise_api_error("bundle_not_found", details={"bundle_id": payload.bundle_id})
-            raise_api_error("promotion_validation_failed", details={"errors": [str(exc)]})
+                raise_api_error(
+                    "bundle_not_found", details={"bundle_id": payload.bundle_id}
+                )
+            raise_api_error(
+                "promotion_validation_failed", details={"errors": [str(exc)]}
+            )
         except RuntimeError as exc:
             if str(exc).startswith("promotion_validation_failed:"):
                 raw = str(exc).split(":", 1)[1]
@@ -51,9 +63,14 @@ def create_bundles_router(state: EngineState) -> APIRouter:
                     payload = {"messages": raw.split("; "), "failures": []}
                 raise_api_error(
                     "promotion_validation_failed",
-                    details={"errors": payload.get("messages", []), "failures": payload.get("failures", [])},
+                    details={
+                        "errors": payload.get("messages", []),
+                        "failures": payload.get("failures", []),
+                    },
                 )
-            raise_api_error("promotion_validation_failed", details={"errors": [str(exc)]})
+            raise_api_error(
+                "promotion_validation_failed", details={"errors": [str(exc)]}
+            )
 
     @router.post("/bundle/rollback")
     def rollback_bundle(payload: BundleRollbackRequest) -> dict[str, Any]:
@@ -62,7 +79,9 @@ def create_bundles_router(state: EngineState) -> APIRouter:
         try:
             return service.rollback_bundle(payload)
         except ValueError as exc:
-            raise_api_error("promotion_validation_failed", details={"errors": [str(exc)]})
+            raise_api_error(
+                "promotion_validation_failed", details={"errors": [str(exc)]}
+            )
 
     @router.get("/bundles/active")
     def get_active_bundle(bundle_name: str | None = None) -> dict[str, Any]:
@@ -70,7 +89,10 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             raise_api_error("policy_store_unavailable")
         active = service.get_active_bundle(bundle_name)
         if active is None:
-            raise_api_error("active_bundle_not_found", details={"bundle_name": bundle_name or state.settings.bundle_name})
+            raise_api_error(
+                "active_bundle_not_found",
+                details={"bundle_name": bundle_name or state.settings.bundle_name},
+            )
         return active
 
     @router.get("/bundles/{bundle_id}")
@@ -88,7 +110,10 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             raise_api_error("policy_store_unavailable")
         bundle = service.get_bundle_by_version(bundle_name, version)
         if bundle is None:
-            raise_api_error("bundle_not_found", details={"bundle_name": bundle_name, "version": version})
+            raise_api_error(
+                "bundle_not_found",
+                details={"bundle_name": bundle_name, "version": version},
+            )
         return bundle
 
     @router.get("/bundles/history")

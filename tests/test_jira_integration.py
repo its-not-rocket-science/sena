@@ -95,12 +95,14 @@ def test_jira_verifier_rejects_invalid_signature() -> None:
     with pytest.raises(JiraIntegrationError, match="invalid webhook signature"):
         connector.handle_event(
             {
-                "headers": {"x-atlassian-webhook-identifier": "delivery-4", "x-sena-signature": "bad"},
+                "headers": {
+                    "x-atlassian-webhook-identifier": "delivery-4",
+                    "x-sena-signature": "bad",
+                },
                 "payload": payload,
                 "raw_body": json.dumps(payload).encode("utf-8"),
             }
         )
-
 
 
 def test_jira_round_trip_source_payload_to_normalized_to_action_proposal() -> None:
@@ -140,11 +142,14 @@ def test_jira_connector_rejects_missing_required_normalized_fields() -> None:
     with pytest.raises(JiraIntegrationError, match="missing required field path"):
         connector.handle_event(
             {
-                "headers": {"x-atlassian-webhook-identifier": "delivery-bad-normalized"},
+                "headers": {
+                    "x-atlassian-webhook-identifier": "delivery-bad-normalized"
+                },
                 "payload": payload,
                 "raw_body": json.dumps(payload).encode("utf-8"),
             }
         )
+
 
 def test_jira_send_decision_returns_stable_payload() -> None:
     cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")

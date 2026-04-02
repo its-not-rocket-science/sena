@@ -4,7 +4,12 @@ import pytest
 from sena.core.enums import ActionOrigin
 from sena.core.models import ActionProposal
 from sena.engine.evaluator import PolicyEvaluator
-from sena.engine.replay import ReplayInputError, build_drift_report, evaluate_replay_cases, load_replay_cases
+from sena.engine.replay import (
+    ReplayInputError,
+    build_drift_report,
+    evaluate_replay_cases,
+    load_replay_cases,
+)
 from sena.policy.parser import load_policy_bundle
 
 
@@ -17,7 +22,11 @@ def test_replay_drift_from_proposal_and_trace_is_deterministic() -> None:
             request_id="req-trace",
             actor_id="actor-1",
             actor_role="finance_analyst",
-            attributes={"amount": 20000, "vendor_verified": True, "source_system": "jira"},
+            attributes={
+                "amount": 20000,
+                "vendor_verified": True,
+                "source_system": "jira",
+            },
         ),
         {},
     )
@@ -30,7 +39,11 @@ def test_replay_drift_from_proposal_and_trace_is_deterministic() -> None:
                     "request_id": "req-proposal",
                     "actor_id": "actor-1",
                     "actor_role": "finance_analyst",
-                    "attributes": {"amount": 500, "vendor_verified": True, "source_system": "jira"},
+                    "attributes": {
+                        "amount": 500,
+                        "vendor_verified": True,
+                        "source_system": "jira",
+                    },
                     "action_origin": ActionOrigin.HUMAN.value,
                 },
             },
@@ -114,8 +127,12 @@ providers:
         mapping_mode="webhook",
         mapping_config_path=str(candidate_mapping),
     )
-    baseline = evaluate_replay_cases(cases=baseline_cases, rules=rules, metadata=metadata)
-    candidate = evaluate_replay_cases(cases=candidate_cases, rules=rules, metadata=metadata)
+    baseline = evaluate_replay_cases(
+        cases=baseline_cases, rules=rules, metadata=metadata
+    )
+    candidate = evaluate_replay_cases(
+        cases=candidate_cases, rules=rules, metadata=metadata
+    )
     report = build_drift_report(
         cases=baseline_cases,
         baseline=baseline,
@@ -130,9 +147,13 @@ providers:
 
 def test_replay_load_rejects_missing_mapping_config_path() -> None:
     with pytest.raises(ReplayInputError, match="mapping_config_path is required"):
-        load_replay_cases({"cases": [{"case_id": "c-1", "event": {}}]}, mapping_mode="webhook")
+        load_replay_cases(
+            {"cases": [{"case_id": "c-1", "event": {}}]}, mapping_mode="webhook"
+        )
 
 
 def test_replay_load_rejects_trace_without_action_type() -> None:
-    with pytest.raises(ReplayInputError, match="trace payload must include action_type"):
+    with pytest.raises(
+        ReplayInputError, match="trace payload must include action_type"
+    ):
         load_replay_cases({"cases": [{"case_id": "trace-1", "trace": {"context": {}}}]})

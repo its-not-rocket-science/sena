@@ -10,7 +10,9 @@ from fastapi.responses import JSONResponse
 from sena.api.errors import ERROR_CODE_CATALOG
 
 
-def error_payload(code: str, message: str, request_id: str | None = None) -> dict[str, Any]:
+def error_payload(
+    code: str, message: str, request_id: str | None = None
+) -> dict[str, Any]:
     return {
         "error": {
             "code": code,
@@ -34,7 +36,9 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(HTTPException)
     async def handle_http_exception(request: Request, exc: HTTPException):
-        detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+        detail = (
+            exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+        )
         code = detail.get("code", "http_internal_error")
         default_message = ERROR_CODE_CATALOG.get(
             code, ERROR_CODE_CATALOG["http_internal_error"]

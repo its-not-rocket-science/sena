@@ -88,10 +88,14 @@ def load_jira_mapping_config(path: str) -> JiraMappingConfig:
             raise JiraIntegrationError(f"route '{event_type}' missing required keys")
         attrs = route.get("attributes", {})
         if not isinstance(attrs, dict):
-            raise JiraIntegrationError(f"route '{event_type}' attributes must be an object")
+            raise JiraIntegrationError(
+                f"route '{event_type}' attributes must be an object"
+            )
         required_fields = route.get("required_fields", [])
         if not isinstance(required_fields, list):
-            raise JiraIntegrationError(f"route '{event_type}' required_fields must be a list")
+            raise JiraIntegrationError(
+                f"route '{event_type}' required_fields must be a list"
+            )
         routes[event_type] = JiraEventRoute(
             action_type=str(route["action_type"]),
             actor_id_path=str(route["actor_id_path"]),
@@ -108,7 +112,10 @@ def load_jira_mapping_config(path: str) -> JiraMappingConfig:
             requested_action_path=route.get("requested_action_path"),
             correlation_key_path=route.get("correlation_key_path"),
             idempotency_key_path=route.get("idempotency_key_path"),
-            risk_attributes={str(k): str(v) for k, v in (route.get("risk_attributes", {}) or {}).items()},
+            risk_attributes={
+                str(k): str(v)
+                for k, v in (route.get("risk_attributes", {}) or {}).items()
+            },
             evidence_references_path=route.get("evidence_references_path"),
             static_source_object_type=route.get("static_source_object_type"),
             static_workflow_stage=route.get("static_workflow_stage"),
@@ -117,14 +124,18 @@ def load_jira_mapping_config(path: str) -> JiraMappingConfig:
     outbound_raw = raw.get("outbound", {}) or {}
     mode = str(outbound_raw.get("mode", "comment"))
     if mode not in {"comment", "status", "both", "none"}:
-        raise JiraIntegrationError("Jira outbound.mode must be one of: comment,status,both,none")
+        raise JiraIntegrationError(
+            "Jira outbound.mode must be one of: comment,status,both,none"
+        )
     return JiraMappingConfig(routes=routes, outbound=JiraOutboundConfig(mode=mode))
 
 
 class JiraDeliveryClient(Protocol):
     def publish_comment(self, issue_key: str, message: str) -> dict[str, Any]: ...
 
-    def publish_status(self, issue_key: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def publish_status(
+        self, issue_key: str, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
 
 
 class NullJiraDeliveryClient:
@@ -155,11 +166,20 @@ class JiraConnector(Connector):
         headers = event.get("headers") or {}
         payload = event.get("payload") or {}
         raw_body = event.get("raw_body") or b""
-        if not isinstance(headers, dict) or not isinstance(payload, dict) or not isinstance(raw_body, bytes):
+        if (
+            not isinstance(headers, dict)
+            or not isinstance(payload, dict)
+            or not isinstance(raw_body, bytes)
+        ):
             raise JiraIntegrationError("invalid jira event envelope")
-        normalized = self.normalize_event(headers=headers, payload=payload, raw_body=raw_body)
+        normalized = self.normalize_event(
+            headers=headers, payload=payload, raw_body=raw_body
+        )
         proposal = self.map_to_proposal(normalized)
-        return {"normalized_event": normalized.model_dump(), "action_proposal": proposal}
+        return {
+            "normalized_event": normalized.model_dump(),
+            "action_proposal": proposal,
+        }
 
     def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:
         issue_key = payload.request_id or "unknown"
@@ -169,7 +189,9 @@ class JiraConnector(Connector):
         errors: list[str] = []
         if mode in {"comment", "both"}:
             try:
-                results.append(self._delivery_client.publish_comment(issue_key, message))
+                results.append(
+                    self._delivery_client.publish_comment(issue_key, message)
+                )
             except Exception as exc:  # pragma: no cover
                 errors.append(f"comment:{exc}")
         if mode in {"status", "both"}:
@@ -208,7 +230,9 @@ class JiraConnector(Connector):
         if route is None:
             raise JiraIntegrationError(f"unsupported jira event type '{event_type}'")
 
-        issue_id = str(resolve_path(payload, "issue.id", error_cls=JiraIntegrationError))
+        issue_id = str(
+            resolve_path(payload, "issue.id", error_cls=JiraIntegrationError)
+        )
         delivery_id = (
             lowered_headers.get("x-atlassian-webhook-identifier")
             or lowered_headers.get("x-request-id")
@@ -223,14 +247,22 @@ class JiraConnector(Connector):
             source_event_type=event_type,
             idempotency_key=delivery_id,
             source_system="jira",
-            default_request_id=str(resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)),
+            default_request_id=str(
+                resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)
+            ),
             default_source_record_id=issue_id,
             error_cls=JiraIntegrationError,
             default_source_object_type="jira_issue",
             default_workflow_stage="pending_approval",
             default_requested_action=route.action_type,
-            default_correlation_key=str(resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)),
-            source_metadata={"jira_issue_key": str(resolve_path(payload, "issue.key", error_cls=JiraIntegrationError))},
+            default_correlation_key=str(
+                resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)
+            ),
+            source_metadata={
+                "jira_issue_key": str(
+                    resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)
+                )
+            },
         )
 
     def map_to_proposal(self, event: NormalizedJiraEvent):

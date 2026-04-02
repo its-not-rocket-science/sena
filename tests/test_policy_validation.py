@@ -2,7 +2,11 @@ import pytest
 
 from sena.core.enums import RuleDecision, Severity
 from sena.core.models import PolicyRule
-from sena.policy.validation import PolicyValidationError, validate_condition, validate_rule_payload
+from sena.policy.validation import (
+    PolicyValidationError,
+    validate_condition,
+    validate_rule_payload,
+)
 from sena.policy.validation import validate_policy_coverage
 
 
@@ -21,7 +25,12 @@ def test_nested_logical_expression_is_valid() -> None:
         {
             "and": [
                 {"field": "amount", "gte": 100},
-                {"or": [{"field": "risk_score", "gte": 80}, {"not": {"field": "vip", "eq": True}}]},
+                {
+                    "or": [
+                        {"field": "risk_score", "gte": 80},
+                        {"not": {"field": "vip", "eq": True}},
+                    ]
+                },
             ]
         }
     )

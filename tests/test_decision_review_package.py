@@ -22,7 +22,9 @@ def _normalize(package: dict) -> dict:
     normalized["decision_summary"]["decision_timestamp"] = "<timestamp>"
     normalized["audit_identifiers"]["decision_hash"] = "<decision_hash>"
     normalized["audit_identifiers"]["input_fingerprint"] = "<input_fingerprint>"
-    normalized["decision_summary"]["summary"] = re.sub(r"dec_[a-f0-9]+", "<decision_id>", normalized["decision_summary"]["summary"])
+    normalized["decision_summary"]["summary"] = re.sub(
+        r"dec_[a-f0-9]+", "<decision_id>", normalized["decision_summary"]["summary"]
+    )
     return normalized
 
 
@@ -43,14 +45,20 @@ def test_review_package_snapshot_for_blocked_decision() -> None:
             request_id="req-review-block",
             actor_id="actor-1",
             actor_role="finance_analyst",
-            attributes={"amount": 15000, "vendor_verified": False, "requester_role": "finance_analyst"},
+            attributes={
+                "amount": 15000,
+                "vendor_verified": False,
+                "requester_role": "finance_analyst",
+            },
         ),
         facts={},
     )
 
     assert trace.outcome == DecisionOutcome.BLOCKED
     package = build_decision_review_package(trace)
-    assert _normalize(package) == _load_json("tests/fixtures/golden/review_packages/blocked_vendor_payment.json")
+    assert _normalize(package) == _load_json(
+        "tests/fixtures/golden/review_packages/blocked_vendor_payment.json"
+    )
 
 
 def test_review_package_snapshot_for_escalation_decision() -> None:
@@ -68,7 +76,9 @@ def test_review_package_snapshot_for_escalation_decision() -> None:
 
     assert trace.outcome == DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
     package = build_decision_review_package(trace)
-    assert _normalize(package) == _load_json("tests/fixtures/golden/review_packages/escalated_export.json")
+    assert _normalize(package) == _load_json(
+        "tests/fixtures/golden/review_packages/escalated_export.json"
+    )
 
 
 def test_review_package_handles_missing_optional_fields() -> None:

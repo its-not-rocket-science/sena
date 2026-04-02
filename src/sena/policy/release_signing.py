@@ -80,7 +80,12 @@ def _policy_files(policy_dir: Path) -> list[Path]:
     policy_files: list[Path] = []
     for pattern in ("*.yaml", "*.yml", "*.json"):
         for path in sorted(policy_dir.glob(pattern)):
-            if path.name in {"bundle.yaml", "bundle.yml", "bundle.json", "release-manifest.json"}:
+            if path.name in {
+                "bundle.yaml",
+                "bundle.yml",
+                "bundle.json",
+                "release-manifest.json",
+            }:
                 continue
             policy_files.append(path)
     return policy_files
@@ -101,7 +106,9 @@ def generate_release_manifest(
     compatibility_notes: str | None = None,
     migration_notes: str | None = None,
 ) -> BundleReleaseManifest:
-    rules, metadata = load_policy_bundle(policy_dir, bundle_name=bundle_name or "default", version=version or "0")
+    rules, metadata = load_policy_bundle(
+        policy_dir, bundle_name=bundle_name or "default", version=version or "0"
+    )
     if not rules:
         raise BundleSignatureError("policy bundle must include at least one rule")
     files = _policy_files(policy_dir)
@@ -116,7 +123,9 @@ def generate_release_manifest(
         )
         for path in files
     ]
-    aggregate_input = _canonical_json([item.model_dump() for item in file_digests]).encode("utf-8")
+    aggregate_input = _canonical_json(
+        [item.model_dump() for item in file_digests]
+    ).encode("utf-8")
     aggregate_sha256 = hashlib.sha256(aggregate_input).hexdigest()
 
     return BundleReleaseManifest(
@@ -131,7 +140,9 @@ def generate_release_manifest(
     )
 
 
-def sign_release_manifest(manifest: BundleReleaseManifest, *, key_path: Path) -> BundleReleaseManifest:
+def sign_release_manifest(
+    manifest: BundleReleaseManifest, *, key_path: Path
+) -> BundleReleaseManifest:
     if manifest.signer.algorithm != "hmac-sha256":
         raise BundleSignatureError("only hmac-sha256 is supported")
     key = _read_key(key_path)
@@ -152,21 +163,29 @@ def verify_release_manifest(
 ) -> ManifestVerificationResult:
     errors: list[str] = []
     try:
-        manifest = BundleReleaseManifest.model_validate(json.loads(manifest_path.read_text()))
+        manifest = BundleReleaseManifest.model_validate(
+            json.loads(manifest_path.read_text())
+        )
     except (OSError, json.JSONDecodeError, ValidationError) as exc:
-        return ManifestVerificationResult(valid=False, errors=[f"invalid release manifest: {exc}"])
+        return ManifestVerificationResult(
+            valid=False, errors=[f"invalid release manifest: {exc}"]
+        )
 
     # Bundle identity check against runtime bundle metadata.
     try:
         _, metadata = load_policy_bundle(policy_dir)
     except PolicyParseError as exc:
-        return ManifestVerificationResult(valid=False, errors=[f"failed to load policy bundle: {exc}"])
+        return ManifestVerificationResult(
+            valid=False, errors=[f"failed to load policy bundle: {exc}"]
+        )
     if metadata.bundle_name != manifest.bundle_name:
         errors.append(
             f"bundle_name mismatch: manifest={manifest.bundle_name} bundle={metadata.bundle_name}"
         )
     if metadata.version != manifest.version:
-        errors.append(f"version mismatch: manifest={manifest.version} bundle={metadata.version}")
+        errors.append(
+            f"version mismatch: manifest={manifest.version} bundle={metadata.version}"
+        )
 
     digest_rows: list[dict[str, Any]] = []
     for entry in manifest.file_digests:
@@ -179,7 +198,9 @@ def verify_release_manifest(
             errors.append(f"digest mismatch for {entry.path}")
         digest_rows.append(entry.model_dump())
 
-    computed_aggregate = hashlib.sha256(_canonical_json(digest_rows).encode("utf-8")).hexdigest()
+    computed_aggregate = hashlib.sha256(
+        _canonical_json(digest_rows).encode("utf-8")
+    ).hexdigest()
     if computed_aggregate != manifest.aggregate_sha256:
         errors.append("aggregate digest mismatch")
 
@@ -192,10 +213,14 @@ def verify_release_manifest(
         else:
             key_path = keyring_dir / f"{manifest.signer.key_id}.key"
             if not key_path.exists():
-                errors.append(f"trusted key not found for key_id={manifest.signer.key_id}")
+                errors.append(
+                    f"trusted key not found for key_id={manifest.signer.key_id}"
+                )
             else:
                 key = _read_key(key_path)
-                payload = _canonical_json(_manifest_signing_payload(manifest)).encode("utf-8")
+                payload = _canonical_json(_manifest_signing_payload(manifest)).encode(
+                    "utf-8"
+                )
                 expected = hmac.new(key, payload, hashlib.sha256).hexdigest()
                 if not hmac.compare_digest(expected, manifest.signer.signature):
                     errors.append("signature mismatch")

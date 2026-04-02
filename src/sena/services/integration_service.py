@@ -60,7 +60,9 @@ class IntegrationService:
     def decode_json_body(self, raw_body: bytes) -> dict[str, Any]:
         return json.loads(raw_body.decode("utf-8"))
 
-    def handle_jira_event(self, *, headers: dict[str, str], payload: dict[str, Any], raw_body: bytes) -> dict[str, Any]:
+    def handle_jira_event(
+        self, *, headers: dict[str, str], payload: dict[str, Any], raw_body: bytes
+    ) -> dict[str, Any]:
         mapped = self.state.connector_registry.get("jira").handle_event(
             {
                 "headers": headers,
@@ -70,8 +72,14 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
-        event_route = self.state.jira_connector.route_for_event_type(normalized["source_event_type"])
-        if event_route and event_route.policy_bundle and event_route.policy_bundle != self.state.metadata.bundle_name:
+        event_route = self.state.jira_connector.route_for_event_type(
+            normalized["source_event_type"]
+        )
+        if (
+            event_route
+            and event_route.policy_bundle
+            and event_route.policy_bundle != self.state.metadata.bundle_name
+        ):
             raise LookupError(event_route.policy_bundle)
         decision = self.evaluation_service.evaluate(
             proposal=proposal,
@@ -87,7 +95,9 @@ class IntegrationService:
                 decision_id=decision["decision_id"],
                 request_id=proposal.request_id,
                 action_type=proposal.action_type,
-                matched_rule_ids=[item["rule_id"] for item in decision["matched_rules"]],
+                matched_rule_ids=[
+                    item["rule_id"] for item in decision["matched_rules"]
+                ],
                 summary=decision["summary"],
             )
         )
@@ -121,8 +131,14 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
-        event_route = self.state.servicenow_connector.route_for_event_type(normalized["source_event_type"])
-        if event_route and event_route.policy_bundle and event_route.policy_bundle != self.state.metadata.bundle_name:
+        event_route = self.state.servicenow_connector.route_for_event_type(
+            normalized["source_event_type"]
+        )
+        if (
+            event_route
+            and event_route.policy_bundle
+            and event_route.policy_bundle != self.state.metadata.bundle_name
+        ):
             raise LookupError(event_route.policy_bundle)
         decision = self.evaluation_service.evaluate(
             proposal=proposal,
@@ -138,7 +154,9 @@ class IntegrationService:
                 decision_id=decision["decision_id"],
                 request_id=proposal.request_id,
                 action_type=proposal.action_type,
-                matched_rule_ids=[item["rule_id"] for item in decision["matched_rules"]],
+                matched_rule_ids=[
+                    item["rule_id"] for item in decision["matched_rules"]
+                ],
                 summary=decision["summary"],
             )
         )
@@ -157,7 +175,9 @@ class IntegrationService:
         }
 
     def handle_slack_interaction(self, payload_json: str) -> dict[str, Any]:
-        interaction = self.state.connector_registry.get("slack").handle_event(json.loads(payload_json))
+        interaction = self.state.connector_registry.get("slack").handle_event(
+            json.loads(payload_json)
+        )
         return {
             "status": "ok",
             "decision": interaction["decision"],

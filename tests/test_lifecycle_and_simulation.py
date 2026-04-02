@@ -2,7 +2,11 @@ import json
 
 from sena.core.models import PolicyBundleMetadata
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
-from sena.policy.lifecycle import diff_rule_sets, validate_lifecycle_transition, validate_promotion
+from sena.policy.lifecycle import (
+    diff_rule_sets,
+    validate_lifecycle_transition,
+    validate_promotion,
+)
 from sena.policy.parser import load_policy_bundle
 
 
@@ -59,7 +63,9 @@ def test_diff_and_promotion_validation(tmp_path) -> None:
     assert diff.added_rule_ids == ["block_large"]
     assert diff.changed_rule_ids == ["allow_small"]
 
-    promotion = validate_promotion(source_meta.lifecycle, target_meta.lifecycle, source_rules, target_rules)
+    promotion = validate_promotion(
+        source_meta.lifecycle, target_meta.lifecycle, source_rules, target_rules
+    )
     assert promotion.valid is True
 
 
@@ -92,7 +98,11 @@ def test_simulation_impact_changes_are_reported() -> None:
             source_system="servicenow",
             workflow_stage="requested",
             risk_category="change_governance",
-            attributes={"amount": 90000, "vendor_verified": False, "source_system": "servicenow"},
+            attributes={
+                "amount": 90000,
+                "vendor_verified": False,
+                "source_system": "servicenow",
+            },
             facts={},
         ),
     }

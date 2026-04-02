@@ -74,7 +74,9 @@ class NormalizedApprovalEvent(BaseModel):
     source_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-def resolve_path(payload: dict[str, Any], path: str, *, error_cls: type[IntegrationError]) -> Any:
+def resolve_path(
+    payload: dict[str, Any], path: str, *, error_cls: type[IntegrationError]
+) -> Any:
     current: Any = payload
     for part in path.split("."):
         if isinstance(current, dict) and part in current:
@@ -84,7 +86,9 @@ def resolve_path(payload: dict[str, Any], path: str, *, error_cls: type[Integrat
     return current
 
 
-def to_action_proposal(event: NormalizedApprovalEvent, route: ApprovalEventRoute) -> ActionProposal:
+def to_action_proposal(
+    event: NormalizedApprovalEvent, route: ApprovalEventRoute
+) -> ActionProposal:
     attrs = {
         **event.attributes,
         "source_system": event.source_system,
@@ -140,41 +144,62 @@ def build_normalized_approval_event(
     if missing:
         raise error_cls(f"missing required fields: {','.join(missing)}")
 
-    actor_id = str(resolve_path(payload, route.actor_id_path, error_cls=error_cls) or "").strip()
+    actor_id = str(
+        resolve_path(payload, route.actor_id_path, error_cls=error_cls) or ""
+    ).strip()
     if not actor_id:
         raise error_cls("missing actor identity")
 
     actor_role: str | None = None
     if route.actor_role_path:
-        actor_role = str(resolve_path(payload, route.actor_role_path, error_cls=error_cls) or "").strip() or None
+        actor_role = (
+            str(
+                resolve_path(payload, route.actor_role_path, error_cls=error_cls) or ""
+            ).strip()
+            or None
+        )
 
     request_id = default_request_id
     if route.request_id_path:
-        request_id = str(resolve_path(payload, route.request_id_path, error_cls=error_cls))
+        request_id = str(
+            resolve_path(payload, route.request_id_path, error_cls=error_cls)
+        )
 
     source_object_id = default_source_record_id
     if route.source_record_id_path:
-        source_object_id = str(resolve_path(payload, route.source_record_id_path, error_cls=error_cls))
+        source_object_id = str(
+            resolve_path(payload, route.source_record_id_path, error_cls=error_cls)
+        )
 
     source_object_type = route.static_source_object_type or default_source_object_type
     if route.source_object_type_path:
-        source_object_type = str(resolve_path(payload, route.source_object_type_path, error_cls=error_cls))
+        source_object_type = str(
+            resolve_path(payload, route.source_object_type_path, error_cls=error_cls)
+        )
 
     workflow_stage = route.static_workflow_stage or default_workflow_stage
     if route.workflow_stage_path:
-        workflow_stage = str(resolve_path(payload, route.workflow_stage_path, error_cls=error_cls))
+        workflow_stage = str(
+            resolve_path(payload, route.workflow_stage_path, error_cls=error_cls)
+        )
 
     requested_action = route.static_requested_action or default_requested_action
     if route.requested_action_path:
-        requested_action = str(resolve_path(payload, route.requested_action_path, error_cls=error_cls))
+        requested_action = str(
+            resolve_path(payload, route.requested_action_path, error_cls=error_cls)
+        )
 
     correlation_key = default_correlation_key
     if route.correlation_key_path:
-        correlation_key = str(resolve_path(payload, route.correlation_key_path, error_cls=error_cls))
+        correlation_key = str(
+            resolve_path(payload, route.correlation_key_path, error_cls=error_cls)
+        )
 
     event_idempotency_key = idempotency_key
     if route.idempotency_key_path:
-        event_idempotency_key = str(resolve_path(payload, route.idempotency_key_path, error_cls=error_cls))
+        event_idempotency_key = str(
+            resolve_path(payload, route.idempotency_key_path, error_cls=error_cls)
+        )
 
     attrs: dict[str, Any] = {}
     for out_key, in_path in route.attributes.items():
@@ -187,7 +212,9 @@ def build_normalized_approval_event(
 
     evidence_references: list[str] = []
     if route.evidence_references_path:
-        evidence_payload = resolve_path(payload, route.evidence_references_path, error_cls=error_cls)
+        evidence_payload = resolve_path(
+            payload, route.evidence_references_path, error_cls=error_cls
+        )
         if isinstance(evidence_payload, list):
             evidence_references = [str(item) for item in evidence_payload]
         elif evidence_payload:
@@ -201,9 +228,13 @@ def build_normalized_approval_event(
         "correlation_key": correlation_key,
         "idempotency_key": event_idempotency_key,
     }
-    missing_normalized = [key for key, value in required_normalized.items() if not str(value).strip()]
+    missing_normalized = [
+        key for key, value in required_normalized.items() if not str(value).strip()
+    ]
     if missing_normalized:
-        raise error_cls(f"missing required normalized fields: {','.join(missing_normalized)}")
+        raise error_cls(
+            f"missing required normalized fields: {','.join(missing_normalized)}"
+        )
 
     return NormalizedApprovalEvent(
         source_system=source_system,

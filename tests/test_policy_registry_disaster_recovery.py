@@ -27,7 +27,9 @@ def _create_active_registry(db_path, *, version: str = "2026.04.1") -> tuple[str
         lifecycle="draft",
     )
     bundle_id = repo.register_bundle(metadata, rules, created_by="dr-test")
-    repo.transition_bundle(bundle_id, "candidate", promoted_by="dr-test", promotion_reason="candidate")
+    repo.transition_bundle(
+        bundle_id, "candidate", promoted_by="dr-test", promotion_reason="candidate"
+    )
     repo.transition_bundle(
         bundle_id,
         "active",
@@ -65,7 +67,10 @@ def test_restore_valid_backup(tmp_path) -> None:
     assert result.valid is True
     assert result.checks["db_integrity"]["ok"] is True
     assert result.checks["audit_chain"]["valid"] is True
-    assert result.checks["active_bundle_validation"]["bundles_checked"][0]["rules_present"] is True
+    assert (
+        result.checks["active_bundle_validation"]["bundles_checked"][0]["rules_present"]
+        is True
+    )
 
 
 def test_restore_corrupt_backup_fails_integrity_check(tmp_path) -> None:
@@ -84,7 +89,9 @@ def test_restore_fails_when_active_bundle_missing_rules(tmp_path) -> None:
     _, bundle_id = _create_active_registry(source_db)
 
     source_audit = tmp_path / "audit.jsonl"
-    append_audit_record(str(source_audit), {"event": "bundle.promoted", "bundle_id": bundle_id})
+    append_audit_record(
+        str(source_audit), {"event": "bundle.promoted", "bundle_id": bundle_id}
+    )
 
     backup_db = tmp_path / "backup.db"
     artifacts = create_policy_registry_backup(
@@ -111,7 +118,9 @@ def test_restore_fails_when_bundle_metadata_mismatches_rule_content(tmp_path) ->
     _, bundle_id = _create_active_registry(source_db)
 
     source_audit = tmp_path / "audit.jsonl"
-    append_audit_record(str(source_audit), {"event": "bundle.promoted", "bundle_id": bundle_id})
+    append_audit_record(
+        str(source_audit), {"event": "bundle.promoted", "bundle_id": bundle_id}
+    )
 
     backup_db = tmp_path / "backup.db"
     artifacts = create_policy_registry_backup(
@@ -121,13 +130,20 @@ def test_restore_fails_when_bundle_metadata_mismatches_rule_content(tmp_path) ->
     )
 
     with sqlite3.connect(artifacts.backup_db_path) as conn:
-        row = conn.execute("SELECT rule_id, content FROM rules WHERE bundle_id = ? ORDER BY rule_id ASC LIMIT 1", (bundle_id,)).fetchone()
+        row = conn.execute(
+            "SELECT rule_id, content FROM rules WHERE bundle_id = ? ORDER BY rule_id ASC LIMIT 1",
+            (bundle_id,),
+        ).fetchone()
         assert row is not None
         payload = json.loads(row[1])
         payload["reason"] = "tampered after backup"
         conn.execute(
             "UPDATE rules SET content = ? WHERE bundle_id = ? AND rule_id = ?",
-            (json.dumps(payload, sort_keys=True, separators=(",", ":")), bundle_id, row[0]),
+            (
+                json.dumps(payload, sort_keys=True, separators=(",", ":")),
+                bundle_id,
+                row[0],
+            ),
         )
         conn.commit()
 
@@ -140,7 +156,6 @@ def test_restore_fails_when_bundle_metadata_mismatches_rule_content(tmp_path) ->
         )
 
 
-
 def test_restore_fails_when_single_active_bundle_invariant_violated(tmp_path) -> None:
     source_db = tmp_path / "source.db"
     bundle_name, _ = _create_active_registry(source_db, version="1.0.0")
@@ -148,12 +163,19 @@ def test_restore_fails_when_single_active_bundle_invariant_violated(tmp_path) ->
     repo = SQLitePolicyBundleRepository(str(source_db))
     rules, meta = load_policy_bundle("src/sena/examples/policies")
     second_bundle = repo.register_bundle(
-        PolicyBundleMetadata(bundle_name=bundle_name, version="1.1.0", loaded_from=meta.loaded_from, lifecycle="draft"),
+        PolicyBundleMetadata(
+            bundle_name=bundle_name,
+            version="1.1.0",
+            loaded_from=meta.loaded_from,
+            lifecycle="draft",
+        ),
         rules,
     )
 
     source_audit = tmp_path / "audit.jsonl"
-    append_audit_record(str(source_audit), {"event": "bundle.promoted", "bundle_id": second_bundle})
+    append_audit_record(
+        str(source_audit), {"event": "bundle.promoted", "bundle_id": second_bundle}
+    )
 
     backup_db = tmp_path / "backup.db"
     artifacts = create_policy_registry_backup(
@@ -164,7 +186,9 @@ def test_restore_fails_when_single_active_bundle_invariant_violated(tmp_path) ->
 
     with sqlite3.connect(artifacts.backup_db_path) as conn:
         conn.execute("DROP INDEX IF EXISTS idx_bundles_one_active_per_name")
-        conn.execute("UPDATE bundles SET lifecycle = 'active' WHERE id = ?", (second_bundle,))
+        conn.execute(
+            "UPDATE bundles SET lifecycle = 'active' WHERE id = ?", (second_bundle,)
+        )
         conn.commit()
 
     with pytest.raises(DisasterRecoveryError, match="active versions"):

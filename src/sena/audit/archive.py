@@ -38,7 +38,13 @@ def _read_jsonl(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
     return rows, issues
 
 
-def _archive_name(base_name: str, segment_index: int, first_sequence: int | None, last_sequence: int | None, sha256: str) -> str:
+def _archive_name(
+    base_name: str,
+    segment_index: int,
+    first_sequence: int | None,
+    last_sequence: int | None,
+    sha256: str,
+) -> str:
     first = 0 if first_sequence is None else first_sequence
     last = 0 if last_sequence is None else last_sequence
     return (
@@ -47,7 +53,9 @@ def _archive_name(base_name: str, segment_index: int, first_sequence: int | None
     )
 
 
-def create_audit_archive(audit_path: str, archive_dir: str, *, include_active_segment: bool = True) -> dict[str, Any]:
+def create_audit_archive(
+    audit_path: str, archive_dir: str, *, include_active_segment: bool = True
+) -> dict[str, Any]:
     sink = JsonlFileAuditSink(path=audit_path)
     details = sink.load_records_detailed()
     source_manifest = details.get("manifest", {})
@@ -73,7 +81,9 @@ def create_audit_archive(audit_path: str, archive_dir: str, *, include_active_se
         first_chain_hash = rows[0].get("chain_hash") if rows else None
         last_chain_hash = rows[-1].get("chain_hash") if rows else None
 
-        archive_name = _archive_name(base_name, index, first_sequence, last_sequence, sha256)
+        archive_name = _archive_name(
+            base_name, index, first_sequence, last_sequence, sha256
+        )
         archive_path = output_dir / archive_name
         shutil.copy2(source_file, archive_path)
 
@@ -94,7 +104,11 @@ def create_audit_archive(audit_path: str, archive_dir: str, *, include_active_se
             }
         )
 
-    head_hash = details.get("records", [])[-1].get("chain_hash") if details.get("records") else None
+    head_hash = (
+        details.get("records", [])[-1].get("chain_hash")
+        if details.get("records")
+        else None
+    )
     manifest_payload = {
         "schema_version": "1",
         "archive_type": "sena.audit.local.jsonl",
@@ -108,8 +122,14 @@ def create_audit_archive(audit_path: str, archive_dir: str, *, include_active_se
     head_fragment = (head_hash or "empty")[:16]
     manifest_name = f"{base_name}.archive.head-{head_fragment}.manifest.json"
     manifest_path = output_dir / manifest_name
-    manifest_path.write_text(json.dumps(manifest_payload, indent=2, sort_keys=True), encoding="utf-8")
-    return {"manifest_path": str(manifest_path), "segments": len(archived_segments), "head_hash": head_hash}
+    manifest_path.write_text(
+        json.dumps(manifest_payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return {
+        "manifest_path": str(manifest_path),
+        "segments": len(archived_segments),
+        "head_hash": head_hash,
+    }
 
 
 def verify_audit_archive(archive_manifest_path: str) -> dict[str, Any]:
@@ -161,7 +181,11 @@ def verify_audit_archive(archive_manifest_path: str) -> dict[str, Any]:
                 f"archive_chain_link_mismatch:record={idx}:expected_previous={previous_chain_hash}:actual_previous={claimed_previous}"
             )
         sequence = row.get("storage_sequence_number")
-        if isinstance(sequence, int) and previous_sequence is not None and sequence != previous_sequence + 1:
+        if (
+            isinstance(sequence, int)
+            and previous_sequence is not None
+            and sequence != previous_sequence + 1
+        ):
             errors.append(
                 f"archive_sequence_gap:record={idx}:previous={previous_sequence}:current={sequence}"
             )
@@ -190,7 +214,9 @@ def verify_audit_archive(archive_manifest_path: str) -> dict[str, Any]:
     }
 
 
-def restore_audit_archive(archive_manifest_path: str, restore_audit_path: str) -> dict[str, Any]:
+def restore_audit_archive(
+    archive_manifest_path: str, restore_audit_path: str
+) -> dict[str, Any]:
     manifest_path = Path(archive_manifest_path)
     archive = json.loads(manifest_path.read_text(encoding="utf-8"))
     verify = verify_audit_archive(archive_manifest_path)
@@ -202,12 +228,16 @@ def restore_audit_archive(archive_manifest_path: str, restore_audit_path: str) -
 
     segments_meta: list[dict[str, Any]] = []
     source_manifest = archive.get("source_manifest", {})
-    source_segments = source_manifest.get("segments", []) if isinstance(source_manifest, dict) else []
+    source_segments = (
+        source_manifest.get("segments", []) if isinstance(source_manifest, dict) else []
+    )
 
     for idx, segment in enumerate(archive.get("segments", []), start=1):
         src = manifest_path.parent / segment["archived_file"]
         if idx <= len(source_segments):
-            target_name = source_segments[idx - 1].get("file", f"{restore_sink.name}.seg-{idx:06d}.jsonl")
+            target_name = source_segments[idx - 1].get(
+                "file", f"{restore_sink.name}.seg-{idx:06d}.jsonl"
+            )
             segments_meta.append(dict(source_segments[idx - 1], file=target_name))
         else:
             target_name = restore_sink.name
@@ -223,7 +253,9 @@ def restore_audit_archive(archive_manifest_path: str, restore_audit_path: str) -
 
     records = 0
     if archive.get("segments"):
-        records = sum(int(segment.get("record_count", 0)) for segment in archive["segments"])
+        records = sum(
+            int(segment.get("record_count", 0)) for segment in archive["segments"]
+        )
 
     restored_manifest = {
         "schema_version": "1",
@@ -234,4 +266,8 @@ def restore_audit_archive(archive_manifest_path: str, restore_audit_path: str) -
     (restore_sink.parent / f"{restore_sink.name}.manifest.json").write_text(
         json.dumps(restored_manifest, indent=2, sort_keys=True), encoding="utf-8"
     )
-    return {"restored_audit_path": str(restore_sink), "records": records, "head": archive.get("head_hash")}
+    return {
+        "restored_audit_path": str(restore_sink),
+        "records": records,
+        "head": archive.get("head_hash"),
+    }
