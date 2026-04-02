@@ -62,6 +62,7 @@ See implementation details and boundaries in:
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/TECHNICAL_MATURITY_PLAN.md`](docs/TECHNICAL_MATURITY_PLAN.md)
 - [`docs/POLICY_SCHEMA_EVOLUTION.md`](docs/POLICY_SCHEMA_EVOLUTION.md)
+- [`docs/MATURITY_SCORECARD.md`](docs/MATURITY_SCORECARD.md)
 - [`docs/examples/portable_policy_pack_jira_servicenow.md`](docs/examples/portable_policy_pack_jira_servicenow.md) (flagship Jira + ServiceNow portable workflow runbook)
 
 ## Version
