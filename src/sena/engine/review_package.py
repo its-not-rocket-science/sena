@@ -103,6 +103,24 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
             "evaluated": [_serialize_rule(rule) for rule in trace.evaluated_rules],
             "conflicting_rule_ids": list(trace.conflicting_rules),
         },
+        "invariants": {
+            "matched": [
+                {
+                    "invariant_id": invariant.invariant_id,
+                    "matched": invariant.matched,
+                    "reason": invariant.reason,
+                }
+                for invariant in trace.matched_invariants
+            ],
+            "evaluated": [
+                {
+                    "invariant_id": invariant.invariant_id,
+                    "matched": invariant.matched,
+                    "reason": invariant.reason,
+                }
+                for invariant in trace.evaluated_invariants
+            ],
+        },
         "precedence": {
             "explanation": reasoning.precedence_explanation if reasoning else None,
             "outcome_rationale": reasoning.outcome_rationale if reasoning else [],

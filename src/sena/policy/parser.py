@@ -8,13 +8,17 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from sena.core.enums import RuleDecision, Severity
-from sena.core.models import PolicyBundleMetadata, PolicyRule
+from sena.core.models import PolicyBundleMetadata, PolicyInvariant, PolicyRule
 from sena.policy.schema_evolution import (
     VersionRange,
     evaluate_bundle_compatibility,
     normalize_schema_version,
 )
-from sena.policy.validation import PolicyValidationError, validate_rule_payload
+from sena.policy.validation import (
+    PolicyValidationError,
+    validate_invariant_payload,
+    validate_rule_payload,
+)
 
 try:
     import yaml  # type: ignore
@@ -37,6 +41,7 @@ class BundleManifest(BaseModel):
     lifecycle: str = "draft"
     context_schema: dict[str, str] = Field(default_factory=dict)
     runtime_compatibility: dict[str, str] = Field(default_factory=dict)
+    invariants: list[dict[str, Any]] = Field(default_factory=list)
 
     @field_validator("version")
     @classmethod
@@ -169,6 +174,10 @@ def load_policy_bundle(
         integrity_sha256=_bundle_integrity_digest(policy_files),
         policy_file_count=len(policy_files),
         context_schema=manifest.context_schema if manifest else {},
+        invariants=[
+            _parse_invariant_payload(payload)
+            for payload in (manifest.invariants if manifest else [])
+        ],
     )
 
     compatibility = None
@@ -185,3 +194,14 @@ def load_policy_bundle(
         raise PolicyParseError("bundle compatibility check failed: " + "; ".join(compatibility_report.errors))
 
     return all_rules, metadata
+
+
+def _parse_invariant_payload(payload: dict[str, Any]) -> PolicyInvariant:
+    validate_invariant_payload(payload)
+    return PolicyInvariant(
+        id=payload["id"],
+        description=payload["description"],
+        applies_to=list(payload["applies_to"]),
+        condition=dict(payload["condition"]),
+        reason=payload["reason"],
+    )

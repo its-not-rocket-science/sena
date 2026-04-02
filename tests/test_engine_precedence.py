@@ -142,3 +142,25 @@ def test_reasoning_payload_includes_reviewer_and_provenance_fields() -> None:
     assert trace.reasoning.reviewer_guidance
     assert trace.reasoning.provenance["bundle_name"] == metadata.bundle_name
     assert trace.reasoning.provenance["decision_hash"] == trace.decision_hash
+
+
+def test_invariant_violation_blocks_even_when_allow_rule_matches() -> None:
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
+    trace = evaluator.evaluate(
+        ActionProposal(
+            action_type="approve_vendor_payment",
+            actor_id="fin-2",
+            actor_role="finance_director",
+            attributes={
+                "amount": 500,
+                "vendor_verified": True,
+                "impact_scope": "production",
+            },
+        ),
+        {},
+    )
+
+    assert trace.outcome == DecisionOutcome.BLOCKED
+    assert trace.matched_invariants
+    assert "invariant" in trace.reasoning.precedence_explanation.lower()

@@ -133,6 +133,26 @@
       "payment_escalate_high_amount_non_director"
     ]
   },
+  "invariants": {
+    "matched": [],
+    "evaluated": [
+      {
+        "invariant_id": "inv_ai_payment_threshold_requires_human",
+        "matched": false,
+        "reason": null
+      },
+      {
+        "invariant_id": "inv_production_action_requires_human_owner",
+        "matched": false,
+        "reason": null
+      },
+      {
+        "invariant_id": "inv_ai_recommendation_requires_provenance",
+        "matched": false,
+        "reason": null
+      }
+    ]
+  },
   "precedence": {
     "explanation": "One or more inviolable BLOCK rules matched. Inviolable BLOCK has highest precedence and overrides all other matches. Multiple conflicting rules matched; BLOCK takes precedence over ESCALATE and ALLOW.",
     "outcome_rationale": [
@@ -166,7 +186,10 @@
       "requester_role": "finance_analyst"
     },
     "missing_fields": [
-      "ai_metadata.risk_classification.level"
+      "ai_metadata.human_owner",
+      "ai_metadata.originating_model",
+      "ai_metadata.risk_classification.level",
+      "impact_scope"
     ]
   },
   "governance_evidence": {

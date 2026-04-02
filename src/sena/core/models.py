@@ -64,6 +64,23 @@ class PolicyBundleMetadata:
     integrity_sha256: str | None = None
     policy_file_count: int = 0
     context_schema: dict[str, str] = field(default_factory=dict)
+    invariants: list["PolicyInvariant"] = field(default_factory=list)
+
+
+@dataclass
+class PolicyInvariant:
+    id: str
+    description: str
+    applies_to: list[str]
+    condition: dict[str, Any]
+    reason: str
+
+
+@dataclass
+class InvariantEvaluationResult:
+    invariant_id: str
+    matched: bool
+    reason: str | None = None
 
 
 @dataclass
@@ -105,6 +122,7 @@ class DecisionReasoning:
     summary: str
     outcome_rationale: list[str] = field(default_factory=list)
     matched_controls: list[dict[str, Any]] = field(default_factory=list)
+    matched_invariants: list[dict[str, Any]] = field(default_factory=list)
     risk_summary: dict[str, Any] = field(default_factory=dict)
     reviewer_guidance: list[str] = field(default_factory=list)
     provenance: dict[str, Any] = field(default_factory=dict)
@@ -152,6 +170,8 @@ class EvaluationTrace:
     applicable_rules: list[str] = field(default_factory=list)
     evaluated_rules: list[RuleEvaluationResult] = field(default_factory=list)
     matched_rules: list[RuleEvaluationResult] = field(default_factory=list)
+    evaluated_invariants: list[InvariantEvaluationResult] = field(default_factory=list)
+    matched_invariants: list[InvariantEvaluationResult] = field(default_factory=list)
     conflicting_rules: list[str] = field(default_factory=list)
     missing_fields: list[str] = field(default_factory=list)
     context: dict[str, Any] = field(default_factory=dict)

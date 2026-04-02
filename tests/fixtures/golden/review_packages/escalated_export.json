@@ -64,6 +64,21 @@
     ],
     "conflicting_rule_ids": []
   },
+  "invariants": {
+    "matched": [],
+    "evaluated": [
+      {
+        "invariant_id": "inv_production_action_requires_human_owner",
+        "matched": false,
+        "reason": null
+      },
+      {
+        "invariant_id": "inv_ai_recommendation_requires_provenance",
+        "matched": false,
+        "reason": null
+      }
+    ]
+  },
   "precedence": {
     "explanation": "No BLOCK rules matched. One or more ESCALATE rules matched, so manual review is required before execution.",
     "outcome_rationale": [
@@ -98,6 +113,9 @@
       "dpo_approved": false
     },
     "missing_fields": [
+      "ai_metadata.human_owner",
+      "ai_metadata.originating_model",
+      "impact_scope",
       "legal_basis"
     ]
   },
