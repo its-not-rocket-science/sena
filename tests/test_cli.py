@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 
 def _run_cli(args: list[str], extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -586,3 +587,82 @@ def test_registry_backup_restore_and_verify_commands(tmp_path) -> None:
     verify_payload = json.loads(verify.stdout)
     assert verify_payload["status"] == "ok"
     assert verify_payload["checks"]["db_integrity"]["ok"] is True
+
+
+def test_audit_archive_verify_restore_workflow(tmp_path) -> None:
+    from sena.audit.chain import append_audit_record
+    from sena.audit.sinks import JsonlFileAuditSink, RotationPolicy
+
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    for i in range(5):
+        append_audit_record(sink, {"decision_id": f"dec-{i}", "outcome": "APPROVED"})
+
+    archive = _run_cli(
+        [
+            "audit",
+            "--audit-path",
+            str(tmp_path / "audit.jsonl"),
+            "archive",
+            "--archive-dir",
+            str(tmp_path / "archive"),
+        ]
+    )
+    archive.check_returncode()
+    archive_payload = json.loads(archive.stdout)
+    assert archive_payload["segments"] >= 2
+
+    verify_archive = _run_cli(
+        [
+            "audit",
+            "--audit-path",
+            str(tmp_path / "audit.jsonl"),
+            "verify-archive",
+            "--archive-manifest",
+            archive_payload["manifest_path"],
+        ]
+    )
+    verify_archive.check_returncode()
+    assert json.loads(verify_archive.stdout)["valid"] is True
+
+    restore = _run_cli(
+        [
+            "audit",
+            "--audit-path",
+            str(tmp_path / "audit.jsonl"),
+            "restore-archive",
+            "--archive-manifest",
+            archive_payload["manifest_path"],
+            "--restore-audit-path",
+            str(tmp_path / "restore" / "audit.jsonl"),
+            "--verify-after-restore",
+        ]
+    )
+    restore.check_returncode()
+    assert json.loads(restore.stdout)["verify"]["valid"] is True
+
+
+def test_audit_verify_archive_reports_missing_segment(tmp_path) -> None:
+    from sena.audit.archive import create_audit_archive
+    from sena.audit.chain import append_audit_record
+    from sena.audit.sinks import JsonlFileAuditSink, RotationPolicy
+
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    for i in range(4):
+        append_audit_record(sink, {"decision_id": f"dec-{i}", "outcome": "APPROVED"})
+    archive = create_audit_archive(str(tmp_path / "audit.jsonl"), str(tmp_path / "archive"))
+    manifest = json.loads((tmp_path / "archive" / Path(archive["manifest_path"]).name).read_text())
+    (tmp_path / "archive" / manifest["segments"][0]["archived_file"]).unlink()
+
+    verify_archive = _run_cli(
+        [
+            "audit",
+            "--audit-path",
+            str(tmp_path / "audit.jsonl"),
+            "verify-archive",
+            "--archive-manifest",
+            archive["manifest_path"],
+        ]
+    )
+    assert verify_archive.returncode != 0
+    payload = json.loads(verify_archive.stdout)
+    assert any("missing_archive_segment" in error for error in payload["errors"])

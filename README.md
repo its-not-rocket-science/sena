@@ -123,6 +123,9 @@ Key endpoints:
 - `POST /v1/integrations/servicenow/webhook`
 - `GET /v1/audit/verify`
 
+Operational audit durability guidance (local sink + archive/restore drills):
+- `docs/AUDIT_DURABILITY.md`
+
 Experimental endpoints:
 - `POST /v1/integrations/webhook`
 - `POST /v1/integrations/slack/interactions`

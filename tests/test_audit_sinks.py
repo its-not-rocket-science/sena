@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import threading
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
 from sena.audit.chain import append_audit_record, verify_audit_chain
+from sena.audit.archive import create_audit_archive, restore_audit_archive, verify_audit_archive
 from sena.audit.sinks import (
     AuditSinkError,
     JsonlFileAuditSink,
@@ -169,3 +171,75 @@ def test_rotation_manifest_contains_archive_metadata(tmp_path) -> None:
     first_segment = manifest["segments"][0]
     assert first_segment["archive"]["archive_status"] == "local_rotated"
     assert first_segment["archive"]["archive_class"] == "warm"
+
+
+def test_archived_chain_verifies_across_rotated_segments(tmp_path) -> None:
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    for i in range(6):
+        append_audit_record(sink, {"decision_id": f"d{i}", "outcome": "APPROVED"})
+
+    archive_result = create_audit_archive(str(tmp_path / "audit.jsonl"), str(tmp_path / "archive"))
+    verify_result = verify_audit_archive(archive_result["manifest_path"])
+    assert verify_result["valid"] is True
+    assert verify_result["segments"] >= 2
+
+
+def test_archived_chain_detects_truncated_segment(tmp_path) -> None:
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    for i in range(5):
+        append_audit_record(sink, {"decision_id": f"d{i}", "outcome": "APPROVED"})
+
+    archive_result = create_audit_archive(str(tmp_path / "audit.jsonl"), str(tmp_path / "archive"))
+    manifest = json.loads(Path(archive_result["manifest_path"]).read_text())
+    first_segment = tmp_path / "archive" / manifest["segments"][0]["archived_file"]
+    first_segment.write_text(first_segment.read_text()[:-20], encoding="utf-8")
+
+    verify_result = verify_audit_archive(archive_result["manifest_path"])
+    assert verify_result["valid"] is False
+    assert any("archive_checksum_mismatch" in error for error in verify_result["errors"])
+
+
+def test_archived_chain_detects_modified_historical_entry(tmp_path) -> None:
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    for i in range(5):
+        append_audit_record(sink, {"decision_id": f"d{i}", "outcome": "APPROVED"})
+
+    archive_result = create_audit_archive(str(tmp_path / "audit.jsonl"), str(tmp_path / "archive"))
+    manifest = json.loads(Path(archive_result["manifest_path"]).read_text())
+    first_segment_path = tmp_path / "archive" / manifest["segments"][0]["archived_file"]
+    segment_lines = first_segment_path.read_text(encoding="utf-8").splitlines()
+    tampered = json.loads(segment_lines[0])
+    tampered["outcome"] = "BLOCKED"
+    segment_lines[0] = json.dumps(tampered, sort_keys=True, separators=(",", ":"))
+    first_segment_path.write_text("\n".join(segment_lines) + "\n", encoding="utf-8")
+
+    verify_result = verify_audit_archive(archive_result["manifest_path"])
+    assert verify_result["valid"] is False
+    assert any("archive_checksum_mismatch" in error for error in verify_result["errors"])
+
+
+def test_restore_archive_reverifies_cleanly(tmp_path) -> None:
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    for i in range(5):
+        append_audit_record(sink, {"decision_id": f"d{i}", "outcome": "APPROVED"})
+
+    archive_result = create_audit_archive(str(tmp_path / "audit.jsonl"), str(tmp_path / "archive"))
+    restore_audit_archive(archive_result["manifest_path"], str(tmp_path / "restore" / "audit.jsonl"))
+
+    restored_verify = verify_audit_chain(str(tmp_path / "restore" / "audit.jsonl"))
+    assert restored_verify["valid"] is True
+
+
+def test_archived_chain_detects_missing_segment(tmp_path) -> None:
+    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    for i in range(5):
+        append_audit_record(sink, {"decision_id": f"d{i}", "outcome": "APPROVED"})
+
+    archive_result = create_audit_archive(str(tmp_path / "audit.jsonl"), str(tmp_path / "archive"))
+    manifest = json.loads(Path(archive_result["manifest_path"]).read_text())
+    missing_segment = tmp_path / "archive" / manifest["segments"][0]["archived_file"]
+    missing_segment.unlink()
+
+    verify_result = verify_audit_archive(archive_result["manifest_path"])
+    assert verify_result["valid"] is False
+    assert any("missing_archive_segment" in error for error in verify_result["errors"])

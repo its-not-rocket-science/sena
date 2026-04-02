@@ -2,6 +2,8 @@
 
 This document describes what SENA's built-in local-file audit subsystem **does** and **does not** guarantee.
 
+For archive packaging, checksum manifests, and restore drill workflow, see `docs/AUDIT_DURABILITY.md`.
+
 ## What SENA now guarantees (local node scope)
 
 When `SENA_AUDIT_SINK_JSONL` is configured to a local path:
