@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, Callable
+
 from sena import __version__ as SENA_VERSION
 from sena.audit.chain import verify_audit_chain
 from sena.api.config import ApiSettings, load_settings_from_env
@@ -24,34 +26,44 @@ except ModuleNotFoundError:  # pragma: no cover
     FastAPI = None  # type: ignore
 
 
-def create_app(settings: ApiSettings | None = None):
+def _validate_runtime_limits(settings: ApiSettings) -> None:
+    if settings.request_max_bytes <= 0:
+        raise RuntimeError("SENA_REQUEST_MAX_BYTES must be greater than 0")
+    if settings.request_timeout_seconds <= 0:
+        raise RuntimeError("SENA_REQUEST_TIMEOUT_SECONDS must be greater than 0")
+
+
+def initialize_runtime(settings: ApiSettings):
+    """Validate settings and build runtime dependencies.
+
+    This keeps runtime initialization explicit and testable, while allowing
+    app object construction to remain separate.
+    """
+    configure_logging(settings.log_level)
+    validate_startup_settings(settings)
+    _validate_runtime_limits(settings)
+
+    rules, metadata, policy_repo = load_runtime_bundle(settings)
+    if settings.audit_verify_on_startup_strict and settings.audit_sink_jsonl:
+        verification = verify_audit_chain(settings.audit_sink_jsonl)
+        if not verification.get("valid", False):
+            detail = "; ".join(verification.get("errors", [])) or verification.get("error", "unknown error")
+            raise RuntimeError(f"Startup audit verification failed for {settings.audit_sink_jsonl}: {detail}")
+
+    return build_runtime_state(settings, rules, metadata, policy_repo)
+
+
+def build_app(state):
     if FastAPI is None:
         raise RuntimeError("FastAPI is not installed. Install optional API dependencies first.")
 
-    runtime_settings = settings or load_settings_from_env()
-    configure_logging(runtime_settings.log_level)
-    validate_startup_settings(runtime_settings)
-
-    if runtime_settings.request_max_bytes <= 0:
-        raise RuntimeError("SENA_REQUEST_MAX_BYTES must be greater than 0")
-    if runtime_settings.request_timeout_seconds <= 0:
-        raise RuntimeError("SENA_REQUEST_TIMEOUT_SECONDS must be greater than 0")
-
-    rules, metadata, policy_repo = load_runtime_bundle(runtime_settings)
-    if runtime_settings.audit_verify_on_startup_strict and runtime_settings.audit_sink_jsonl:
-        verification = verify_audit_chain(runtime_settings.audit_sink_jsonl)
-        if not verification.get("valid", False):
-            detail = "; ".join(verification.get("errors", [])) or verification.get("error", "unknown error")
-            raise RuntimeError(f"Startup audit verification failed for {runtime_settings.audit_sink_jsonl}: {detail}")
-
     app = FastAPI(title="SENA Compliance Engine API", version=SENA_VERSION)
-    state = build_runtime_state(runtime_settings, rules, metadata, policy_repo)
     app.state.engine_state = state
 
-    api_key_roles = build_api_key_roles(runtime_settings)
+    api_key_roles = build_api_key_roles(state.settings)
     rate_limiter = FixedWindowRateLimiter(
-        max_requests=runtime_settings.rate_limit_requests,
-        window_seconds=runtime_settings.rate_limit_window_seconds,
+        max_requests=state.settings.rate_limit_requests,
+        window_seconds=state.settings.rate_limit_window_seconds,
     )
     register_request_middleware(
         app,
@@ -86,7 +98,7 @@ def create_app(settings: ApiSettings | None = None):
         "Unversioned API routes are deprecated and removed. "
         "Use versioned /v1 routes."
     )
-    deprecation_doc_url = "https://github.com/openai/sena#api-versioning-policy"
+    deprecation_doc_url = "https://github.com/its-not-rocket-science/sena#api-versioning-policy"
 
     def _deprecated_unversioned_response(versioned_path: str) -> JSONResponse:
         response = JSONResponse(
@@ -117,4 +129,30 @@ def create_app(settings: ApiSettings | None = None):
     return app
 
 
-app = create_app() if FastAPI is not None else None
+def create_app(settings: ApiSettings | None = None):
+    runtime_settings = settings or load_settings_from_env()
+    state = initialize_runtime(runtime_settings)
+    return build_app(state)
+
+
+class _LazyASGIApp:
+    """ASGI wrapper that defers create_app() until first call.
+
+    Keeps module import lightweight for tests and tooling.
+    """
+
+    def __init__(self, factory: Callable[[], Any]):
+        self._factory = factory
+        self._app: Any | None = None
+
+    def _get_app(self):
+        if self._app is None:
+            self._app = self._factory()
+        return self._app
+
+    async def __call__(self, scope, receive, send) -> None:
+        app = self._get_app()
+        await app(scope, receive, send)
+
+
+app = _LazyASGIApp(create_app) if FastAPI is not None else None
