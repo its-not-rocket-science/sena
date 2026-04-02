@@ -56,3 +56,14 @@ Not yet built-in:
 - replicated/WORM-native audit persistence,
 - asynchronous large simulation jobs,
 - policy authoring UI.
+
+## API app/runtime boundary
+
+`src/sena/api/app.py` now separates app-object assembly from runtime initialization:
+
+- `build_app(state)` wires routes, middleware, and handlers using an already-built runtime state.
+- `initialize_runtime(settings)` performs startup validation and dependency loading (policy bundle, audit-chain verification, connectors).
+- `create_app(settings=None)` remains the public app factory and composes both steps.
+- Module-level `app` is now a lightweight lazy ASGI wrapper that defers `create_app()` until first ASGI invocation (for example, server startup), so importing `sena.api.app` no longer eagerly loads environment settings or policy bundles.
+
+This keeps startup failures explicit (raised when runtime is initialized) while making module import and app-factory testing lighter and more deterministic.
