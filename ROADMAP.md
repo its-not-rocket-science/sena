@@ -1,67 +1,42 @@
-# SENA Roadmap (Compliance Engine Focus)
+# SENA Roadmap (Alpha → Pilot-Ready)
 
-## Positioning
+## Product narrative anchor
 
-SENA is focused on a single wedge: **deterministic policy enforcement for AI-assisted enterprise approval workflows**.
+SENA’s primary wedge is **deterministic policy decisioning for AI-assisted approval workflows, with Jira + ServiceNow as the supported integration pair**.
 
-This roadmap reflects the current alpha scope. It does not assume formal verification, robotics safety scope, or broad AGI-safety claims.
+## Current state (April 2, 2026)
 
----
+- Stage: **Alpha**
+- Supported integrations: Jira + ServiceNow
+- Experimental integrations: generic webhook + Slack interactions
+- Focus: deterministic evaluation, release evidence, and normalized cross-system policy portability
 
-## Current phase (April 2026)
+## Top 3 roadmap priorities
 
-**Phase: Alpha Product Validation**
+### 1) Productize Jira + ServiceNow depth
+- Expand fixture packs and mapping validation for realistic partner workflows.
+- Improve failure-mode coverage for unsupported events, missing required fields, and duplicate deliveries.
+- Publish tighter design-partner runbooks for onboarding and operations.
 
-Delivered:
-- Structured policy models and validation
-- Safe interpreted policy DSL (no dynamic code execution in supported path)
-- Deterministic precedence-based evaluator
-- CLI and FastAPI endpoints
-- Auditable decision traces and bundle metadata
+### 2) Make policy promotion governance enforceable
+- Require simulation-backed gates for candidate→active promotion.
+- Standardize promotion evidence artifacts (diff, simulation deltas, provenance).
+- Add explicit break-glass behavior with auditable annotations.
 
----
+### 3) Reach pilot-ready operational baseline
+- Harden persistence and migration reliability for bundle lifecycle state.
+- Add repeatable audit-chain recovery and verification drills.
+- Improve deployment/observability guidance for controlled pilot environments.
 
-## Phase 1 — Design Partner Readiness (next)
+## Explicit non-goals (this phase)
 
-- Harden policy bundle management conventions
-- Deepen Jira + ServiceNow normalized approval adapters
-- Extend audit record export (JSONL/webhook)
-- Add policy simulation tooling for rule-change testing
+- Building a broad connector marketplace before Jira + ServiceNow depth goals are met.
+- Positioning SENA as a generalized AI safety platform.
+- Claiming formal verification guarantees.
+- Shipping a full enterprise control plane (multi-tenant OIDC/RBAC admin UX) in this alpha cycle.
 
-Success criteria:
-- 2–3 design-partner workflows runnable end-to-end
-- Repeatable policy pack setup for payments/refunds/data export
+## Exit criteria to call SENA “pilot-ready”
 
----
-
-## Phase 2 — Operational Controls
-
-- Role-based policy administration model
-- Policy release workflow (draft/stage/prod)
-- Tamper-evident decision log options
-- Deployment hardening guidance (container + observability baseline)
-
-Success criteria:
-- Compliance team can manage policy lifecycle with engineering support
-- Ops team can monitor decision quality and escalation volume
-
----
-
-## Phase 3 — Broader Workflow Coverage
-
-- Additional workflow packs only after Jira + ServiceNow design-partner depth targets are met
-- More robust schema support and payload contracts
-- Connector ecosystem expansion remains explicitly deferred
-
-Success criteria:
-- Multiple high-risk workflows covered by deterministic policy checks
-
----
-
-## Out of scope (for now)
-
-- Robotics safety platform
-- General-purpose AI orchestration framework
-- Formal verification guarantees
-- Benchmark claims not backed by repeatable artifacts
-- Broad connector marketplace before depth goals are met
+- 2–3 design-partner workflows on Jira/ServiceNow are repeatable with documented runbooks.
+- Promotions to active policy bundles are gated by deterministic evidence.
+- Operational recovery drills (audit verification + persistence restore) pass in CI and docs runbooks.
