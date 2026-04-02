@@ -1,0 +1,34 @@
+routes:
+  jira:issue_updated:
+    action_type: approve_change_request
+    actor_id_path: user.accountId
+    request_id_path: issue.key
+    source_record_id_path: issue.id
+    static_source_object_type: jira_issue
+    static_workflow_stage: pending_cab
+    static_requested_action: approve_change_request
+    correlation_key_path: issue.key
+    required_fields:
+      - issue.id
+      - issue.key
+      - user.accountId
+      - issue.fields.customfield_risk_score
+      - issue.fields.customfield_environment
+      - issue.fields.customfield_cab_review_evidence_id
+    attributes:
+      risk_score: issue.fields.customfield_risk_score
+      privileged_change: issue.fields.customfield_privileged_change
+      emergency_change: issue.fields.customfield_emergency_change
+      environment: issue.fields.customfield_environment
+      service_tier: issue.fields.customfield_service_tier
+      cab_review_evidence_id: issue.fields.customfield_cab_review_evidence_id
+      approver_chain: issue.fields.customfield_approver_chain
+    risk_attributes:
+      risk_score: issue.fields.customfield_risk_score
+      privileged_change: issue.fields.customfield_privileged_change
+      emergency_change: issue.fields.customfield_emergency_change
+      environment: issue.fields.customfield_environment
+    evidence_references_path: issue.fields.customfield_cab_review_evidence_id
+    policy_bundle: acme-change-governance
+outbound:
+  mode: both

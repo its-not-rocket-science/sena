@@ -15,6 +15,7 @@ from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.integrations.base import DecisionPayload
+from sena.integrations.jira import AllowAllJiraWebhookVerifier, JiraConnector, load_jira_mapping_config
 from sena.integrations.servicenow import ServiceNowConnector, load_servicenow_mapping_config
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import load_policy_bundle
@@ -124,13 +125,23 @@ def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool =
         },
     )
 
-    connector = ServiceNowConnector(config=load_servicenow_mapping_config(str(integration_dir / "servicenow_mapping.yaml")))
+    connectors = {
+        "servicenow": ServiceNowConnector(config=load_servicenow_mapping_config(str(integration_dir / "servicenow_mapping.yaml"))),
+        "jira": JiraConnector(
+            config=load_jira_mapping_config(str(integration_dir / "jira_mapping.yaml")),
+            verifier=AllowAllJiraWebhookVerifier(),
+        ),
+    }
     evaluator = PolicyEvaluator(active_rules, policy_bundle=active_meta)
     audit_sink = JsonlFileAuditSink(path=str(artifacts_dir / "audit" / "audit.jsonl"), append_only=True, rotation=RotationPolicy(max_file_bytes=1024 * 1024))
 
     traces: list[dict[str, Any]] = []
     integration_examples: list[dict[str, Any]] = []
-    for fixture in sorted(fixtures_dir.glob("servicenow_event_*.json")):
+    for fixture in sorted(fixtures_dir.glob("*_event_*.json")):
+        source_system = fixture.name.split("_event_", 1)[0]
+        connector = connectors.get(source_system)
+        if connector is None:
+            continue
         event = load_json(fixture)
         event["raw_body"] = b""
         transformed = connector.handle_event(event)
@@ -158,7 +169,12 @@ def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool =
         review_path = review_dir / f"{trace.request_id or trace.decision_id}.json"
         write_json(review_path, build_decision_review_package(trace))
 
-        integration_payload = {"fixture": fixture.name, "normalized_event": transformed["normalized_event"], "decision_delivery": delivery}
+        integration_payload = {
+            "fixture": fixture.name,
+            "source_system": source_system,
+            "normalized_event": transformed["normalized_event"],
+            "decision_delivery": delivery,
+        }
         integration_examples.append(integration_payload)
         write_json(integration_examples_dir / f"{fixture.stem}.json", integration_payload)
 
@@ -190,6 +206,7 @@ def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool =
                 "- evaluation_traces/*.json",
                 "- audit_verification.json",
                 "- integration_examples/*.json",
+                "- flagship workflow examples for Jira + ServiceNow",
                 "- review_packages/*.json",
                 "- runtime_metadata.json",
                 "",

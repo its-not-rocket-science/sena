@@ -1,0 +1,30 @@
+{
+  "webhookEvent": "jira:issue_updated",
+  "timestamp": 1711982060,
+  "issue": {
+    "id": "10092",
+    "key": "CHG-902",
+    "fields": {
+      "customfield_risk_score": 32,
+      "customfield_environment": "staging",
+      "customfield_emergency_change": false,
+      "customfield_privileged_change": false,
+      "customfield_cab_review_evidence_id": "CAB-44521",
+      "customfield_service_tier": "tier2",
+      "customfield_approver_chain": [
+        "ops_manager"
+      ]
+    }
+  },
+  "user": {
+    "accountId": "acct-risk-8"
+  },
+  "changelog": {
+    "items": [
+      {
+        "field": "status",
+        "toString": "Pending CAB"
+      }
+    ]
+  }
+}

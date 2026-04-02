@@ -1,0 +1,33 @@
+{
+  "headers": {
+    "x-atlassian-webhook-identifier": "jira-ref-1"
+  },
+  "payload": {
+    "webhookEvent": "jira:issue_updated",
+    "timestamp": 1711982000,
+    "issue": {
+      "id": "10091",
+      "key": "CHG-901",
+      "fields": {
+        "customfield_risk_score": 96,
+        "customfield_environment": "production",
+        "customfield_emergency_change": true,
+        "customfield_privileged_change": true,
+        "customfield_cab_review_evidence_id": "CAB-NOT-ATTACHED",
+        "customfield_service_tier": "tier0",
+        "customfield_approver_chain": null
+      }
+    },
+    "user": {
+      "accountId": "acct-risk-7"
+    },
+    "changelog": {
+      "items": [
+        {
+          "field": "status",
+          "toString": "Pending CAB"
+        }
+      ]
+    }
+  }
+}
