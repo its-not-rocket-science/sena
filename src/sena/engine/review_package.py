@@ -24,7 +24,9 @@ def _normalize_source_references(trace: EvaluationTrace) -> list[dict[str, Any]]
     if trace.audit_record is None:
         return []
 
-    source_system = str(trace.audit_record.source_metadata.get("source_system") or "unknown")
+    source_system = str(
+        trace.audit_record.source_metadata.get("source_system") or "unknown"
+    )
     references: list[dict[str, Any]] = []
 
     for key in sorted(trace.audit_record.source_metadata.keys()):
@@ -66,7 +68,9 @@ def _normalize_source_references(trace: EvaluationTrace) -> list[dict[str, Any]]
 
 def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
     reasoning = trace.reasoning
-    package_generated_at = (trace.decision_timestamp or datetime.now(timezone.utc)).isoformat()
+    package_generated_at = (
+        trace.decision_timestamp or datetime.now(timezone.utc)
+    ).isoformat()
     applicable_rule_set = set(trace.applicable_rules)
     missing_evidence_by_rule = {
         rule.rule_id: list(rule.missing_evidence)
@@ -91,7 +95,9 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
             "outcome": trace.outcome.value,
             "action_type": trace.action_type,
             "summary": trace.summary,
-            "decision_timestamp": trace.decision_timestamp.isoformat() if trace.decision_timestamp else None,
+            "decision_timestamp": trace.decision_timestamp.isoformat()
+            if trace.decision_timestamp
+            else None,
         },
         "rules": {
             "matched": [_serialize_rule(rule) for rule in trace.matched_rules],
@@ -134,7 +140,9 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
             },
             "actor": {
                 "actor_id": trace.audit_record.actor_id if trace.audit_record else None,
-                "actor_role": trace.audit_record.actor_role if trace.audit_record else None,
+                "actor_role": trace.audit_record.actor_role
+                if trace.audit_record
+                else None,
             },
             "facts": trace.context,
             "missing_fields": list(trace.missing_fields),
@@ -144,20 +152,34 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
             "missing_evidence_by_rule": missing_evidence_by_rule,
         },
         "policy_bundle_metadata": {
-            "bundle_name": trace.policy_bundle.bundle_name if trace.policy_bundle else None,
+            "bundle_name": trace.policy_bundle.bundle_name
+            if trace.policy_bundle
+            else None,
             "version": trace.policy_bundle.version if trace.policy_bundle else None,
             "lifecycle": trace.policy_bundle.lifecycle if trace.policy_bundle else None,
-            "schema_version": trace.policy_bundle.schema_version if trace.policy_bundle else None,
-            "integrity_sha256": trace.policy_bundle.integrity_sha256 if trace.policy_bundle else None,
-            "loaded_from": trace.policy_bundle.loaded_from if trace.policy_bundle else None,
+            "schema_version": trace.policy_bundle.schema_version
+            if trace.policy_bundle
+            else None,
+            "integrity_sha256": trace.policy_bundle.integrity_sha256
+            if trace.policy_bundle
+            else None,
+            "loaded_from": trace.policy_bundle.loaded_from
+            if trace.policy_bundle
+            else None,
         },
         "audit_identifiers": {
             "request_id": trace.request_id,
             "decision_hash": trace.decision_hash,
-            "input_fingerprint": trace.audit_record.input_fingerprint if trace.audit_record else None,
+            "input_fingerprint": trace.audit_record.input_fingerprint
+            if trace.audit_record
+            else None,
             "chain_hash": trace.audit_record.chain_hash if trace.audit_record else None,
-            "previous_chain_hash": trace.audit_record.previous_chain_hash if trace.audit_record else None,
-            "storage_sequence_number": trace.audit_record.storage_sequence_number if trace.audit_record else None,
+            "previous_chain_hash": trace.audit_record.previous_chain_hash
+            if trace.audit_record
+            else None,
+            "storage_sequence_number": trace.audit_record.storage_sequence_number
+            if trace.audit_record
+            else None,
         },
         "normalized_source_system_references": _normalize_source_references(trace),
     }

@@ -140,12 +140,16 @@ def evaluate_bundle_compatibility(
         )
 
     if compatibility:
-        if compatibility.min_inclusive and _is_version_less(runtime_version, compatibility.min_inclusive):
+        if compatibility.min_inclusive and _is_version_less(
+            runtime_version, compatibility.min_inclusive
+        ):
             errors.append(
                 f"runtime version {runtime_version} is below manifest minimum "
                 f"{compatibility.min_inclusive}"
             )
-        if compatibility.max_inclusive and _is_version_greater(runtime_version, compatibility.max_inclusive):
+        if compatibility.max_inclusive and _is_version_greater(
+            runtime_version, compatibility.max_inclusive
+        ):
             errors.append(
                 f"runtime version {runtime_version} is above manifest maximum "
                 f"{compatibility.max_inclusive}"
@@ -161,7 +165,11 @@ def migrate_bundle(
     dry_run: bool = False,
 ) -> BundleMigrationResult:
     manifest_path = next(
-        (policy_dir / name for name in ("bundle.yaml", "bundle.yml", "bundle.json") if (policy_dir / name).exists()),
+        (
+            policy_dir / name
+            for name in ("bundle.yaml", "bundle.yml", "bundle.json")
+            if (policy_dir / name).exists()
+        ),
         None,
     )
     if manifest_path is None:
@@ -220,7 +228,12 @@ def migrate_bundle(
 
         for pattern in ("*.yaml", "*.yml", "*.json"):
             for rule_file in sorted(policy_dir.glob(pattern)):
-                if rule_file.name in {"bundle.yaml", "bundle.yml", "bundle.json", "release-manifest.json"}:
+                if rule_file.name in {
+                    "bundle.yaml",
+                    "bundle.yml",
+                    "bundle.json",
+                    "release-manifest.json",
+                }:
                     continue
                 payload = _read_mapping(rule_file)
                 if not isinstance(payload, list):
@@ -260,7 +273,9 @@ def migrate_bundle(
         changes=changes,
         warnings=warnings,
     )
-    return BundleMigrationResult(report=report, applied=(not dry_run and bool(changed_files)))
+    return BundleMigrationResult(
+        report=report, applied=(not dry_run and bool(changed_files))
+    )
 
 
 def format_migration_report(result: BundleMigrationResult) -> dict[str, Any]:

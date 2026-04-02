@@ -29,7 +29,9 @@ def test_manifest_sign_and_verify_success(tmp_path) -> None:
     manifest_path = policy_dir / "release-manifest.json"
     write_release_manifest(signed, manifest_path)
 
-    result = verify_release_manifest(policy_dir, manifest_path=manifest_path, keyring_dir=keyring, strict=True)
+    result = verify_release_manifest(
+        policy_dir, manifest_path=manifest_path, keyring_dir=keyring, strict=True
+    )
     assert result.valid
     assert result.errors == []
 
@@ -52,7 +54,9 @@ def test_manifest_verify_fails_when_file_is_tampered(tmp_path) -> None:
 
     (policy_dir / "rules.yaml").write_text("[]")
 
-    result = verify_release_manifest(policy_dir, manifest_path=manifest_path, keyring_dir=keyring, strict=True)
+    result = verify_release_manifest(
+        policy_dir, manifest_path=manifest_path, keyring_dir=keyring, strict=True
+    )
     assert not result.valid
     assert any("digest mismatch" in err for err in result.errors)
 
@@ -77,7 +81,9 @@ def test_manifest_verify_fails_when_manifest_is_tampered(tmp_path) -> None:
     payload["aggregate_sha256"] = "bad"
     manifest_path.write_text(json.dumps(payload))
 
-    result = verify_release_manifest(policy_dir, manifest_path=manifest_path, keyring_dir=keyring, strict=True)
+    result = verify_release_manifest(
+        policy_dir, manifest_path=manifest_path, keyring_dir=keyring, strict=True
+    )
     assert not result.valid
     assert any("aggregate digest mismatch" in err for err in result.errors)
 
@@ -109,8 +115,12 @@ def test_verify_relaxed_mode_allows_missing_signature(tmp_path) -> None:
     manifest_path = policy_dir / "release-manifest.json"
     write_release_manifest(manifest, manifest_path)
 
-    relaxed = verify_release_manifest(policy_dir, manifest_path=manifest_path, keyring_dir=None, strict=False)
-    strict = verify_release_manifest(policy_dir, manifest_path=manifest_path, keyring_dir=None, strict=True)
+    relaxed = verify_release_manifest(
+        policy_dir, manifest_path=manifest_path, keyring_dir=None, strict=False
+    )
+    strict = verify_release_manifest(
+        policy_dir, manifest_path=manifest_path, keyring_dir=None, strict=True
+    )
 
     assert relaxed.valid
     assert not strict.valid

@@ -96,6 +96,16 @@ pip install -e .[api,dev]
 pytest
 ```
 
+## Local quality checks
+
+```bash
+ruff format --check src/sena tests --exclude src/sena/legacy
+ruff check src/sena tests
+pytest
+```
+
+See `CONTRIBUTING.md` for contributor workflow and local quality guidance.
+
 ## Failure-mode coverage matrix
 
 | Area | Coverage status | Details |

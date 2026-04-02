@@ -139,7 +139,11 @@ class SQLiteMigrationManager:
         applied_records = applied or self.applied_records(conn)
         discovered_by_version = {migration.version: migration for migration in known}
 
-        unknown_applied = sorted(version for version in applied_records if version not in discovered_by_version)
+        unknown_applied = sorted(
+            version
+            for version in applied_records
+            if version not in discovered_by_version
+        )
         if unknown_applied:
             raise MigrationHistoryError(
                 f"database has applied migration versions not present on disk: {unknown_applied}"
@@ -182,7 +186,8 @@ class SQLiteMigrationManager:
         pending = [
             migration
             for migration in migrations
-            if migration.version > initial_version and migration.version <= resolved_target
+            if migration.version > initial_version
+            and migration.version <= resolved_target
         ]
 
         if dry_run:

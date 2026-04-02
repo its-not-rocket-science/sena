@@ -33,7 +33,9 @@ def test_module_import_is_lightweight(monkeypatch) -> None:
 
     def _unexpected_env_load():
         calls.append("called")
-        raise AssertionError("load_settings_from_env should not run during module import")
+        raise AssertionError(
+            "load_settings_from_env should not run during module import"
+        )
 
     monkeypatch.setattr(config_module, "load_settings_from_env", _unexpected_env_load)
     app_module = importlib.reload(importlib.import_module("sena.api.app"))
@@ -59,8 +61,12 @@ def test_app_factory_with_explicit_settings_skips_env_loading(monkeypatch) -> No
 
 def test_lazy_asgi_app_surfaces_startup_validation_errors() -> None:
     app_module = importlib.reload(importlib.import_module("sena.api.app"))
-    lazy_app = app_module._LazyASGIApp(lambda: app_module.create_app(_settings(policy_dir="missing/path")))
+    lazy_app = app_module._LazyASGIApp(
+        lambda: app_module.create_app(_settings(policy_dir="missing/path"))
+    )
 
-    with pytest.raises(RuntimeError, match="SENA_POLICY_DIR must point to an existing directory"):
+    with pytest.raises(
+        RuntimeError, match="SENA_POLICY_DIR must point to an existing directory"
+    ):
         with TestClient(lazy_app) as client:
             client.get("/v1/health")

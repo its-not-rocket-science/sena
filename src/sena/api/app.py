@@ -47,15 +47,21 @@ def initialize_runtime(settings: ApiSettings):
     if settings.audit_verify_on_startup_strict and settings.audit_sink_jsonl:
         verification = verify_audit_chain(settings.audit_sink_jsonl)
         if not verification.get("valid", False):
-            detail = "; ".join(verification.get("errors", [])) or verification.get("error", "unknown error")
-            raise RuntimeError(f"Startup audit verification failed for {settings.audit_sink_jsonl}: {detail}")
+            detail = "; ".join(verification.get("errors", [])) or verification.get(
+                "error", "unknown error"
+            )
+            raise RuntimeError(
+                f"Startup audit verification failed for {settings.audit_sink_jsonl}: {detail}"
+            )
 
     return build_runtime_state(settings, rules, metadata, policy_repo)
 
 
 def build_app(state):
     if FastAPI is None:
-        raise RuntimeError("FastAPI is not installed. Install optional API dependencies first.")
+        raise RuntimeError(
+            "FastAPI is not installed. Install optional API dependencies first."
+        )
 
     app = FastAPI(title="SENA Compliance Engine API", version=SENA_VERSION)
     app.state.engine_state = state
@@ -89,16 +95,19 @@ def build_app(state):
 
     @app.get("/metrics")
     def metrics() -> Response:
-        return Response(content=state.metrics.exposition(), media_type=state.metrics.content_type)
+        return Response(
+            content=state.metrics.exposition(), media_type=state.metrics.content_type
+        )
 
     app.include_router(api_v1)
 
     deprecation_date = "2026-04-01"
     deprecation_message = (
-        "Unversioned API routes are deprecated and removed. "
-        "Use versioned /v1 routes."
+        "Unversioned API routes are deprecated and removed. Use versioned /v1 routes."
     )
-    deprecation_doc_url = "https://github.com/its-not-rocket-science/sena#api-versioning-policy"
+    deprecation_doc_url = (
+        "https://github.com/its-not-rocket-science/sena#api-versioning-policy"
+    )
 
     def _deprecated_unversioned_response(versioned_path: str) -> JSONResponse:
         response = JSONResponse(
@@ -110,8 +119,10 @@ def build_app(state):
         )
         response.headers["Deprecation"] = "true"
         response.headers["Sunset"] = deprecation_date
-        response.headers["Warning"] = f'299 - "{deprecation_message} Migrate to {versioned_path}."'
-        response.headers["Link"] = f"<{deprecation_doc_url}>; rel=\"deprecation\""
+        response.headers["Warning"] = (
+            f'299 - "{deprecation_message} Migrate to {versioned_path}."'
+        )
+        response.headers["Link"] = f'<{deprecation_doc_url}>; rel="deprecation"'
         return response
 
     @app.get("/health")

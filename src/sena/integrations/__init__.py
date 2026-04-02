@@ -1,6 +1,11 @@
 """Integrations for external webhook and event ingestion."""
 
-from sena.integrations.base import Connector, ConnectorRegistry, DecisionPayload, IntegrationError
+from sena.integrations.base import (
+    Connector,
+    ConnectorRegistry,
+    DecisionPayload,
+    IntegrationError,
+)
 from sena.integrations.registry import build_connector_registry
 from sena.integrations.jira import (
     AllowAllJiraWebhookVerifier,

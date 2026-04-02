@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from sena.policy.migrations import MigrationChecksumMismatchError, SQLiteMigrationManager
+from sena.policy.migrations import (
+    MigrationChecksumMismatchError,
+    SQLiteMigrationManager,
+)
 from sena.policy.store import SQLitePolicyBundleRepository
 
 
@@ -27,7 +30,9 @@ def test_fresh_registry_init_applies_ordered_migrations(tmp_path: Path) -> None:
 
 def test_upgrade_from_legacy_schema_fixture_is_reproducible(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy.db"
-    legacy_sql = Path("tests/fixtures/migrations/storage_states/legacy_registry_v1.sql").read_text(encoding="utf-8")
+    legacy_sql = Path(
+        "tests/fixtures/migrations/storage_states/legacy_registry_v1.sql"
+    ).read_text(encoding="utf-8")
     with sqlite3.connect(db_path) as conn:
         conn.executescript(legacy_sql)
 
@@ -60,7 +65,9 @@ def test_checksum_mismatch_is_detected(tmp_path: Path) -> None:
     with sqlite3.connect(tmp_path / "checksum.db") as conn:
         manager.upgrade(conn)
 
-    first.write_text("CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT);", encoding="utf-8")
+    first.write_text(
+        "CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT);", encoding="utf-8"
+    )
 
     with sqlite3.connect(tmp_path / "checksum.db") as conn:
         with pytest.raises(MigrationChecksumMismatchError, match="checksum mismatch"):
@@ -70,9 +77,15 @@ def test_checksum_mismatch_is_detected(tmp_path: Path) -> None:
 def test_partial_migration_failure_rolls_back_failed_step_only(tmp_path: Path) -> None:
     migration_dir = tmp_path / "migrations"
     migration_dir.mkdir()
-    (migration_dir / "001_create.sql").write_text("CREATE TABLE one(id INTEGER PRIMARY KEY);", encoding="utf-8")
-    (migration_dir / "002_fail.sql").write_text("CREATE TABL broken(id INTEGER PRIMARY KEY);", encoding="utf-8")
-    (migration_dir / "003_never.sql").write_text("CREATE TABLE three(id INTEGER PRIMARY KEY);", encoding="utf-8")
+    (migration_dir / "001_create.sql").write_text(
+        "CREATE TABLE one(id INTEGER PRIMARY KEY);", encoding="utf-8"
+    )
+    (migration_dir / "002_fail.sql").write_text(
+        "CREATE TABL broken(id INTEGER PRIMARY KEY);", encoding="utf-8"
+    )
+    (migration_dir / "003_never.sql").write_text(
+        "CREATE TABLE three(id INTEGER PRIMARY KEY);", encoding="utf-8"
+    )
 
     manager = SQLiteMigrationManager(migration_dir)
     db_path = tmp_path / "partial.db"
@@ -81,7 +94,12 @@ def test_partial_migration_failure_rolls_back_failed_step_only(tmp_path: Path) -
             manager.upgrade(conn)
 
     with sqlite3.connect(db_path) as conn:
-        applied = [int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
+        applied = [
+            int(row[0])
+            for row in conn.execute(
+                "SELECT version FROM schema_migrations ORDER BY version"
+            )
+        ]
         one_exists = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='one'"
         ).fetchone()

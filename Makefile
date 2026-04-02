@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint api docker-up bump-version
+.PHONY: install install-dev test lint format quality api docker-up bump-version
 
 install:
 	pip install -e .
@@ -10,9 +10,16 @@ test:
 	pytest
 
 lint:
-	ruff check src tests
-	mypy src
+	ruff check src/sena tests
+	mypy src/sena
 
+format:
+	ruff format src/sena tests --exclude src/sena/legacy
+
+quality:
+	ruff format --check src/sena tests --exclude src/sena/legacy
+	ruff check src/sena tests
+	pytest
 api:
 	python -m uvicorn sena.api.app:app --reload
 

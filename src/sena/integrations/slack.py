@@ -62,9 +62,7 @@ class SlackClient(Connector):
         timestamp = datetime.now(timezone.utc).isoformat()
         rules_text = ", ".join(matched_rule_ids) if matched_rule_ids else "none"
         request_label = request_id or "unknown"
-        fallback_text = (
-            f"SENA escalation: decision={decision_id} action={action_type} request={request_label}"
-        )
+        fallback_text = f"SENA escalation: decision={decision_id} action={action_type} request={request_label}"
 
         blocks = [
             {
@@ -102,7 +100,9 @@ class SlackClient(Connector):
                 ],
             },
         ]
-        return SlackEscalationMessage(channel=destination, text=fallback_text, blocks=blocks)
+        return SlackEscalationMessage(
+            channel=destination, text=fallback_text, blocks=blocks
+        )
 
     def post_escalation(
         self,
@@ -144,10 +144,14 @@ class SlackClient(Connector):
         except HTTPError as exc:
             raise SlackIntegrationError(f"Slack API HTTP error: {exc.code}") from exc
         except URLError as exc:
-            raise SlackIntegrationError(f"Slack API connectivity error: {exc.reason}") from exc
+            raise SlackIntegrationError(
+                f"Slack API connectivity error: {exc.reason}"
+            ) from exc
 
         if not payload.get("ok"):
-            raise SlackIntegrationError(f"Slack API rejected message: {payload.get('error', 'unknown')}" )
+            raise SlackIntegrationError(
+                f"Slack API rejected message: {payload.get('error', 'unknown')}"
+            )
         return payload
 
 
@@ -168,7 +172,9 @@ def parse_interaction_decision(payload: dict[str, Any]) -> dict[str, str]:
 
     decision_id = str(action.get("value") or "").strip()
     if not decision_id:
-        raise SlackIntegrationError("Slack interaction action value is missing decision id")
+        raise SlackIntegrationError(
+            "Slack interaction action value is missing decision id"
+        )
 
     user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
     reviewer = str(user.get("id") or "unknown")

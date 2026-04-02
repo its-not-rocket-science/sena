@@ -5,9 +5,19 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from sena.api.schemas import BundleInfo, BundlePromoteRequest, BundleRegisterRequest, BundleRollbackRequest
+from sena.api.schemas import (
+    BundleInfo,
+    BundlePromoteRequest,
+    BundleRegisterRequest,
+    BundleRollbackRequest,
+)
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
-from sena.policy.lifecycle import PromotionGatePolicy, diff_rule_sets, evaluate_promotion_gate, validate_promotion
+from sena.policy.lifecycle import (
+    PromotionGatePolicy,
+    diff_rule_sets,
+    evaluate_promotion_gate,
+    validate_promotion,
+)
 from sena.policy.parser import load_policy_bundle
 from sena.policy.store import PolicyStoreError
 
@@ -36,7 +46,9 @@ class BundleService:
             strict=self.settings.bundle_signature_strict,
         )
         if self.settings.bundle_signature_strict and not signature_ok:
-            raise PermissionError("bundle_signature_verification_failed:" + "; ".join(signature_errors))
+            raise PermissionError(
+                "bundle_signature_verification_failed:" + "; ".join(signature_errors)
+            )
         bundle_id = self.policy_repo.register_bundle(
             metadata,
             rules,
@@ -72,13 +84,23 @@ class BundleService:
         source_rules = stored_bundle.rules
         current_active = None
         if payload.target_lifecycle == "active":
-            current_active = self.policy_repo.get_active_bundle(stored_bundle.metadata.bundle_name)
+            current_active = self.policy_repo.get_active_bundle(
+                stored_bundle.metadata.bundle_name
+            )
             source_rules = current_active.rules if current_active is not None else []
-        source_metadata = current_active.metadata if (payload.target_lifecycle == "active" and current_active is not None) else stored_bundle.metadata
+        source_metadata = (
+            current_active.metadata
+            if (payload.target_lifecycle == "active" and current_active is not None)
+            else stored_bundle.metadata
+        )
 
         policy_diff = diff_rule_sets(source_rules, stored_bundle.rules).__dict__
         simulation_report: dict[str, Any] | None = payload.simulation_result
-        if payload.target_lifecycle == "active" and simulation_report is None and payload.simulation_scenarios:
+        if (
+            payload.target_lifecycle == "active"
+            and simulation_report is None
+            and payload.simulation_scenarios
+        ):
             scenarios = {
                 scenario.scenario_id: SimulationScenario(
                     action_type=scenario.action_type,
@@ -100,7 +122,9 @@ class BundleService:
                 stored_bundle.metadata,
             )
 
-        threshold_errors = self._evaluate_thresholds(simulation_report, payload.thresholds)
+        threshold_errors = self._evaluate_thresholds(
+            simulation_report, payload.thresholds
+        )
         gate_failures = evaluate_promotion_gate(
             target_lifecycle=payload.target_lifecycle,
             validation_artifact=payload.validation_artifact,
@@ -119,9 +143,14 @@ class BundleService:
             signature_verified=stored_bundle.signature_verified,
             signature_verification_strict=stored_bundle.signature_verification_strict,
         )
-        errors = [*validation.errors, *threshold_errors, *[item.message for item in gate_failures]]
+        errors = [
+            *validation.errors,
+            *threshold_errors,
+            *[item.message for item in gate_failures],
+        ]
         requires_block = (not payload.break_glass) or any(
-            item.code in {"break_glass_reason_required", "break_glass_disabled"} for item in gate_failures
+            item.code in {"break_glass_reason_required", "break_glass_disabled"}
+            for item in gate_failures
         )
         if errors and requires_block:
             raise RuntimeError(
@@ -140,21 +169,29 @@ class BundleService:
                 payload.bundle_id,
                 payload.target_lifecycle,
                 promoted_by=payload.promoted_by,
-                promotion_reason=payload.promotion_reason if not payload.break_glass else f"[BREAK_GLASS] {payload.promotion_reason}",
+                promotion_reason=payload.promotion_reason
+                if not payload.break_glass
+                else f"[BREAK_GLASS] {payload.promotion_reason}",
                 validation_artifact=payload.validation_artifact,
                 policy_diff_summary=json.dumps(policy_diff, sort_keys=True),
                 evidence_json=json.dumps(
                     {
                         "simulation_report": simulation_report,
-                        "thresholds": payload.thresholds.model_dump() if payload.thresholds else {},
+                        "thresholds": payload.thresholds.model_dump()
+                        if payload.thresholds
+                        else {},
                         "threshold_errors": threshold_errors,
-                        "promotion_gate_failures": [item.__dict__ for item in gate_failures],
+                        "promotion_gate_failures": [
+                            item.__dict__ for item in gate_failures
+                        ],
                         "break_glass_reason": payload.break_glass_reason,
                     },
                     sort_keys=True,
                 ),
                 break_glass=payload.break_glass,
-                audit_marker="break_glass_promotion" if payload.break_glass else "promotion",
+                audit_marker="break_glass_promotion"
+                if payload.break_glass
+                else "promotion",
                 action="promote_break_glass" if payload.break_glass else "promote",
             )
         except PolicyStoreError as exc:
@@ -163,15 +200,23 @@ class BundleService:
         if active is not None:
             self.state.rules = active.rules
             self.state.metadata = active.metadata
-        return {"status": "ok", "bundle_id": payload.bundle_id, "lifecycle": payload.target_lifecycle}
+        return {
+            "status": "ok",
+            "bundle_id": payload.bundle_id,
+            "lifecycle": payload.target_lifecycle,
+        }
 
     def _effective_gate_policy(
         self,
         thresholds: BundlePromoteRequest.PromotionThresholds | None,
     ) -> PromotionGatePolicy:
-        combined_regressions = dict(self.settings.promotion_gate_max_regressions_by_outcome_type)
+        combined_regressions = dict(
+            self.settings.promotion_gate_max_regressions_by_outcome_type
+        )
         if thresholds and thresholds.max_block_to_approve_regressions is not None:
-            combined_regressions["BLOCKED->APPROVED"] = thresholds.max_block_to_approve_regressions
+            combined_regressions["BLOCKED->APPROVED"] = (
+                thresholds.max_block_to_approve_regressions
+            )
         if thresholds:
             combined_regressions.update(thresholds.max_regressions_by_outcome_type)
         return PromotionGatePolicy(
@@ -196,14 +241,18 @@ class BundleService:
             return []
         errors: list[str] = []
         changed_scenarios = int(simulation_report.get("changed_scenarios", 0))
-        if thresholds.max_changed_outcomes is not None and changed_scenarios > thresholds.max_changed_outcomes:
+        if (
+            thresholds.max_changed_outcomes is not None
+            and changed_scenarios > thresholds.max_changed_outcomes
+        ):
             errors.append(
                 f"changed outcomes {changed_scenarios} exceeds threshold {thresholds.max_changed_outcomes}"
             )
         block_to_approve = sum(
             1
             for item in simulation_report.get("changes", [])
-            if item.get("before_outcome") == "BLOCKED" and item.get("after_outcome") == "APPROVED"
+            if item.get("before_outcome") == "BLOCKED"
+            and item.get("after_outcome") == "APPROVED"
         )
         if (
             thresholds.max_block_to_approve_regressions is not None
@@ -213,8 +262,13 @@ class BundleService:
                 "block->approve regressions "
                 f"{block_to_approve} exceeds threshold {thresholds.max_block_to_approve_regressions}"
             )
-        risk_changes = simulation_report.get("grouped_changes", {}).get("risk_category", {})
-        for risk_category, max_changed in thresholds.max_changed_risk_categories.items():
+        risk_changes = simulation_report.get("grouped_changes", {}).get(
+            "risk_category", {}
+        )
+        for (
+            risk_category,
+            max_changed,
+        ) in thresholds.max_changed_risk_categories.items():
             observed = int(risk_changes.get(risk_category, {}).get("changed", 0))
             if observed > max_changed:
                 errors.append(
@@ -248,9 +302,15 @@ class BundleService:
         if active is not None and payload.bundle_name == self.settings.bundle_name:
             self.state.rules = active.rules
             self.state.metadata = active.metadata
-        return {"status": "ok", "bundle_name": payload.bundle_name, "active_bundle_id": payload.to_bundle_id}
+        return {
+            "status": "ok",
+            "bundle_name": payload.bundle_name,
+            "active_bundle_id": payload.to_bundle_id,
+        }
 
-    def get_active_bundle(self, bundle_name: str | None = None) -> dict[str, Any] | None:
+    def get_active_bundle(
+        self, bundle_name: str | None = None
+    ) -> dict[str, Any] | None:
         name = bundle_name or self.settings.bundle_name
         active = self.policy_repo.get_active_bundle(name)
         if active is None:
@@ -293,7 +353,9 @@ class BundleService:
             "created_at": bundle.created_at,
         }
 
-    def get_bundle_by_version(self, bundle_name: str, version: str) -> dict[str, Any] | None:
+    def get_bundle_by_version(
+        self, bundle_name: str, version: str
+    ) -> dict[str, Any] | None:
         bundle = self.policy_repo.get_bundle_by_version(bundle_name, version)
         if bundle is None:
             return None
@@ -305,12 +367,23 @@ class BundleService:
         }
 
     def history(self, bundle_name: str) -> dict[str, Any]:
-        return {"bundle_name": bundle_name, "history": self.policy_repo.get_history(bundle_name)}
+        return {
+            "bundle_name": bundle_name,
+            "history": self.policy_repo.get_history(bundle_name),
+        }
 
     def diff(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if self.policy_repo and payload.get("current_bundle_id") and payload.get("target_bundle_id"):
-            current_bundle = self.policy_repo.get_bundle(int(payload["current_bundle_id"]))
-            target_bundle = self.policy_repo.get_bundle(int(payload["target_bundle_id"]))
+        if (
+            self.policy_repo
+            and payload.get("current_bundle_id")
+            and payload.get("target_bundle_id")
+        ):
+            current_bundle = self.policy_repo.get_bundle(
+                int(payload["current_bundle_id"])
+            )
+            target_bundle = self.policy_repo.get_bundle(
+                int(payload["target_bundle_id"])
+            )
             if current_bundle is None or target_bundle is None:
                 raise ValueError("bundle_not_found")
             return diff_rule_sets(current_bundle.rules, target_bundle.rules).__dict__
@@ -343,16 +416,21 @@ class BundleService:
         signature_verified = True
         signature_strict = bool(payload.get("signature_strict", False))
         if signature_strict:
-            manifest_name = payload.get("manifest_filename", self.settings.bundle_release_manifest_filename)
+            manifest_name = payload.get(
+                "manifest_filename", self.settings.bundle_release_manifest_filename
+            )
             verified, errors, _ = self.verify_signature(
                 policy_dir=payload["target_policy_dir"],
                 manifest_filename=manifest_name,
-                keyring_dir=payload.get("keyring_dir") or self.settings.bundle_signature_keyring_dir,
+                keyring_dir=payload.get("keyring_dir")
+                or self.settings.bundle_signature_keyring_dir,
                 strict=True,
             )
             signature_verified = verified
             if errors and not verified:
-                logger.warning("bundle promotion validation signature errors: %s", errors)
+                logger.warning(
+                    "bundle promotion validation signature errors: %s", errors
+                )
         return validate_promotion(
             payload.get("source_lifecycle", source_meta.lifecycle),
             payload.get("target_lifecycle", target_meta.lifecycle),

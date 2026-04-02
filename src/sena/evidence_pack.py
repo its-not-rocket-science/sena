@@ -15,8 +15,15 @@ from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.integrations.base import DecisionPayload
-from sena.integrations.jira import AllowAllJiraWebhookVerifier, JiraConnector, load_jira_mapping_config
-from sena.integrations.servicenow import ServiceNowConnector, load_servicenow_mapping_config
+from sena.integrations.jira import (
+    AllowAllJiraWebhookVerifier,
+    JiraConnector,
+    load_jira_mapping_config,
+)
+from sena.integrations.servicenow import (
+    ServiceNowConnector,
+    load_servicenow_mapping_config,
+)
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 from sena.policy.parser import load_policy_bundle
 from sena.policy.release_signing import (
@@ -33,7 +40,10 @@ def load_json(path: Path) -> Any:
 
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n",
+        encoding="utf-8",
+    )
 
 
 def stable_zip_dir(source_dir: Path, zip_path: Path) -> None:
@@ -48,7 +58,9 @@ def stable_zip_dir(source_dir: Path, zip_path: Path) -> None:
             zf.writestr(info, path.read_bytes())
 
 
-def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool = False) -> dict[str, Any]:
+def build_evidence_pack(
+    *, reference_root: Path, output_dir: Path, clean: bool = False
+) -> dict[str, Any]:
     fixtures_dir = reference_root / "fixtures"
     integration_dir = reference_root / "integration"
     candidate_dir = reference_root / "policy_bundles" / "candidate"
@@ -67,12 +79,17 @@ def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool =
 
     trusted_key = keyring_dir / "design-partner-ops.key"
     if not trusted_key.exists():
-        trusted_key.write_text("acme-design-partner-reference-signing-key\n", encoding="utf-8")
+        trusted_key.write_text(
+            "acme-design-partner-reference-signing-key\n", encoding="utf-8"
+        )
 
     candidate_rules, candidate_meta = load_policy_bundle(candidate_dir)
     active_rules, active_meta = load_policy_bundle(active_dir)
 
-    write_json(artifacts_dir / "bundle_metadata.json", {"candidate": asdict(candidate_meta), "active": asdict(active_meta)})
+    write_json(
+        artifacts_dir / "bundle_metadata.json",
+        {"candidate": asdict(candidate_meta), "active": asdict(active_meta)},
+    )
 
     manifest = generate_release_manifest(
         active_dir,
@@ -84,10 +101,17 @@ def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool =
     signed_manifest = sign_release_manifest(manifest, key_path=trusted_key)
     manifest_path = artifacts_dir / "release_manifest.json"
     write_release_manifest(signed_manifest, manifest_path)
-    signature_verification = verify_release_manifest(active_dir, manifest_path=manifest_path, keyring_dir=keyring_dir, strict=True)
-    write_json(artifacts_dir / "signature_verification.json", asdict(signature_verification))
+    signature_verification = verify_release_manifest(
+        active_dir, manifest_path=manifest_path, keyring_dir=keyring_dir, strict=True
+    )
+    write_json(
+        artifacts_dir / "signature_verification.json", asdict(signature_verification)
+    )
 
-    write_json(artifacts_dir / "rule_diff.json", asdict(diff_rule_sets(candidate_rules, active_rules)))
+    write_json(
+        artifacts_dir / "rule_diff.json",
+        asdict(diff_rule_sets(candidate_rules, active_rules)),
+    )
 
     scenario_rows = load_json(fixtures_dir / "simulation_scenarios.json")
     scenarios = {
@@ -103,7 +127,9 @@ def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool =
         )
         for name, payload in sorted(scenario_rows.items())
     }
-    simulation_report = simulate_bundle_impact(scenarios, candidate_rules, active_rules, candidate_meta, active_meta)
+    simulation_report = simulate_bundle_impact(
+        scenarios, candidate_rules, active_rules, candidate_meta, active_meta
+    )
     write_json(artifacts_dir / "simulation_summary.json", simulation_report)
 
     promotion = validate_promotion(
@@ -126,14 +152,22 @@ def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool =
     )
 
     connectors = {
-        "servicenow": ServiceNowConnector(config=load_servicenow_mapping_config(str(integration_dir / "servicenow_mapping.yaml"))),
+        "servicenow": ServiceNowConnector(
+            config=load_servicenow_mapping_config(
+                str(integration_dir / "servicenow_mapping.yaml")
+            )
+        ),
         "jira": JiraConnector(
             config=load_jira_mapping_config(str(integration_dir / "jira_mapping.yaml")),
             verifier=AllowAllJiraWebhookVerifier(),
         ),
     }
     evaluator = PolicyEvaluator(active_rules, policy_bundle=active_meta)
-    audit_sink = JsonlFileAuditSink(path=str(artifacts_dir / "audit" / "audit.jsonl"), append_only=True, rotation=RotationPolicy(max_file_bytes=1024 * 1024))
+    audit_sink = JsonlFileAuditSink(
+        path=str(artifacts_dir / "audit" / "audit.jsonl"),
+        append_only=True,
+        rotation=RotationPolicy(max_file_bytes=1024 * 1024),
+    )
 
     traces: list[dict[str, Any]] = []
     integration_examples: list[dict[str, Any]] = []
@@ -146,11 +180,17 @@ def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool =
         event["raw_body"] = b""
         transformed = connector.handle_event(event)
         trace = evaluator.evaluate(transformed["action_proposal"], facts={})
-        persisted = append_audit_record(audit_sink, trace.audit_record.__dict__ if trace.audit_record else {})
+        persisted = append_audit_record(
+            audit_sink, trace.audit_record.__dict__ if trace.audit_record else {}
+        )
         if trace.audit_record:
             trace.audit_record.chain_hash = persisted.get("chain_hash")
-            trace.audit_record.previous_chain_hash = persisted.get("previous_chain_hash")
-            trace.audit_record.storage_sequence_number = persisted.get("storage_sequence_number")
+            trace.audit_record.previous_chain_hash = persisted.get(
+                "previous_chain_hash"
+            )
+            trace.audit_record.storage_sequence_number = persisted.get(
+                "storage_sequence_number"
+            )
 
         delivery = connector.send_decision(
             DecisionPayload(
@@ -164,7 +204,12 @@ def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool =
 
         trace_path = traces_dir / f"{trace.request_id or trace.decision_id}.json"
         write_json(trace_path, trace.to_dict())
-        traces.append({"fixture": fixture.name, "trace_file": str(trace_path.relative_to(output_dir))})
+        traces.append(
+            {
+                "fixture": fixture.name,
+                "trace_file": str(trace_path.relative_to(output_dir)),
+            }
+        )
 
         review_path = review_dir / f"{trace.request_id or trace.decision_id}.json"
         write_json(review_path, build_decision_review_package(trace))
@@ -176,7 +221,9 @@ def build_evidence_pack(*, reference_root: Path, output_dir: Path, clean: bool =
             "decision_delivery": delivery,
         }
         integration_examples.append(integration_payload)
-        write_json(integration_examples_dir / f"{fixture.stem}.json", integration_payload)
+        write_json(
+            integration_examples_dir / f"{fixture.stem}.json", integration_payload
+        )
 
     write_json(artifacts_dir / "evaluation_trace_index.json", traces)
     write_json(artifacts_dir / "integration_examples_index.json", integration_examples)

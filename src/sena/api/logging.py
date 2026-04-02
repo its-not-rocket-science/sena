@@ -14,11 +14,16 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        for field_name in ("request_id", "path", "method", "status_code", "decision_id"):
+        for field_name in (
+            "request_id",
+            "path",
+            "method",
+            "status_code",
+            "decision_id",
+        ):
             if hasattr(record, field_name):
                 payload[field_name] = getattr(record, field_name)
         return json.dumps(payload, separators=(",", ":"))
-
 
 
 def configure_logging(level: str = "INFO") -> None:

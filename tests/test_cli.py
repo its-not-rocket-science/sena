@@ -5,7 +5,9 @@ import sys
 from pathlib import Path
 
 
-def _run_cli(args: list[str], extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _run_cli(
+    args: list[str], extra_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     cmd = [sys.executable, "-m", "sena.cli.main", *args]
     env = dict(os.environ)
     env["PYTHONPATH"] = f"src:{env.get('PYTHONPATH', '')}".rstrip(":")
@@ -15,10 +17,12 @@ def _run_cli(args: list[str], extra_env: dict[str, str] | None = None) -> subpro
 
 
 def test_cli_json_output_contains_audit_fields() -> None:
-    result = _run_cli([
-        "src/sena/examples/scenarios/demo_vendor_payment_block_unverified.json",
-        "--json",
-    ])
+    result = _run_cli(
+        [
+            "src/sena/examples/scenarios/demo_vendor_payment_block_unverified.json",
+            "--json",
+        ]
+    )
     result.check_returncode()
     payload = json.loads(result.stdout)
 
@@ -30,13 +34,13 @@ def test_cli_json_output_contains_audit_fields() -> None:
     assert "decision_hash" in payload
 
 
-
-
 def test_cli_review_package_output() -> None:
-    result = _run_cli([
-        "src/sena/examples/scenarios/demo_vendor_payment_block_unverified.json",
-        "--review-package",
-    ])
+    result = _run_cli(
+        [
+            "src/sena/examples/scenarios/demo_vendor_payment_block_unverified.json",
+            "--review-package",
+        ]
+    )
     result.check_returncode()
     payload = json.loads(result.stdout)
 
@@ -44,6 +48,7 @@ def test_cli_review_package_output() -> None:
     assert payload["decision_summary"]["outcome"] == "BLOCKED"
     assert "matched" in payload["rules"]
     assert "normalized_source_system_references" in payload
+
 
 def test_policy_init_validate_and_test_commands(tmp_path) -> None:
     bundle_dir = tmp_path / "bundle"
@@ -82,7 +87,11 @@ def test_policy_validate_returns_human_readable_error(tmp_path) -> None:
 
     result = _run_cli(["policy", "validate", "--policy-dir", str(bundle_dir)])
     assert result.returncode != 0
-    assert "Policy validation failed:" in result.stderr or "Policy validation failed:" in result.stdout
+    assert (
+        "Policy validation failed:" in result.stderr
+        or "Policy validation failed:" in result.stdout
+    )
+
 
 def test_registry_lifecycle_commands(tmp_path) -> None:
     db_path = tmp_path / "registry.db"
@@ -117,7 +126,16 @@ def test_registry_lifecycle_commands(tmp_path) -> None:
     register.check_returncode()
     bundle_id = json.loads(register.stdout)["bundle_id"]
 
-    validate = _run_cli(base + ["validate-promotion", "--bundle-id", str(bundle_id), "--target-lifecycle", "candidate"])
+    validate = _run_cli(
+        base
+        + [
+            "validate-promotion",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "candidate",
+        ]
+    )
     validate.check_returncode()
 
     to_candidate = _run_cli(
@@ -156,7 +174,9 @@ def test_registry_lifecycle_commands(tmp_path) -> None:
     )
     to_active.check_returncode()
 
-    history = _run_cli(base + ["inspect-history", "--bundle-name", "enterprise-compliance-controls"])
+    history = _run_cli(
+        base + ["inspect-history", "--bundle-name", "enterprise-compliance-controls"]
+    )
     history.check_returncode()
     assert json.loads(history.stdout)["history"]
 
@@ -179,7 +199,18 @@ def test_registry_promote_break_glass_without_artifact(tmp_path) -> None:
     register.check_returncode()
     bundle_id = json.loads(register.stdout)["bundle_id"]
     _run_cli(
-        base + ["promote", "--bundle-id", str(bundle_id), "--target-lifecycle", "candidate", "--promoted-by", "ops", "--promotion-reason", "ready"]
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "candidate",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "ready",
+        ]
     ).check_returncode()
     promote = _run_cli(
         base
@@ -219,7 +250,18 @@ def test_registry_promote_fails_when_simulation_missing(tmp_path) -> None:
     register.check_returncode()
     bundle_id = json.loads(register.stdout)["bundle_id"]
     _run_cli(
-        base + ["promote", "--bundle-id", str(bundle_id), "--target-lifecycle", "candidate", "--promoted-by", "ops", "--promotion-reason", "ready"]
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "candidate",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "ready",
+        ]
     ).check_returncode()
     missing_sim = _run_cli(
         base
@@ -271,7 +313,18 @@ def test_registry_promote_idempotent_repeated_attempt(tmp_path) -> None:
     register.check_returncode()
     bundle_id = json.loads(register.stdout)["bundle_id"]
     _run_cli(
-        base + ["promote", "--bundle-id", str(bundle_id), "--target-lifecycle", "candidate", "--promoted-by", "ops", "--promotion-reason", "ready"]
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "candidate",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "ready",
+        ]
     ).check_returncode()
     _run_cli(
         base
@@ -367,23 +420,37 @@ def test_audit_commands_verify_summarize_locate(tmp_path) -> None:
     from sena.audit.chain import append_audit_record
     from sena.audit.sinks import JsonlFileAuditSink, RotationPolicy
 
-    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=280))
+    sink = JsonlFileAuditSink(
+        path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=280)
+    )
     append_audit_record(sink, {"decision_id": "dec-1", "outcome": "APPROVED"})
     append_audit_record(sink, {"decision_id": "dec-2", "outcome": "BLOCKED"})
     append_audit_record(sink, {"decision_id": "dec-3", "outcome": "ESCALATE"})
 
-    verify = _run_cli(["audit", "--audit-path", str(tmp_path / "audit.jsonl"), "verify"])
+    verify = _run_cli(
+        ["audit", "--audit-path", str(tmp_path / "audit.jsonl"), "verify"]
+    )
     verify.check_returncode()
     verify_payload = json.loads(verify.stdout)
     assert verify_payload["valid"] is True
 
-    summarize = _run_cli(["audit", "--audit-path", str(tmp_path / "audit.jsonl"), "summarize"])
+    summarize = _run_cli(
+        ["audit", "--audit-path", str(tmp_path / "audit.jsonl"), "summarize"]
+    )
     summarize.check_returncode()
     summary_payload = json.loads(summarize.stdout)
     assert summary_payload["segment_count"] >= 1
     assert summary_payload["last_decision_id"] == "dec-3"
 
-    locate = _run_cli(["audit", "--audit-path", str(tmp_path / "audit.jsonl"), "locate-decision", "dec-2"])
+    locate = _run_cli(
+        [
+            "audit",
+            "--audit-path",
+            str(tmp_path / "audit.jsonl"),
+            "locate-decision",
+            "dec-2",
+        ]
+    )
     locate.check_returncode()
     locate_payload = json.loads(locate.stdout)
     assert locate_payload["found"] is True
@@ -403,7 +470,11 @@ def test_replay_drift_command(tmp_path) -> None:
                             "request_id": "req-1",
                             "actor_id": "user-1",
                             "actor_role": "finance_analyst",
-                            "attributes": {"amount": 500, "vendor_verified": True, "source_system": "jira"},
+                            "attributes": {
+                                "amount": 500,
+                                "vendor_verified": True,
+                                "source_system": "jira",
+                            },
                             "action_origin": "human",
                         },
                         "facts": {},
@@ -457,7 +528,9 @@ def test_policy_schema_migration_commands(tmp_path) -> None:
     inspect_payload = json.loads(inspect.stdout)
     assert inspect_payload["schema_version"] == "1"
 
-    dry_run = _run_cli(["policy", "migrate", "--policy-dir", str(bundle_dir), "--dry-run"])
+    dry_run = _run_cli(
+        ["policy", "migrate", "--policy-dir", str(bundle_dir), "--dry-run"]
+    )
     dry_run.check_returncode()
     dry_payload = json.loads(dry_run.stdout)
     assert dry_payload["changed_files"] == ["bundle.yaml", "rules.yaml"]
@@ -465,7 +538,9 @@ def test_policy_schema_migration_commands(tmp_path) -> None:
     apply = _run_cli(["policy", "migrate", "--policy-dir", str(bundle_dir)])
     apply.check_returncode()
 
-    compat = _run_cli(["policy", "verify-compatibility", "--policy-dir", str(bundle_dir)])
+    compat = _run_cli(
+        ["policy", "verify-compatibility", "--policy-dir", str(bundle_dir)]
+    )
     compat.check_returncode()
     compat_payload = json.loads(compat.stdout)
     assert compat_payload["compatible"] is True
@@ -489,7 +564,9 @@ runtime_compatibility:
         '[{"id":"r1","description":"d","severity":"low","inviolable":false,"applies_to":["a"],"condition":{"field":"x","eq":1},"decision":"ALLOW","reason":"ok"}]'
     )
 
-    result = _run_cli(["policy", "verify-compatibility", "--policy-dir", str(bundle_dir)])
+    result = _run_cli(
+        ["policy", "verify-compatibility", "--policy-dir", str(bundle_dir)]
+    )
     assert result.returncode != 0
     assert "compatibility check failed" in (result.stderr + result.stdout).lower()
 
@@ -513,9 +590,9 @@ def test_production_check_fails_for_invalid_timeout_configuration() -> None:
     assert "request limits and timeout sanity" in payload["fatal_failures"]
 
 
-
 def test_registry_backup_restore_and_verify_commands(tmp_path) -> None:
     from sena.audit.chain import append_audit_record
+
     db_path = tmp_path / "registry.db"
     base = ["registry", "--sqlite-path", str(db_path)]
     register = _run_cli(
@@ -533,7 +610,18 @@ def test_registry_backup_restore_and_verify_commands(tmp_path) -> None:
     register.check_returncode()
     bundle_id = json.loads(register.stdout)["bundle_id"]
     _run_cli(
-        base + ["promote", "--bundle-id", str(bundle_id), "--target-lifecycle", "candidate", "--promoted-by", "ops", "--promotion-reason", "ready"]
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "candidate",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "ready",
+        ]
     ).check_returncode()
     _run_cli(
         base
@@ -558,7 +646,10 @@ def test_registry_backup_restore_and_verify_commands(tmp_path) -> None:
     audit_path = tmp_path / "audit.jsonl"
     append_audit_record(str(audit_path), {"event": "drill", "bundle_id": bundle_id})
     backup_db = tmp_path / "backup.db"
-    backup = _run_cli(base + ["backup", "--output-db", str(backup_db), "--audit-chain", str(audit_path)])
+    backup = _run_cli(
+        base
+        + ["backup", "--output-db", str(backup_db), "--audit-chain", str(audit_path)]
+    )
     backup.check_returncode()
     backup_payload = json.loads(backup.stdout)
 
@@ -582,7 +673,16 @@ def test_registry_backup_restore_and_verify_commands(tmp_path) -> None:
     )
     restore.check_returncode()
 
-    verify = _run_cli(["registry", "--sqlite-path", str(restored_db), "verify", "--audit-chain", str(restored_audit)])
+    verify = _run_cli(
+        [
+            "registry",
+            "--sqlite-path",
+            str(restored_db),
+            "verify",
+            "--audit-chain",
+            str(restored_audit),
+        ]
+    )
     verify.check_returncode()
     verify_payload = json.loads(verify.stdout)
     assert verify_payload["status"] == "ok"
@@ -593,7 +693,9 @@ def test_audit_archive_verify_restore_workflow(tmp_path) -> None:
     from sena.audit.chain import append_audit_record
     from sena.audit.sinks import JsonlFileAuditSink, RotationPolicy
 
-    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    sink = JsonlFileAuditSink(
+        path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250)
+    )
     for i in range(5):
         append_audit_record(sink, {"decision_id": f"dec-{i}", "outcome": "APPROVED"})
 
@@ -646,11 +748,17 @@ def test_audit_verify_archive_reports_missing_segment(tmp_path) -> None:
     from sena.audit.chain import append_audit_record
     from sena.audit.sinks import JsonlFileAuditSink, RotationPolicy
 
-    sink = JsonlFileAuditSink(path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250))
+    sink = JsonlFileAuditSink(
+        path=str(tmp_path / "audit.jsonl"), rotation=RotationPolicy(max_file_bytes=250)
+    )
     for i in range(4):
         append_audit_record(sink, {"decision_id": f"dec-{i}", "outcome": "APPROVED"})
-    archive = create_audit_archive(str(tmp_path / "audit.jsonl"), str(tmp_path / "archive"))
-    manifest = json.loads((tmp_path / "archive" / Path(archive["manifest_path"]).name).read_text())
+    archive = create_audit_archive(
+        str(tmp_path / "audit.jsonl"), str(tmp_path / "archive")
+    )
+    manifest = json.loads(
+        (tmp_path / "archive" / Path(archive["manifest_path"]).name).read_text()
+    )
     (tmp_path / "archive" / manifest["segments"][0]["archived_file"]).unlink()
 
     verify_archive = _run_cli(
@@ -686,5 +794,7 @@ def test_registry_schema_status_and_upgrade_dry_run(tmp_path) -> None:
     status = _run_cli(base + ["schema-status"])
     status.check_returncode()
     status_payload = json.loads(status.stdout)
-    assert status_payload["current_version"] == status_payload["latest_available_version"]
+    assert (
+        status_payload["current_version"] == status_payload["latest_available_version"]
+    )
     assert status_payload["pending_versions"] == []

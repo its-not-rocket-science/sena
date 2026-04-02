@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sena.core.models import ActionProposal, EvaluatorConfig, PolicyBundleMetadata, PolicyRule
+from sena.core.models import (
+    ActionProposal,
+    EvaluatorConfig,
+    PolicyBundleMetadata,
+    PolicyRule,
+)
 from sena.engine.evaluator import PolicyEvaluator
 
 
@@ -97,7 +102,9 @@ def simulate_bundle_impact(
         bucket: dict[str, Any] = {}
         for change in changes:
             key = _group_key(change, field)
-            data = bucket.setdefault(key, {"total": 0, "changed": 0, "changed_scenarios": []})
+            data = bucket.setdefault(
+                key, {"total": 0, "changed": 0, "changed_scenarios": []}
+            )
             data["total"] += 1
             if change.changed:
                 data["changed"] += 1

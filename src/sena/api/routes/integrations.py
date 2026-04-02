@@ -20,11 +20,17 @@ from sena.services.integration_service import IntegrationService
 
 def create_integrations_router(state: EngineState) -> APIRouter:
     router = APIRouter()
-    evaluation_service = EvaluationService(state=state, audit_service=AuditService(state.settings.audit_sink_jsonl))
-    integration_service = IntegrationService(state=state, evaluation_service=evaluation_service)
+    evaluation_service = EvaluationService(
+        state=state, audit_service=AuditService(state.settings.audit_sink_jsonl)
+    )
+    integration_service = IntegrationService(
+        state=state, evaluation_service=evaluation_service
+    )
 
     @router.post("/integrations/webhook")
-    def integrations_webhook(req: WebhookEvaluateRequest, request: Request, response: Response) -> dict:
+    def integrations_webhook(
+        req: WebhookEvaluateRequest, request: Request, response: Response
+    ) -> dict:
         response.headers["x-sena-surface-stage"] = "experimental"
         if state.webhook_mapper is None:
             raise_api_error("webhook_mapping_not_configured")
@@ -51,7 +57,9 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         try:
             payload = integration_service.decode_json_body(raw_body)
         except json.JSONDecodeError:
-            raise_api_error("validation_error", details={"reason": "Malformed JSON body"})
+            raise_api_error(
+                "validation_error", details={"reason": "Malformed JSON body"}
+            )
 
         try:
             return integration_service.handle_jira_event(
@@ -72,27 +80,42 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             if "duplicate delivery" in reason:
                 return {
                     "status": "duplicate_ignored",
-                    **error_payload("jira_duplicate_delivery", reason, request.state.request_id),
+                    **error_payload(
+                        "jira_duplicate_delivery", reason, request.state.request_id
+                    ),
                 }
             if "unsupported jira event type" in reason:
-                raise_api_error("jira_unsupported_event_type", details={"reason": reason})
-            if "missing required fields" in reason or "missing actor identity" in reason:
-                raise_api_error("jira_missing_required_fields", details={"reason": reason})
+                raise_api_error(
+                    "jira_unsupported_event_type", details={"reason": reason}
+                )
+            if (
+                "missing required fields" in reason
+                or "missing actor identity" in reason
+            ):
+                raise_api_error(
+                    "jira_missing_required_fields", details={"reason": reason}
+                )
             if "signature" in reason:
-                raise_api_error("jira_authentication_failed", details={"reason": reason})
+                raise_api_error(
+                    "jira_authentication_failed", details={"reason": reason}
+                )
             raise_api_error("jira_invalid_mapping", details={"reason": reason})
         except Exception as exc:  # pragma: no cover
             raise_api_error("jira_evaluation_error", details={"reason": str(exc)})
 
     @router.post("/integrations/servicenow/webhook")
-    async def integrations_servicenow_webhook(request: Request, strict_require_allow: bool = False) -> dict:
+    async def integrations_servicenow_webhook(
+        request: Request, strict_require_allow: bool = False
+    ) -> dict:
         if state.servicenow_connector is None:
             raise_api_error("servicenow_mapping_not_configured")
         raw_body = await request.body()
         try:
             payload = integration_service.decode_json_body(raw_body)
         except json.JSONDecodeError:
-            raise_api_error("validation_error", details={"reason": "Malformed JSON body"})
+            raise_api_error(
+                "validation_error", details={"reason": "Malformed JSON body"}
+            )
 
         try:
             return integration_service.handle_servicenow_event(
@@ -114,12 +137,23 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             if "duplicate delivery" in reason:
                 return {
                     "status": "duplicate_ignored",
-                    **error_payload("servicenow_duplicate_delivery", reason, request.state.request_id),
+                    **error_payload(
+                        "servicenow_duplicate_delivery",
+                        reason,
+                        request.state.request_id,
+                    ),
                 }
             if "unsupported servicenow event type" in reason:
-                raise_api_error("servicenow_unsupported_event_type", details={"reason": reason})
-            if "missing required fields" in reason or "missing actor identity" in reason:
-                raise_api_error("servicenow_missing_required_fields", details={"reason": reason})
+                raise_api_error(
+                    "servicenow_unsupported_event_type", details={"reason": reason}
+                )
+            if (
+                "missing required fields" in reason
+                or "missing actor identity" in reason
+            ):
+                raise_api_error(
+                    "servicenow_missing_required_fields", details={"reason": reason}
+                )
             raise_api_error("servicenow_invalid_mapping", details={"reason": reason})
         except Exception as exc:  # pragma: no cover
             raise_api_error("servicenow_evaluation_error", details={"reason": str(exc)})
@@ -131,7 +165,9 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             form_data = await request.form()
             payload_json = form_data.get("payload")
             if not isinstance(payload_json, str):
-                raise SlackIntegrationError("Slack interaction payload form field is required")
+                raise SlackIntegrationError(
+                    "Slack interaction payload form field is required"
+                )
             return integration_service.handle_slack_interaction(payload_json)
         except SlackIntegrationError as exc:
             raise_api_error("slack_interaction_error", details={"reason": str(exc)})

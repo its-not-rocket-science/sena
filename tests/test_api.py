@@ -13,7 +13,6 @@ from sena.api.app import create_app
 from sena.api.config import ApiSettings
 
 
-
 def _settings(**kwargs):
     defaults = {
         "policy_dir": "src/sena/examples/policies",
@@ -36,9 +35,6 @@ def _settings(**kwargs):
     }
     defaults.update(kwargs)
     return ApiSettings(**defaults)
-
-
-
 
 
 def _servicenow_fixture(name: str) -> dict:
@@ -74,11 +70,12 @@ def test_unversioned_routes_are_deprecated_and_removed() -> None:
     assert bundle_response.json()["error"]["code"] == "route_deprecated"
     assert "/v1/bundle" in bundle_response.json()["error"]["message"]
 
-    evaluate_response = client.post("/evaluate", json={"action_type": "approve_vendor_payment"})
+    evaluate_response = client.post(
+        "/evaluate", json={"action_type": "approve_vendor_payment"}
+    )
     assert evaluate_response.status_code == 410
     assert evaluate_response.json()["error"]["code"] == "route_deprecated"
     assert "/v1/evaluate" in evaluate_response.json()["error"]["message"]
-
 
 
 def test_readiness_endpoint() -> None:
@@ -89,7 +86,6 @@ def test_readiness_endpoint() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
     assert response.json()["mode"] == "development"
-
 
 
 def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
@@ -118,9 +114,6 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     assert "decision_hash" in body
 
 
-
-
-
 def test_evaluate_review_package_endpoint_returns_durable_artifact() -> None:
     app = create_app(_settings())
     client = TestClient(app)
@@ -132,7 +125,11 @@ def test_evaluate_review_package_endpoint_returns_durable_artifact() -> None:
             "request_id": "req-api-review",
             "actor_id": "actor-api",
             "actor_role": "finance_analyst",
-            "attributes": {"amount": 15000, "vendor_verified": False, "requester_role": "finance_analyst"},
+            "attributes": {
+                "amount": 15000,
+                "vendor_verified": False,
+                "requester_role": "finance_analyst",
+            },
         },
     )
 
@@ -143,14 +140,16 @@ def test_evaluate_review_package_endpoint_returns_durable_artifact() -> None:
     assert body["precedence"]["explanation"]
     assert body["policy_bundle_metadata"]["bundle_name"] == "enterprise-demo"
 
+
 def test_api_key_auth_blocks_unauthorized_request() -> None:
     app = create_app(_settings(enable_api_key_auth=True, api_key="secret"))
     client = TestClient(app)
 
-    response = client.post("/v1/evaluate", json={"action_type": "approve_vendor_payment"})
+    response = client.post(
+        "/v1/evaluate", json={"action_type": "approve_vendor_payment"}
+    )
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "unauthorized"
-
 
 
 def test_api_key_auth_allows_authorized_request() -> None:
@@ -160,19 +159,30 @@ def test_api_key_auth_allows_authorized_request() -> None:
     response = client.post(
         "/v1/evaluate",
         headers={"x-api-key": "secret"},
-        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
     )
     assert response.status_code == 200
 
 
 def test_api_key_role_evaluator_cannot_promote_bundle() -> None:
-    app = create_app(_settings(enable_api_key_auth=True, api_keys=(("eval-key", "evaluator"),)))
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_keys=(("eval-key", "evaluator"),))
+    )
     client = TestClient(app)
 
     response = client.post(
         "/v1/bundle/promote",
         headers={"x-api-key": "eval-key"},
-        json={"bundle_id": 1, "target_lifecycle": "active", "promoted_by": "u", "promotion_reason": "r", "validation_artifact": "a"},
+        json={
+            "bundle_id": 1,
+            "target_lifecycle": "active",
+            "promoted_by": "u",
+            "promotion_reason": "r",
+            "validation_artifact": "a",
+        },
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "forbidden"
@@ -191,7 +201,6 @@ def test_api_key_role_policy_author_cannot_evaluate() -> None:
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "forbidden"
-
 
 
 def test_validation_error_shape() -> None:
@@ -235,7 +244,14 @@ def test_batch_and_bundle_inspect_endpoints() -> None:
 
     batch_response = client.post(
         "/v1/evaluate/batch",
-        json={"items": [{"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}}]},
+        json={
+            "items": [
+                {
+                    "action_type": "approve_vendor_payment",
+                    "attributes": {"vendor_verified": False},
+                }
+            ]
+        },
     )
     assert batch_response.status_code == 200
     assert batch_response.json()["count"] == 1
@@ -284,7 +300,11 @@ def test_replay_drift_endpoint() -> None:
                             "request_id": "api-r1",
                             "actor_id": "actor-api",
                             "actor_role": "finance_analyst",
-                            "attributes": {"amount": 250, "vendor_verified": True, "source_system": "jira"},
+                            "attributes": {
+                                "amount": 250,
+                                "vendor_verified": True,
+                                "source_system": "jira",
+                            },
                             "action_origin": "human",
                         },
                         "facts": {},
@@ -347,7 +367,10 @@ def test_sqlite_policy_store_mode(tmp_path) -> None:
 
     eval_response = client.post(
         "/v1/evaluate",
-        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
     )
     assert eval_response.status_code == 200
 
@@ -374,19 +397,32 @@ def test_bundle_promote_endpoint_enforces_transition_order(tmp_path) -> None:
 
     skipped = client.post(
         "/v1/bundle/promote",
-        json={"bundle_id": bundle_id, "target_lifecycle": "active", "promoted_by": "ops", "promotion_reason": "go", "validation_artifact": "CAB"},
+        json={
+            "bundle_id": bundle_id,
+            "target_lifecycle": "active",
+            "promoted_by": "ops",
+            "promotion_reason": "go",
+            "validation_artifact": "CAB",
+        },
     )
     assert skipped.status_code == 400
     assert skipped.json()["error"]["code"] == "promotion_validation_failed"
 
     to_candidate = client.post(
         "/v1/bundle/promote",
-        json={"bundle_id": bundle_id, "target_lifecycle": "candidate", "promoted_by": "ops", "promotion_reason": "ready"},
+        json={
+            "bundle_id": bundle_id,
+            "target_lifecycle": "candidate",
+            "promoted_by": "ops",
+            "promotion_reason": "ready",
+        },
     )
     assert to_candidate.status_code == 200
 
 
-def test_active_promotion_passes_with_validation_and_simulation_evidence(tmp_path) -> None:
+def test_active_promotion_passes_with_validation_and_simulation_evidence(
+    tmp_path,
+) -> None:
     from sena.policy.parser import load_policy_bundle
     from sena.policy.store import SQLitePolicyBundleRepository
 
@@ -396,16 +432,30 @@ def test_active_promotion_passes_with_validation_and_simulation_evidence(tmp_pat
     rules, metadata = load_policy_bundle("src/sena/examples/policies")
     metadata.lifecycle = "draft"
     baseline_id = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(baseline_id, "candidate", promoted_by="ops", promotion_reason="ready")
-    repo.transition_bundle(baseline_id, "active", promoted_by="ops", promotion_reason="go", validation_artifact="CAB-1")
+    repo.transition_bundle(
+        baseline_id, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
+    repo.transition_bundle(
+        baseline_id,
+        "active",
+        promoted_by="ops",
+        promotion_reason="go",
+        validation_artifact="CAB-1",
+    )
 
     metadata.version = "2026.99"
     metadata.lifecycle = "draft"
     candidate_id = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(candidate_id, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        candidate_id, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
 
     app = create_app(
-        _settings(policy_store_backend="sqlite", policy_store_sqlite_path=str(db_path), bundle_name=metadata.bundle_name)
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
     )
     client = TestClient(app)
     response = client.post(
@@ -418,7 +468,13 @@ def test_active_promotion_passes_with_validation_and_simulation_evidence(tmp_pat
             "validation_artifact": "CAB-2",
             "simulation_result": {
                 "changed_scenarios": 0,
-                "changes": [{"scenario_id": "s1", "before_outcome": "BLOCKED", "after_outcome": "BLOCKED"}],
+                "changes": [
+                    {
+                        "scenario_id": "s1",
+                        "before_outcome": "BLOCKED",
+                        "after_outcome": "BLOCKED",
+                    }
+                ],
             },
         },
     )
@@ -436,13 +492,23 @@ def test_active_promotion_threshold_failure_and_break_glass_history(tmp_path) ->
 
     metadata.lifecycle = "draft"
     baseline_id = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(baseline_id, "candidate", promoted_by="ops", promotion_reason="ready")
-    repo.transition_bundle(baseline_id, "active", promoted_by="ops", promotion_reason="go", validation_artifact="CAB-1")
+    repo.transition_bundle(
+        baseline_id, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
+    repo.transition_bundle(
+        baseline_id,
+        "active",
+        promoted_by="ops",
+        promotion_reason="go",
+        validation_artifact="CAB-1",
+    )
 
     metadata.version = "2026.05"
     metadata.lifecycle = "draft"
     candidate_id = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(candidate_id, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        candidate_id, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
 
     app = create_app(
         _settings(
@@ -463,7 +529,9 @@ def test_active_promotion_threshold_failure_and_break_glass_history(tmp_path) ->
             "validation_artifact": "CAB-2",
             "simulation_result": {
                 "changed_scenarios": 3,
-                "grouped_changes": {"risk_category": {"vendor_payment": {"changed": 2}}},
+                "grouped_changes": {
+                    "risk_category": {"vendor_payment": {"changed": 2}}
+                },
                 "changes": [{"before_outcome": "BLOCKED", "after_outcome": "APPROVED"}],
             },
             "thresholds": {
@@ -490,7 +558,9 @@ def test_active_promotion_threshold_failure_and_break_glass_history(tmp_path) ->
     )
     assert break_glass.status_code == 200
 
-    history = client.get("/v1/bundles/history", params={"bundle_name": metadata.bundle_name}).json()["history"]
+    history = client.get(
+        "/v1/bundles/history", params={"bundle_name": metadata.bundle_name}
+    ).json()["history"]
     latest = history[0]
     assert latest["action"] == "promote_break_glass"
     assert latest["break_glass"] == 1
@@ -509,10 +579,16 @@ def test_active_promotion_fails_without_any_evidence(tmp_path) -> None:
     rules, metadata = load_policy_bundle("src/sena/examples/policies")
     metadata.lifecycle = "draft"
     bundle_id = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(bundle_id, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        bundle_id, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
 
     app = create_app(
-        _settings(policy_store_backend="sqlite", policy_store_sqlite_path=str(db_path), bundle_name=metadata.bundle_name)
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
     )
     client = TestClient(app)
     response = client.post(
@@ -540,10 +616,16 @@ def test_active_promotion_is_idempotent_when_already_active(tmp_path) -> None:
     rules, metadata = load_policy_bundle("src/sena/examples/policies")
     metadata.lifecycle = "draft"
     bundle_id = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(bundle_id, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        bundle_id, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
 
     app = create_app(
-        _settings(policy_store_backend="sqlite", policy_store_sqlite_path=str(db_path), bundle_name=metadata.bundle_name)
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
     )
     client = TestClient(app)
     first = client.post(
@@ -556,7 +638,13 @@ def test_active_promotion_is_idempotent_when_already_active(tmp_path) -> None:
             "validation_artifact": "CAB-1",
             "simulation_result": {
                 "changed_scenarios": 0,
-                "changes": [{"scenario_id": "s1", "before_outcome": "BLOCKED", "after_outcome": "BLOCKED"}],
+                "changes": [
+                    {
+                        "scenario_id": "s1",
+                        "before_outcome": "BLOCKED",
+                        "after_outcome": "BLOCKED",
+                    }
+                ],
             },
         },
     )
@@ -574,10 +662,14 @@ def test_active_promotion_is_idempotent_when_already_active(tmp_path) -> None:
     assert second.json()["idempotent"] is True
 
 
-def test_register_bundle_fails_when_signature_strict_and_manifest_invalid(tmp_path) -> None:
+def test_register_bundle_fails_when_signature_strict_and_manifest_invalid(
+    tmp_path,
+) -> None:
     policy_dir = tmp_path / "bundle"
     policy_dir.mkdir()
-    (policy_dir / "bundle.yaml").write_text("bundle_name: strict-demo\nversion: 1.0.0\n")
+    (policy_dir / "bundle.yaml").write_text(
+        "bundle_name: strict-demo\nversion: 1.0.0\n"
+    )
     (policy_dir / "rules.yaml").write_text(
         '[{"id":"r1","description":"d","severity":"low","inviolable":false,"applies_to":["a"],"condition":{"field":"x","eq":1},"decision":"BLOCK","reason":"ok"}]'
     )
@@ -629,10 +721,10 @@ def test_webhook_endpoint_maps_payload_and_returns_reasoning() -> None:
                         "metadata": {
                             "vendor_verified": False,
                             "requester_role": "finance_analyst",
-                            "requested_by": "user_9"
-                        }
+                            "requested_by": "user_9",
+                        },
                     }
-                }
+                },
             },
             "facts": {},
         },
@@ -654,7 +746,11 @@ def test_webhook_endpoint_requires_mapping_config() -> None:
 
     response = client.post(
         "/v1/integrations/webhook",
-        json={"provider": "stripe", "event_type": "payment_intent.created", "payload": {}},
+        json={
+            "provider": "stripe",
+            "event_type": "payment_intent.created",
+            "payload": {},
+        },
     )
 
     assert response.status_code == 400
@@ -663,7 +759,9 @@ def test_webhook_endpoint_requires_mapping_config() -> None:
 
 def test_jira_webhook_happy_path_returns_machine_readable_payload() -> None:
     app = create_app(
-        _settings(jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml")
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
     )
     client = TestClient(app)
     payload = {
@@ -697,7 +795,9 @@ def test_jira_webhook_happy_path_returns_machine_readable_payload() -> None:
 
 def test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response() -> None:
     app = create_app(
-        _settings(jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml")
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
     )
     client = TestClient(app)
     payload = {
@@ -730,7 +830,9 @@ def test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response() -> 
 
 def test_jira_webhook_missing_actor_identity_returns_deterministic_error() -> None:
     app = create_app(
-        _settings(jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml")
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
     )
     client = TestClient(app)
     payload = {
@@ -760,22 +862,28 @@ def test_jira_webhook_missing_actor_identity_returns_deterministic_error() -> No
 
 def test_jira_webhook_unsupported_event_returns_deterministic_error() -> None:
     app = create_app(
-        _settings(jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml")
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
     )
     client = TestClient(app)
     response = client.post(
         "/v1/integrations/jira/webhook",
-        json={"webhookEvent": "jira:comment_created", "issue": {"id": "100", "key": "RISK-2"}},
+        json={
+            "webhookEvent": "jira:comment_created",
+            "issue": {"id": "100", "key": "RISK-2"},
+        },
         headers={"x-atlassian-webhook-identifier": "jira-delivery-unsupported"},
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "jira_unsupported_event_type"
 
 
-
 def test_servicenow_webhook_happy_path_returns_machine_readable_payload() -> None:
     app = create_app(
-        _settings(servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml")
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml"
+        )
     )
     client = TestClient(app)
     payload = _servicenow_fixture("emergency_change")
@@ -790,19 +898,30 @@ def test_servicenow_webhook_happy_path_returns_machine_readable_payload() -> Non
     body = response.json()
     assert body["status"] == "evaluated"
     assert body["normalized_event"]["source_system"] == "servicenow"
-    assert body["mapped_action_proposal"]["request_id"] == payload["change_request"]["number"]
+    assert (
+        body["mapped_action_proposal"]["request_id"]
+        == payload["change_request"]["number"]
+    )
 
 
-def test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response() -> None:
+def test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response() -> (
+    None
+):
     app = create_app(
-        _settings(servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml")
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml"
+        )
     )
     client = TestClient(app)
     payload = _servicenow_fixture("emergency_change")
     headers = {"x-servicenow-delivery-id": "sn-delivery-dup"}
 
-    first = client.post("/v1/integrations/servicenow/webhook", json=payload, headers=headers)
-    second = client.post("/v1/integrations/servicenow/webhook", json=payload, headers=headers)
+    first = client.post(
+        "/v1/integrations/servicenow/webhook", json=payload, headers=headers
+    )
+    second = client.post(
+        "/v1/integrations/servicenow/webhook", json=payload, headers=headers
+    )
 
     assert first.status_code == 200
     assert second.status_code == 200
@@ -836,9 +955,13 @@ def test_webhook_endpoint_rejects_unknown_provider_fail_closed() -> None:
     assert "Unknown webhook provider" in body["error"]["details"]["reason"]
 
 
-def test_servicenow_webhook_missing_actor_identity_returns_deterministic_error() -> None:
+def test_servicenow_webhook_missing_actor_identity_returns_deterministic_error() -> (
+    None
+):
     app = create_app(
-        _settings(servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml")
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml"
+        )
     )
     client = TestClient(app)
     payload = _servicenow_fixture("emergency_change")
@@ -855,7 +978,9 @@ def test_servicenow_webhook_missing_actor_identity_returns_deterministic_error()
 
 def test_servicenow_webhook_audit_record_includes_source_metadata() -> None:
     app = create_app(
-        _settings(servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml")
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml"
+        )
     )
     client = TestClient(app)
     payload = _servicenow_fixture("privileged_change")
@@ -870,24 +995,38 @@ def test_servicenow_webhook_audit_record_includes_source_metadata() -> None:
     source_metadata = response.json()["decision"]["audit_record"]["source_metadata"]
     assert source_metadata["source_system"] == "servicenow"
     assert source_metadata["source_event_type"] == "change_approval.requested"
-    assert source_metadata["servicenow_change_number"] == payload["change_request"]["number"]
+    assert (
+        source_metadata["servicenow_change_number"]
+        == payload["change_request"]["number"]
+    )
 
 
 def test_rate_limiting_per_api_key() -> None:
     app = create_app(
-        _settings(enable_api_key_auth=True, api_key="secret", rate_limit_requests=1, rate_limit_window_seconds=60)
+        _settings(
+            enable_api_key_auth=True,
+            api_key="secret",
+            rate_limit_requests=1,
+            rate_limit_window_seconds=60,
+        )
     )
     client = TestClient(app)
 
     first = client.post(
         "/v1/evaluate",
         headers={"x-api-key": "secret"},
-        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
     )
     second = client.post(
         "/v1/evaluate",
         headers={"x-api-key": "secret"},
-        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
     )
 
     assert first.status_code == 200
@@ -926,7 +1065,10 @@ def test_timeout_handling_returns_gateway_timeout(monkeypatch) -> None:
 
     response = client.post(
         "/v1/evaluate",
-        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
     )
 
     assert response.status_code == 504
@@ -956,7 +1098,10 @@ def test_metrics_endpoint_exposes_prometheus_metrics() -> None:
     metrics_body = metrics_response.text
     assert "request_count_total" in metrics_body
     assert "decision_outcome_count_total" in metrics_body
-    assert 'decision_outcome_count_total{endpoint="/v1/evaluate",outcome="BLOCKED"}' in metrics_body
+    assert (
+        'decision_outcome_count_total{endpoint="/v1/evaluate",outcome="BLOCKED"}'
+        in metrics_body
+    )
     assert 'evaluation_latency_bucket{endpoint="/v1/evaluate",le=' in metrics_body
 
 
@@ -967,7 +1112,10 @@ def test_request_id_header_is_preserved_across_evaluate_flow() -> None:
     response = client.post(
         "/v1/evaluate",
         headers={"x-request-id": "req-correlation-123"},
-        json={"action_type": "approve_vendor_payment", "attributes": {"vendor_verified": False}},
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
     )
     assert response.status_code == 200
     body = response.json()
@@ -976,26 +1124,37 @@ def test_request_id_header_is_preserved_across_evaluate_flow() -> None:
 
 
 def test_startup_fails_when_policy_dir_missing() -> None:
-    with pytest.raises(RuntimeError, match="SENA_POLICY_DIR must point to an existing directory"):
+    with pytest.raises(
+        RuntimeError, match="SENA_POLICY_DIR must point to an existing directory"
+    ):
         create_app(_settings(policy_dir="does/not/exist"))
 
 
 def test_startup_fails_when_bundle_has_no_rules(tmp_path) -> None:
     policy_dir = tmp_path / "empty_bundle"
     policy_dir.mkdir()
-    (policy_dir / "bundle.yaml").write_text("bundle_name: enterprise-demo\nversion: 2026.03\n")
+    (policy_dir / "bundle.yaml").write_text(
+        "bundle_name: enterprise-demo\nversion: 2026.03\n"
+    )
 
-    with pytest.raises(RuntimeError, match="Failed to load policy bundle: no policy files were found"):
+    with pytest.raises(
+        RuntimeError, match="Failed to load policy bundle: no policy files were found"
+    ):
         create_app(_settings(policy_dir=str(policy_dir)))
 
 
 def test_startup_fails_when_api_key_set_but_disabled() -> None:
-    with pytest.raises(RuntimeError, match="SENA_API_KEY is set but SENA_API_KEY_ENABLED is not true"):
+    with pytest.raises(
+        RuntimeError, match="SENA_API_KEY is set but SENA_API_KEY_ENABLED is not true"
+    ):
         create_app(_settings(enable_api_key_auth=False, api_key="secret"))
 
 
 def test_startup_fails_in_production_without_api_key_auth() -> None:
-    with pytest.raises(RuntimeError, match="SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true"):
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true",
+    ):
         create_app(_settings(runtime_mode="production", enable_api_key_auth=False))
 
 
@@ -1011,7 +1170,9 @@ def test_startup_fails_when_runtime_mode_is_invalid() -> None:
 
 def test_startup_fails_when_sqlite_store_path_missing() -> None:
     with pytest.raises(RuntimeError, match="SENA_POLICY_STORE_SQLITE_PATH is required"):
-        create_app(_settings(policy_store_backend="sqlite", policy_store_sqlite_path=None))
+        create_app(
+            _settings(policy_store_backend="sqlite", policy_store_sqlite_path=None)
+        )
 
 
 def test_startup_fails_when_slack_is_partially_configured() -> None:
@@ -1020,7 +1181,9 @@ def test_startup_fails_when_slack_is_partially_configured() -> None:
 
 
 def test_startup_fails_when_integration_mapping_path_missing() -> None:
-    with pytest.raises(RuntimeError, match="SENA_JIRA_MAPPING_CONFIG must point to an existing file"):
+    with pytest.raises(
+        RuntimeError, match="SENA_JIRA_MAPPING_CONFIG must point to an existing file"
+    ):
         create_app(_settings(jira_mapping_config_path="does/not/exist.yaml"))
 
 
@@ -1036,11 +1199,18 @@ def test_startup_fails_in_production_without_audit_sink() -> None:
 
 
 def test_startup_fails_when_strict_audit_verification_enabled_without_sink() -> None:
-    with pytest.raises(RuntimeError, match="SENA_AUDIT_VERIFY_ON_STARTUP_STRICT=true requires SENA_AUDIT_SINK_JSONL"):
-        create_app(_settings(audit_verify_on_startup_strict=True, audit_sink_jsonl=None))
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_AUDIT_VERIFY_ON_STARTUP_STRICT=true requires SENA_AUDIT_SINK_JSONL",
+    ):
+        create_app(
+            _settings(audit_verify_on_startup_strict=True, audit_sink_jsonl=None)
+        )
 
 
-def test_startup_fails_when_strict_audit_verification_detects_corruption(tmp_path) -> None:
+def test_startup_fails_when_strict_audit_verification_detects_corruption(
+    tmp_path,
+) -> None:
     audit_path = tmp_path / "audit.jsonl"
     audit_path.write_text('{"decision_id":"broken"')
     with pytest.raises(RuntimeError, match="Startup audit verification failed"):
@@ -1055,7 +1225,9 @@ def test_startup_fails_when_strict_audit_verification_detects_corruption(tmp_pat
 def test_startup_fails_in_production_without_signature_strictness(tmp_path) -> None:
     keyring_dir = tmp_path / "keyring"
     keyring_dir.mkdir()
-    with pytest.raises(RuntimeError, match="requires SENA_BUNDLE_SIGNATURE_STRICT=true"):
+    with pytest.raises(
+        RuntimeError, match="requires SENA_BUNDLE_SIGNATURE_STRICT=true"
+    ):
         create_app(
             _settings(
                 runtime_mode="production",
@@ -1099,6 +1271,7 @@ def test_startup_fails_in_production_without_jira_secret(tmp_path) -> None:
             )
         )
 
+
 def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
     from sena.policy.parser import load_policy_bundle
     from sena.policy.store import SQLitePolicyBundleRepository
@@ -1110,14 +1283,30 @@ def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
 
     metadata.lifecycle = "draft"
     id1 = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(id1, "candidate", promoted_by="ops", promotion_reason="ready")
-    repo.transition_bundle(id1, "active", promoted_by="ops", promotion_reason="go", validation_artifact="CAB-1")
+    repo.transition_bundle(
+        id1, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
+    repo.transition_bundle(
+        id1,
+        "active",
+        promoted_by="ops",
+        promotion_reason="go",
+        validation_artifact="CAB-1",
+    )
 
     metadata.version = "2026.04"
     metadata.lifecycle = "draft"
     id2 = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(id2, "candidate", promoted_by="ops", promotion_reason="ready")
-    repo.transition_bundle(id2, "active", promoted_by="ops", promotion_reason="go", validation_artifact="CAB-2")
+    repo.transition_bundle(
+        id2, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
+    repo.transition_bundle(
+        id2,
+        "active",
+        promoted_by="ops",
+        promotion_reason="go",
+        validation_artifact="CAB-2",
+    )
 
     app = create_app(
         _settings(
@@ -1128,7 +1317,9 @@ def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
     )
     client = TestClient(app)
 
-    history = client.get("/v1/bundles/history", params={"bundle_name": metadata.bundle_name})
+    history = client.get(
+        "/v1/bundles/history", params={"bundle_name": metadata.bundle_name}
+    )
     assert history.status_code == 200
     assert history.json()["history"]
 
@@ -1151,12 +1342,16 @@ def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
     )
     assert rollback.status_code == 200
 
-    active = client.get("/v1/bundles/active", params={"bundle_name": metadata.bundle_name})
+    active = client.get(
+        "/v1/bundles/active", params={"bundle_name": metadata.bundle_name}
+    )
     assert active.status_code == 200
     assert active.json()["bundle_id"] == id1
 
 
-def test_bundle_promote_invalid_transition_returns_machine_readable_failure(tmp_path) -> None:
+def test_bundle_promote_invalid_transition_returns_machine_readable_failure(
+    tmp_path,
+) -> None:
     from sena.policy.parser import load_policy_bundle
     from sena.policy.store import SQLitePolicyBundleRepository
 
@@ -1191,7 +1386,9 @@ def test_bundle_promote_invalid_transition_returns_machine_readable_failure(tmp_
     assert "invalid lifecycle transition" in body["error"]["details"]["errors"][0]
 
 
-def test_bundle_rollback_target_not_found_returns_machine_readable_failure(tmp_path) -> None:
+def test_bundle_rollback_target_not_found_returns_machine_readable_failure(
+    tmp_path,
+) -> None:
     from sena.policy.parser import load_policy_bundle
     from sena.policy.store import SQLitePolicyBundleRepository
 

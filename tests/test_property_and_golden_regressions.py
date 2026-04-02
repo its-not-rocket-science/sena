@@ -7,7 +7,10 @@ import pytest
 
 from sena.core.enums import RuleDecision, Severity
 from sena.core.models import PolicyRule
-from sena.integrations.approval import ApprovalEventRoute, build_normalized_approval_event
+from sena.integrations.approval import (
+    ApprovalEventRoute,
+    build_normalized_approval_event,
+)
 from sena.integrations.base import IntegrationError
 from sena.policy.lifecycle import diff_rule_sets, validate_promotion
 
@@ -45,11 +48,17 @@ def test_golden_api_error_envelopes() -> None:
 
     invalid_length = client.post(
         "/v1/evaluate",
-        headers={"content-length": "nan", "x-api-key": "secret", "x-request-id": "req-golden"},
+        headers={
+            "content-length": "nan",
+            "x-api-key": "secret",
+            "x-request-id": "req-golden",
+        },
         content=b"{}",
     )
     assert invalid_length.status_code == 400
-    assert _normalize_error(invalid_length.json()) == _load_json("tests/fixtures/golden/api/invalid_content_length.json")
+    assert _normalize_error(invalid_length.json()) == _load_json(
+        "tests/fixtures/golden/api/invalid_content_length.json"
+    )
 
     unauthorized = client.post(
         "/v1/evaluate",
@@ -57,7 +66,9 @@ def test_golden_api_error_envelopes() -> None:
         json={"action_type": "approve_vendor_payment"},
     )
     assert unauthorized.status_code == 401
-    assert _normalize_error(unauthorized.json()) == _load_json("tests/fixtures/golden/api/unauthorized.json")
+    assert _normalize_error(unauthorized.json()) == _load_json(
+        "tests/fixtures/golden/api/unauthorized.json"
+    )
 
 
 def test_golden_bundle_diff_and_promotion_validation_results() -> None:
@@ -121,8 +132,12 @@ def test_golden_bundle_diff_and_promotion_validation_results() -> None:
             reason="allow",
         ),
     ]
-    promotion = validate_promotion("candidate", "active", [], invalid_target, validation_artifact=None)
-    assert promotion.__dict__ == _load_json("tests/fixtures/golden/bundles/promotion_validation.json")
+    promotion = validate_promotion(
+        "candidate", "active", [], invalid_target, validation_artifact=None
+    )
+    assert promotion.__dict__ == _load_json(
+        "tests/fixtures/golden/bundles/promotion_validation.json"
+    )
 
 
 def test_golden_normalized_integration_payload() -> None:
@@ -163,4 +178,6 @@ def test_golden_normalized_integration_payload() -> None:
     ).model_dump()
     normalized["event_timestamp"] = "<timestamp>"
 
-    assert normalized == _load_json("tests/fixtures/golden/integrations/normalized_approval_event.json")
+    assert normalized == _load_json(
+        "tests/fixtures/golden/integrations/normalized_approval_event.json"
+    )

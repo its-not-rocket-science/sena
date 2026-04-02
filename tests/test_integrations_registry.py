@@ -1,11 +1,22 @@
 import pytest
 
 from sena.integrations.base import ConnectorRegistry, DecisionPayload, IntegrationError
-from sena.integrations.jira import AllowAllJiraWebhookVerifier, JiraConnector, load_jira_mapping_config
+from sena.integrations.jira import (
+    AllowAllJiraWebhookVerifier,
+    JiraConnector,
+    load_jira_mapping_config,
+)
 from sena.integrations.registry import build_connector_registry
 from sena.integrations.slack import SlackClient
-from sena.integrations.servicenow import ServiceNowConnector, load_servicenow_mapping_config
-from sena.integrations.webhook import WebhookMappingConfig, WebhookPayloadMapper, WebhookRoute
+from sena.integrations.servicenow import (
+    ServiceNowConnector,
+    load_servicenow_mapping_config,
+)
+from sena.integrations.webhook import (
+    WebhookMappingConfig,
+    WebhookPayloadMapper,
+    WebhookRoute,
+)
 from sena.integrations.webhook import WebhookMappingError, load_webhook_mapping_config
 
 
@@ -14,7 +25,9 @@ def test_registry_registers_connectors() -> None:
         WebhookMappingConfig(
             providers={
                 "partner": {
-                    "created": WebhookRoute(action_type="review", actor_id_path="actor.id", attributes={})
+                    "created": WebhookRoute(
+                        action_type="review", actor_id_path="actor.id", attributes={}
+                    )
                 }
             }
         )
@@ -30,17 +43,20 @@ def test_registry_registers_connectors() -> None:
 
 def test_registry_registers_jira_connector() -> None:
     jira = JiraConnector(
-        config=load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml"),
+        config=load_jira_mapping_config(
+            "src/sena/examples/integrations/jira_mappings.yaml"
+        ),
         verifier=AllowAllJiraWebhookVerifier(),
     )
     registry = build_connector_registry(jira=jira)
     assert registry.list_names() == ["jira"]
 
 
-
 def test_registry_registers_servicenow_connector() -> None:
     servicenow = ServiceNowConnector(
-        config=load_servicenow_mapping_config("src/sena/examples/integrations/servicenow_mappings.yaml")
+        config=load_servicenow_mapping_config(
+            "src/sena/examples/integrations/servicenow_mappings.yaml"
+        )
     )
     registry = build_connector_registry(servicenow=servicenow)
     assert registry.list_names() == ["servicenow"]
@@ -59,7 +75,13 @@ def test_registry_rejects_duplicate_names() -> None:
 def test_webhook_send_decision_not_supported() -> None:
     webhook = WebhookPayloadMapper(
         WebhookMappingConfig(
-            providers={"partner": {"created": WebhookRoute(action_type="review", actor_id_path="actor.id", attributes={})}}
+            providers={
+                "partner": {
+                    "created": WebhookRoute(
+                        action_type="review", actor_id_path="actor.id", attributes={}
+                    )
+                }
+            }
         )
     )
 

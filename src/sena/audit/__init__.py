@@ -1,7 +1,11 @@
 """Tamper-evident audit chain utilities and pluggable sinks."""
 
 from sena.audit.chain import append_audit_record, compute_chain_hash, verify_audit_chain
-from sena.audit.archive import create_audit_archive, restore_audit_archive, verify_audit_archive
+from sena.audit.archive import (
+    create_audit_archive,
+    restore_audit_archive,
+    verify_audit_archive,
+)
 from sena.audit.sinks import (
     AuditSink,
     AuditSinkError,

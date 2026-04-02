@@ -26,7 +26,9 @@ def _resolve_sink(path_or_sink: str | AuditSink) -> AuditSink:
     return path_or_sink
 
 
-def append_audit_record(path_or_sink: str | AuditSink, record: dict[str, Any]) -> dict[str, Any]:
+def append_audit_record(
+    path_or_sink: str | AuditSink, record: dict[str, Any]
+) -> dict[str, Any]:
     sink = _resolve_sink(path_or_sink)
 
     if hasattr(sink, "append_chained"):
@@ -78,7 +80,11 @@ def verify_audit_chain(path_or_sink: str | AuditSink) -> dict[str, Any]:
 
         if "storage_sequence_number" in row:
             seq = row.get("storage_sequence_number")
-            if previous_seq is not None and isinstance(seq, int) and seq != previous_seq + 1:
+            if (
+                previous_seq is not None
+                and isinstance(seq, int)
+                and seq != previous_seq + 1
+            ):
                 errors.append(
                     f"record {count} ({location}): storage sequence gap "
                     f"(previous={previous_seq}, current={seq})"
@@ -105,7 +111,11 @@ def verify_audit_chain(path_or_sink: str | AuditSink) -> dict[str, Any]:
             payload["segments"] = details.get("segments", [])
         return payload
 
-    result: dict[str, Any] = {"valid": True, "records": count, "head": previous_chain_hash}
+    result: dict[str, Any] = {
+        "valid": True,
+        "records": count,
+        "head": previous_chain_hash,
+    }
     if details:
         result["segments"] = details.get("segments", [])
         manifest = details.get("manifest")
@@ -134,7 +144,11 @@ def _row_location(details: dict[str, Any] | None, one_based_record_index: int) -
 def summarize_audit_chain(path_or_sink: str | AuditSink) -> dict[str, Any]:
     verification = verify_audit_chain(path_or_sink)
     sink = _resolve_sink(path_or_sink)
-    details = sink.load_records_detailed() if hasattr(sink, "load_records_detailed") else {"segments": []}
+    details = (
+        sink.load_records_detailed()
+        if hasattr(sink, "load_records_detailed")
+        else {"segments": []}
+    )
     manifest = details.get("manifest", {}) if isinstance(details, dict) else {}
     segments = details.get("segments", []) if isinstance(details, dict) else []
     records = details.get("records", []) if isinstance(details, dict) else []
@@ -145,7 +159,9 @@ def summarize_audit_chain(path_or_sink: str | AuditSink) -> dict[str, Any]:
         "records": verification.get("records", 0),
         "head": verification.get("head"),
         "segment_count": len(segments),
-        "manifest_path": str(Path(path_or_sink).with_name(f"{Path(path_or_sink).name}.manifest.json"))
+        "manifest_path": str(
+            Path(path_or_sink).with_name(f"{Path(path_or_sink).name}.manifest.json")
+        )
         if isinstance(path_or_sink, str)
         else None,
         "next_sequence": manifest.get("next_sequence"),
@@ -155,9 +171,15 @@ def summarize_audit_chain(path_or_sink: str | AuditSink) -> dict[str, Any]:
     }
 
 
-def locate_decision_in_audit(path_or_sink: str | AuditSink, decision_id: str) -> dict[str, Any]:
+def locate_decision_in_audit(
+    path_or_sink: str | AuditSink, decision_id: str
+) -> dict[str, Any]:
     sink = _resolve_sink(path_or_sink)
-    details = sink.load_records_detailed() if hasattr(sink, "load_records_detailed") else {"records": []}
+    details = (
+        sink.load_records_detailed()
+        if hasattr(sink, "load_records_detailed")
+        else {"records": []}
+    )
     rows = details.get("records", [])
     for idx, row in enumerate(rows, start=1):
         if str(row.get("decision_id")) != decision_id:

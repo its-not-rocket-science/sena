@@ -71,9 +71,13 @@ class StoredBundle:
 class PolicyBundleRepository(Protocol):
     def initialize(self) -> None: ...
 
-    def register_bundle(self, metadata: PolicyBundleMetadata, rules: list[PolicyRule], **kwargs: Any) -> int: ...
+    def register_bundle(
+        self, metadata: PolicyBundleMetadata, rules: list[PolicyRule], **kwargs: Any
+    ) -> int: ...
 
-    def transition_bundle(self, bundle_id: int, target_lifecycle: str, **kwargs: Any) -> None: ...
+    def transition_bundle(
+        self, bundle_id: int, target_lifecycle: str, **kwargs: Any
+    ) -> None: ...
 
     def rollback_bundle(
         self,
@@ -89,7 +93,9 @@ class PolicyBundleRepository(Protocol):
 
     def get_bundle(self, bundle_id: int) -> StoredBundle | None: ...
 
-    def get_bundle_by_version(self, bundle_name: str, version: str) -> StoredBundle | None: ...
+    def get_bundle_by_version(
+        self, bundle_name: str, version: str
+    ) -> StoredBundle | None: ...
 
     def get_history(self, bundle_name: str) -> list[dict[str, Any]]: ...
 
@@ -143,9 +149,13 @@ class SQLitePolicyBundleRepository:
             self._migration_manager.upgrade(conn)
             self._run_startup_integrity_checks(conn)
 
-    def upgrade_schema(self, *, dry_run: bool = False, target_version: int | None = None) -> MigrationRunResult:
+    def upgrade_schema(
+        self, *, dry_run: bool = False, target_version: int | None = None
+    ) -> MigrationRunResult:
         with self._connect() as conn:
-            return self._migration_manager.upgrade(conn, dry_run=dry_run, target_version=target_version)
+            return self._migration_manager.upgrade(
+                conn, dry_run=dry_run, target_version=target_version
+            )
 
     def inspect_schema(self) -> dict[str, Any]:
         with self._connect() as conn:
@@ -177,7 +187,9 @@ class SQLitePolicyBundleRepository:
         except sqlite3.OperationalError as exc:
             conn.rollback()
             if self._is_lock_contention_error(exc):
-                raise PolicyBundleConflictError("policy store is busy; retry operation") from exc
+                raise PolicyBundleConflictError(
+                    "policy store is busy; retry operation"
+                ) from exc
             raise
         except Exception:
             conn.rollback()
@@ -240,7 +252,9 @@ class SQLitePolicyBundleRepository:
                     ),
                 )
             except sqlite3.IntegrityError as exc:
-                raise PolicyBundleConflictError("bundle with same name and version already exists") from exc
+                raise PolicyBundleConflictError(
+                    "bundle with same name and version already exists"
+                ) from exc
             bundle_id = int(cursor.lastrowid)
             conn.executemany(
                 """
@@ -252,7 +266,11 @@ class SQLitePolicyBundleRepository:
                         bundle_id,
                         rule.id,
                         self._rule_hash(rule),
-                        json.dumps(self._serialize_rule(rule), sort_keys=True, separators=(",", ":")),
+                        json.dumps(
+                            self._serialize_rule(rule),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
                     )
                     for rule in rules
                 ],
@@ -293,15 +311,21 @@ class SQLitePolicyBundleRepository:
     ) -> None:
         with self._write_transaction() as conn:
             try:
-                row = conn.execute("SELECT * FROM bundles WHERE id = ?", (bundle_id,)).fetchone()
+                row = conn.execute(
+                    "SELECT * FROM bundles WHERE id = ?", (bundle_id,)
+                ).fetchone()
                 if row is None:
-                    raise PolicyBundleNotFoundError(f"bundle id '{bundle_id}' not found")
+                    raise PolicyBundleNotFoundError(
+                        f"bundle id '{bundle_id}' not found"
+                    )
                 source = row["lifecycle"]
                 if (source, target_lifecycle) not in ALLOWED_TRANSITIONS:
                     raise PolicyBundleInvalidTransitionError(
                         f"invalid lifecycle transition '{source}' -> '{target_lifecycle}'"
                     )
-                if target_lifecycle == "active" and not (validation_artifact or evidence_json or break_glass):
+                if target_lifecycle == "active" and not (
+                    validation_artifact or evidence_json or break_glass
+                ):
                     raise PolicyBundleInvalidTransitionError(
                         "promotion to active requires validation_artifact or evidence_json unless break_glass is set"
                     )
@@ -314,7 +338,10 @@ class SQLitePolicyBundleRepository:
                     ).fetchone()
                     if active is not None:
                         replaced_bundle_id = int(active["id"])
-                        conn.execute("UPDATE bundles SET lifecycle = 'deprecated' WHERE id = ?", (replaced_bundle_id,))
+                        conn.execute(
+                            "UPDATE bundles SET lifecycle = 'deprecated' WHERE id = ?",
+                            (replaced_bundle_id,),
+                        )
                         self._insert_history(
                             conn,
                             BundleHistoryRow(
@@ -341,7 +368,14 @@ class SQLitePolicyBundleRepository:
                     SET lifecycle = ?, promoted_at = ?, promoted_by = ?, promotion_reason = ?, validation_artifact = ?
                     WHERE id = ?
                     """,
-                    (target_lifecycle, promoted_at, promoted_by, promotion_reason, validation_artifact, bundle_id),
+                    (
+                        target_lifecycle,
+                        promoted_at,
+                        promoted_by,
+                        promotion_reason,
+                        validation_artifact,
+                        bundle_id,
+                    ),
                 )
                 if target_lifecycle == "active":
                     self._assert_single_active_bundle(conn, row["name"])
@@ -364,7 +398,9 @@ class SQLitePolicyBundleRepository:
                     ),
                 )
             except sqlite3.IntegrityError as exc:
-                raise PolicyBundleConflictError("bundle transition conflicted with repository invariants") from exc
+                raise PolicyBundleConflictError(
+                    "bundle transition conflicted with repository invariants"
+                ) from exc
 
     def set_bundle_lifecycle(self, bundle_id: int, lifecycle: str) -> None:
         bundle = self.get_bundle(bundle_id)
@@ -400,12 +436,19 @@ class SQLitePolicyBundleRepository:
                     (bundle_name,),
                 ).fetchone()
                 if current is None:
-                    raise PolicyBundleInvalidTransitionError("no active bundle to rollback from")
+                    raise PolicyBundleInvalidTransitionError(
+                        "no active bundle to rollback from"
+                    )
                 current_id = int(current["id"])
                 if current_id == to_bundle_id:
-                    raise PolicyBundleInvalidTransitionError("rollback target is already active")
+                    raise PolicyBundleInvalidTransitionError(
+                        "rollback target is already active"
+                    )
 
-                conn.execute("UPDATE bundles SET lifecycle = 'deprecated' WHERE id = ?", (current_id,))
+                conn.execute(
+                    "UPDATE bundles SET lifecycle = 'deprecated' WHERE id = ?",
+                    (current_id,),
+                )
                 self._insert_history(
                     conn,
                     BundleHistoryRow(
@@ -458,14 +501,20 @@ class SQLitePolicyBundleRepository:
                     ),
                 )
             except sqlite3.IntegrityError as exc:
-                raise PolicyBundleConflictError("rollback conflicted with repository invariants") from exc
+                raise PolicyBundleConflictError(
+                    "rollback conflicted with repository invariants"
+                ) from exc
 
     def get_bundle(self, bundle_id: int) -> StoredBundle | None:
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM bundles WHERE id = ?", (bundle_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM bundles WHERE id = ?", (bundle_id,)
+            ).fetchone()
             return self._hydrate_bundle(conn, row)
 
-    def get_bundle_by_version(self, bundle_name: str, version: str) -> StoredBundle | None:
+    def get_bundle_by_version(
+        self, bundle_name: str, version: str
+    ) -> StoredBundle | None:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM bundles WHERE name = ? AND version = ? ORDER BY id DESC LIMIT 1",
@@ -494,7 +543,9 @@ class SQLitePolicyBundleRepository:
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def _hydrate_bundle(self, conn: sqlite3.Connection, row: sqlite3.Row | None) -> StoredBundle | None:
+    def _hydrate_bundle(
+        self, conn: sqlite3.Connection, row: sqlite3.Row | None
+    ) -> StoredBundle | None:
         if row is None:
             return None
         record = BundleRow(
@@ -560,7 +611,9 @@ class SQLitePolicyBundleRepository:
             signature_verified_at=record.signature_verified_at,
         )
 
-    def _insert_history(self, conn: sqlite3.Connection, history: BundleHistoryRow) -> None:
+    def _insert_history(
+        self, conn: sqlite3.Connection, history: BundleHistoryRow
+    ) -> None:
         conn.execute(
             """
             INSERT INTO bundle_history (
@@ -586,7 +639,6 @@ class SQLitePolicyBundleRepository:
             ),
         )
 
-
     @staticmethod
     def _is_lock_contention_error(exc: sqlite3.OperationalError) -> bool:
         detail = str(exc).lower()
@@ -609,7 +661,8 @@ class SQLitePolicyBundleRepository:
             "db_integrity_result": check_row[0] if check_row else None,
             "single_active_bundle_ok": not bad_rows,
             "multiple_active": [
-                {"bundle_name": row["name"], "active_count": int(row["active_count"])} for row in bad_rows
+                {"bundle_name": row["name"], "active_count": int(row["active_count"])}
+                for row in bad_rows
             ],
             "journal_mode": self.journal_mode,
             "synchronous": self.synchronous,
@@ -629,16 +682,24 @@ class SQLitePolicyBundleRepository:
             """
         ).fetchall()
         if bad_rows:
-            bundles = ", ".join(f"{row['name']}({row['active_count']})" for row in bad_rows)
-            raise PolicyStoreIntegrityError(f"multiple active bundles detected: {bundles}")
+            bundles = ", ".join(
+                f"{row['name']}({row['active_count']})" for row in bad_rows
+            )
+            raise PolicyStoreIntegrityError(
+                f"multiple active bundles detected: {bundles}"
+            )
 
-    def _assert_single_active_bundle(self, conn: sqlite3.Connection, bundle_name: str) -> None:
+    def _assert_single_active_bundle(
+        self, conn: sqlite3.Connection, bundle_name: str
+    ) -> None:
         row = conn.execute(
             "SELECT COUNT(*) AS active_count FROM bundles WHERE name = ? AND lifecycle = 'active'",
             (bundle_name,),
         ).fetchone()
         if row is not None and int(row["active_count"]) > 1:
-            raise PolicyStoreIntegrityError(f"multiple active bundles detected for '{bundle_name}'")
+            raise PolicyStoreIntegrityError(
+                f"multiple active bundles detected for '{bundle_name}'"
+            )
 
     @staticmethod
     def _serialize_rule(rule: PolicyRule) -> dict:
@@ -668,7 +729,9 @@ class SQLitePolicyBundleRepository:
 
     @classmethod
     def _rule_hash(cls, rule: PolicyRule) -> str:
-        canonical = json.dumps(cls._serialize_rule(rule), sort_keys=True, separators=(",", ":"))
+        canonical = json.dumps(
+            cls._serialize_rule(rule), sort_keys=True, separators=(",", ":")
+        )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     @classmethod
@@ -689,4 +752,6 @@ class PostgresPolicyBundleRepository:
         self.dsn = dsn
 
     def initialize(self) -> None:
-        raise NotImplementedError("Postgres adapter not implemented yet; use SQLitePolicyBundleRepository")
+        raise NotImplementedError(
+            "Postgres adapter not implemented yet; use SQLitePolicyBundleRepository"
+        )

@@ -4,14 +4,21 @@ from fastapi import APIRouter, Request
 
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, parse_default_decision
-from sena.api.schemas import BatchEvaluateRequest, EvaluateRequest, ReplayDriftRequest, SimulationRequest
+from sena.api.schemas import (
+    BatchEvaluateRequest,
+    EvaluateRequest,
+    ReplayDriftRequest,
+    SimulationRequest,
+)
 from sena.services.audit_service import AuditService
 from sena.services.evaluation_service import EvaluationService
 
 
 def create_evaluate_router(state: EngineState) -> APIRouter:
     router = APIRouter()
-    evaluation_service = EvaluationService(state=state, audit_service=AuditService(state.settings.audit_sink_jsonl))
+    evaluation_service = EvaluationService(
+        state=state, audit_service=AuditService(state.settings.audit_sink_jsonl)
+    )
 
     def _evaluate(req: EvaluateRequest, request: Request) -> dict:
         try:
@@ -23,7 +30,9 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
                 attributes=req.attributes,
                 action_origin=req.action_origin,
                 ai_metadata=req.ai_metadata.model_dump() if req.ai_metadata else None,
-                autonomous_metadata=req.autonomous_metadata.model_dump() if req.autonomous_metadata else None,
+                autonomous_metadata=req.autonomous_metadata.model_dump()
+                if req.autonomous_metadata
+                else None,
             )
             return evaluation_service.evaluate(
                 proposal=proposal,
@@ -52,7 +61,9 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
                 attributes=req.attributes,
                 action_origin=req.action_origin,
                 ai_metadata=req.ai_metadata.model_dump() if req.ai_metadata else None,
-                autonomous_metadata=req.autonomous_metadata.model_dump() if req.autonomous_metadata else None,
+                autonomous_metadata=req.autonomous_metadata.model_dump()
+                if req.autonomous_metadata
+                else None,
             )
             return evaluation_service.evaluate_review_package(
                 proposal=proposal,
@@ -66,7 +77,10 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
 
     @router.post("/evaluate/batch")
     def evaluate_batch(req: BatchEvaluateRequest, request: Request) -> dict:
-        return {"count": len(req.items), "results": [_evaluate(item, request) for item in req.items]}
+        return {
+            "count": len(req.items),
+            "results": [_evaluate(item, request) for item in req.items],
+        }
 
     @router.post("/simulation")
     def simulation(req: SimulationRequest) -> dict:

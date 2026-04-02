@@ -12,7 +12,10 @@ from sena.integrations.jira import (
     load_jira_mapping_config,
 )
 from sena.integrations.registry import build_connector_registry
-from sena.integrations.servicenow import ServiceNowConnector, load_servicenow_mapping_config
+from sena.integrations.servicenow import (
+    ServiceNowConnector,
+    load_servicenow_mapping_config,
+)
 from sena.integrations.slack import SlackClient
 from sena.integrations.webhook import WebhookPayloadMapper, load_webhook_mapping_config
 from sena.policy.parser import PolicyParseError, load_policy_bundle
@@ -76,7 +79,11 @@ def verify_bundle_signature(
     manifest_path = Path(policy_dir) / manifest_filename
     if not manifest_path.exists():
         if strict:
-            return False, [f"release manifest not found: {manifest_path}"], str(manifest_path)
+            return (
+                False,
+                [f"release manifest not found: {manifest_path}"],
+                str(manifest_path),
+            )
         return True, [], str(manifest_path)
     result = verify_release_manifest(
         Path(policy_dir),
@@ -150,7 +157,12 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
             raise RuntimeError(
                 "SENA_POLICY_STORE_SQLITE_PATH is required when SENA_POLICY_STORE_BACKEND=sqlite"
             )
-        sqlite_parent = Path(runtime_settings.policy_store_sqlite_path).expanduser().resolve().parent
+        sqlite_parent = (
+            Path(runtime_settings.policy_store_sqlite_path)
+            .expanduser()
+            .resolve()
+            .parent
+        )
         if not sqlite_parent.exists() or not sqlite_parent.is_dir():
             raise RuntimeError(
                 "SENA_POLICY_STORE_SQLITE_PATH parent directory must exist: "
@@ -159,12 +171,23 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
 
     if runtime_settings.api_key and not runtime_settings.enable_api_key_auth:
         raise RuntimeError("SENA_API_KEY is set but SENA_API_KEY_ENABLED is not true")
-    if runtime_settings.runtime_mode == "production" and not runtime_settings.enable_api_key_auth:
-        raise RuntimeError("SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true")
+    if (
+        runtime_settings.runtime_mode == "production"
+        and not runtime_settings.enable_api_key_auth
+    ):
+        raise RuntimeError(
+            "SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true"
+        )
     if runtime_settings.api_keys and runtime_settings.api_key:
         raise RuntimeError("Set only one of SENA_API_KEY or SENA_API_KEYS")
-    if runtime_settings.enable_api_key_auth and not runtime_settings.api_key and not runtime_settings.api_keys:
-        raise RuntimeError("SENA_API_KEY_ENABLED=true requires SENA_API_KEY or SENA_API_KEYS to be set")
+    if (
+        runtime_settings.enable_api_key_auth
+        and not runtime_settings.api_key
+        and not runtime_settings.api_keys
+    ):
+        raise RuntimeError(
+            "SENA_API_KEY_ENABLED=true requires SENA_API_KEY or SENA_API_KEYS to be set"
+        )
     for _, role in runtime_settings.api_keys:
         if role not in VALID_API_ROLES:
             raise RuntimeError(
@@ -177,18 +200,27 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
     for config_path, env_name in (
         (runtime_settings.webhook_mapping_config_path, "SENA_WEBHOOK_MAPPING_CONFIG"),
         (runtime_settings.jira_mapping_config_path, "SENA_JIRA_MAPPING_CONFIG"),
-        (runtime_settings.servicenow_mapping_config_path, "SENA_SERVICENOW_MAPPING_CONFIG"),
+        (
+            runtime_settings.servicenow_mapping_config_path,
+            "SENA_SERVICENOW_MAPPING_CONFIG",
+        ),
     ):
         if config_path:
             path = Path(config_path)
             if not path.exists() or not path.is_file():
-                raise RuntimeError(f"{env_name} must point to an existing file: {config_path}")
+                raise RuntimeError(
+                    f"{env_name} must point to an existing file: {config_path}"
+                )
 
     if runtime_settings.runtime_mode == "production":
         if not runtime_settings.audit_sink_jsonl:
-            raise RuntimeError("SENA_RUNTIME_MODE=production requires SENA_AUDIT_SINK_JSONL")
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production requires SENA_AUDIT_SINK_JSONL"
+            )
         if not runtime_settings.bundle_signature_strict:
-            raise RuntimeError("SENA_RUNTIME_MODE=production requires SENA_BUNDLE_SIGNATURE_STRICT=true")
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production requires SENA_BUNDLE_SIGNATURE_STRICT=true"
+            )
         if not runtime_settings.bundle_signature_keyring_dir:
             raise RuntimeError(
                 "SENA_RUNTIME_MODE=production requires SENA_BUNDLE_SIGNATURE_KEYRING_DIR"
@@ -199,12 +231,20 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
                 "SENA_BUNDLE_SIGNATURE_KEYRING_DIR must point to an existing directory: "
                 f"{runtime_settings.bundle_signature_keyring_dir}"
             )
-        if runtime_settings.jira_mapping_config_path and not runtime_settings.jira_webhook_secret:
+        if (
+            runtime_settings.jira_mapping_config_path
+            and not runtime_settings.jira_webhook_secret
+        ):
             raise RuntimeError(
                 "SENA_RUNTIME_MODE=production requires SENA_JIRA_WEBHOOK_SECRET when Jira integration is enabled"
             )
-    if runtime_settings.audit_verify_on_startup_strict and not runtime_settings.audit_sink_jsonl:
-        raise RuntimeError("SENA_AUDIT_VERIFY_ON_STARTUP_STRICT=true requires SENA_AUDIT_SINK_JSONL")
+    if (
+        runtime_settings.audit_verify_on_startup_strict
+        and not runtime_settings.audit_sink_jsonl
+    ):
+        raise RuntimeError(
+            "SENA_AUDIT_VERIFY_ON_STARTUP_STRICT=true requires SENA_AUDIT_SINK_JSONL"
+        )
 
 
 def build_runtime_state(
@@ -215,7 +255,9 @@ def build_runtime_state(
 ) -> EngineState:
     state = EngineState(runtime_settings, rules, metadata, policy_repo)
     if runtime_settings.webhook_mapping_config_path:
-        mapping_config = load_webhook_mapping_config(runtime_settings.webhook_mapping_config_path)
+        mapping_config = load_webhook_mapping_config(
+            runtime_settings.webhook_mapping_config_path
+        )
         state.webhook_mapper = WebhookPayloadMapper(mapping_config)
     if runtime_settings.slack_bot_token and runtime_settings.slack_channel:
         state.slack_client = SlackClient(
@@ -235,7 +277,9 @@ def build_runtime_state(
 
     if runtime_settings.servicenow_mapping_config_path:
         state.servicenow_connector = ServiceNowConnector(
-            config=load_servicenow_mapping_config(runtime_settings.servicenow_mapping_config_path)
+            config=load_servicenow_mapping_config(
+                runtime_settings.servicenow_mapping_config_path
+            )
         )
 
     state.connector_registry = build_connector_registry(

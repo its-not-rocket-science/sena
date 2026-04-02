@@ -5,7 +5,6 @@ pytest.importorskip("fastapi")
 from sena.api.middleware import FixedWindowRateLimiter
 
 
-
 def test_fixed_window_rate_limiter_limits_and_expires() -> None:
     limiter = FixedWindowRateLimiter(max_requests=2, window_seconds=10)
 

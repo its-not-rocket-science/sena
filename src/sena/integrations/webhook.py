@@ -46,12 +46,16 @@ def load_webhook_mapping_config(path: str | Path) -> WebhookMappingConfig:
         raw = json.loads(text)
     providers_raw = raw.get("providers")
     if not isinstance(providers_raw, dict) or not providers_raw:
-        raise WebhookMappingError("Webhook mapping config must contain non-empty 'providers'")
+        raise WebhookMappingError(
+            "Webhook mapping config must contain non-empty 'providers'"
+        )
 
     providers: dict[str, dict[str, WebhookRoute]] = {}
     for provider, events in providers_raw.items():
         if not isinstance(events, dict) or not events:
-            raise WebhookMappingError(f"Provider '{provider}' must define at least one event mapping")
+            raise WebhookMappingError(
+                f"Provider '{provider}' must define at least one event mapping"
+            )
         routes: dict[str, WebhookRoute] = {}
         for event_name, route in events.items():
             if not isinstance(route, dict):
@@ -68,7 +72,9 @@ def load_webhook_mapping_config(path: str | Path) -> WebhookMappingConfig:
                     action_type=route["action_type"],
                     actor_id_path=route["actor_id_path"],
                     attributes={str(k): str(v) for k, v in attrs.items()},
-                    required_fields=[str(item) for item in route.get("required_fields", [])],
+                    required_fields=[
+                        str(item) for item in route.get("required_fields", [])
+                    ],
                     static_attributes=route.get("static_attributes", {}) or {},
                     payload_path=route.get("payload_path"),
                     request_id_path=route.get("request_id_path"),
@@ -79,7 +85,10 @@ def load_webhook_mapping_config(path: str | Path) -> WebhookMappingConfig:
                     requested_action_path=route.get("requested_action_path"),
                     correlation_key_path=route.get("correlation_key_path"),
                     idempotency_key_path=route.get("idempotency_key_path"),
-                    risk_attributes={str(k): str(v) for k, v in (route.get("risk_attributes", {}) or {}).items()},
+                    risk_attributes={
+                        str(k): str(v)
+                        for k, v in (route.get("risk_attributes", {}) or {}).items()
+                    },
                     evidence_references_path=route.get("evidence_references_path"),
                     static_source_object_type=route.get("static_source_object_type"),
                     static_workflow_stage=route.get("static_workflow_stage"),
@@ -120,10 +129,15 @@ class WebhookPayloadMapper(Connector):
             default_request_id=default_request_id,
         )
         proposal = self.map_to_proposal(provider=provider, event=normalized)
-        return {"normalized_event": normalized.model_dump(), "action_proposal": proposal}
+        return {
+            "normalized_event": normalized.model_dump(),
+            "action_proposal": proposal,
+        }
 
     def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:
-        raise WebhookMappingError("Webhook connector does not support outbound decision delivery")
+        raise WebhookMappingError(
+            "Webhook connector does not support outbound decision delivery"
+        )
 
     def normalize_event(
         self,
@@ -143,7 +157,11 @@ class WebhookPayloadMapper(Connector):
                 f"No mapping rule configured for provider '{provider}' event '{event_type}'"
             )
 
-        source = _resolve_path(payload, route.payload_path) if route.payload_path else payload
+        source = (
+            _resolve_path(payload, route.payload_path)
+            if route.payload_path
+            else payload
+        )
         if not isinstance(source, dict):
             raise WebhookMappingError(
                 f"payload_path for provider '{provider}' event '{event_type}' must resolve to object"
@@ -166,6 +184,8 @@ class WebhookPayloadMapper(Connector):
             default_correlation_key=default_request_id,
         )
 
-    def map_to_proposal(self, *, provider: str, event: NormalizedApprovalEvent) -> ActionProposal:
+    def map_to_proposal(
+        self, *, provider: str, event: NormalizedApprovalEvent
+    ) -> ActionProposal:
         route = self._config.providers[provider][event.source_event_type]
         return to_action_proposal(event, route)

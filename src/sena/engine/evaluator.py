@@ -71,11 +71,21 @@ class PolicyEvaluator:
             version="0.1.0-alpha",
             loaded_from="unknown",
         )
-        self.invariants = invariants if invariants is not None else list(self.policy_bundle.invariants)
+        self.invariants = (
+            invariants
+            if invariants is not None
+            else list(self.policy_bundle.invariants)
+        )
         self.config = config or EvaluatorConfig()
-        compatibility = evaluate_bundle_compatibility(schema_version=self.policy_bundle.schema_version, runtime_version=SENA_VERSION)
+        compatibility = evaluate_bundle_compatibility(
+            schema_version=self.policy_bundle.schema_version,
+            runtime_version=SENA_VERSION,
+        )
         if compatibility.errors:
-            raise ValueError("policy bundle compatibility check failed: " + "; ".join(compatibility.errors))
+            raise ValueError(
+                "policy bundle compatibility check failed: "
+                + "; ".join(compatibility.errors)
+            )
 
     def evaluate(self, proposal: ActionProposal, facts: dict) -> EvaluationTrace:
         decision_id = f"dec_{uuid.uuid4().hex[:12]}"
@@ -94,7 +104,9 @@ class PolicyEvaluator:
             context["autonomous_metadata"] = asdict(proposal.autonomous_metadata)
         applicable = [r for r in self.rules if proposal.action_type in r.applies_to]
         applicable_invariants = [
-            invariant for invariant in self.invariants if proposal.action_type in invariant.applies_to
+            invariant
+            for invariant in self.invariants
+            if proposal.action_type in invariant.applies_to
         ]
         evaluated: list[RuleEvaluationResult] = []
         evaluated_invariants: list[InvariantEvaluationResult] = []
@@ -103,13 +115,19 @@ class PolicyEvaluator:
         identity_errors: list[str] = []
         ai_metadata_errors: list[str] = validate_ai_originated_action_fields(proposal)
         if self.config.require_allow_match:
-            identity_errors = validate_identity_fields(proposal.actor_id, proposal.actor_role)
+            identity_errors = validate_identity_fields(
+                proposal.actor_id, proposal.actor_role
+            )
         if self.config.enforce_context_schema and self.policy_bundle.context_schema:
-            schema_errors = validate_context_schema(context, self.policy_bundle.context_schema)
+            schema_errors = validate_context_schema(
+                context, self.policy_bundle.context_schema
+            )
 
         if not schema_errors and not identity_errors and not ai_metadata_errors:
             for invariant in applicable_invariants:
-                condition_result = evaluate_condition_with_trace(invariant.condition, context)
+                condition_result = evaluate_condition_with_trace(
+                    invariant.condition, context
+                )
                 matched = condition_result.matched
                 missing_fields.update(condition_result.missing_fields)
                 evaluated_invariants.append(
@@ -120,7 +138,9 @@ class PolicyEvaluator:
                     )
                 )
             for rule in applicable:
-                condition_result = evaluate_condition_with_trace(rule.condition, context)
+                condition_result = evaluate_condition_with_trace(
+                    rule.condition, context
+                )
                 matched = condition_result.matched
                 missing_fields.update(condition_result.missing_fields)
                 rule_decision = rule.decision if matched else None
@@ -141,7 +161,9 @@ class PolicyEvaluator:
                         missing_fields.update(
                             f"evidence.{class_name}" for class_name in missing_evidence
                         )
-                        rule_decision = rule.missing_evidence_decision or RuleDecision.ESCALATE
+                        rule_decision = (
+                            rule.missing_evidence_decision or RuleDecision.ESCALATE
+                        )
                         rule_reason = (
                             f"{rule.reason} Missing governance evidence: "
                             + ", ".join(sorted(missing_evidence))
@@ -160,7 +182,9 @@ class PolicyEvaluator:
                 )
 
         matched = [result for result in evaluated if result.matched]
-        matched_invariants = [result for result in evaluated_invariants if result.matched]
+        matched_invariants = [
+            result for result in evaluated_invariants if result.matched
+        ]
 
         inviolable_blocks = [
             r for r in matched if r.inviolable and r.decision == RuleDecision.BLOCK
@@ -168,7 +192,11 @@ class PolicyEvaluator:
         blocks = [r for r in matched if r.decision == RuleDecision.BLOCK]
         escalations = [r for r in matched if r.decision == RuleDecision.ESCALATE]
         allows = [r for r in matched if r.decision == RuleDecision.ALLOW]
-        conflicting_rules = sorted({r.rule_id for r in matched if r.decision != matched[0].decision}) if matched else []
+        conflicting_rules = (
+            sorted({r.rule_id for r in matched if r.decision != matched[0].decision})
+            if matched
+            else []
+        )
 
         outcome = self.config.default_decision
         precedence_explanation = (
@@ -219,9 +247,7 @@ class PolicyEvaluator:
             )
         if schema_errors:
             outcome = DecisionOutcome.BLOCKED
-            precedence_explanation = (
-                "Context schema validation failed before policy evaluation; blocked deterministically."
-            )
+            precedence_explanation = "Context schema validation failed before policy evaluation; blocked deterministically."
             summary = (
                 f"Decision {decision_id}: BLOCKED due to context schema errors: "
                 f"{'; '.join(schema_errors)}"
@@ -229,9 +255,7 @@ class PolicyEvaluator:
         if identity_errors:
             outcome = DecisionOutcome.BLOCKED
             missing_fields.update(identity_errors)
-            precedence_explanation = (
-                "Strict mode requires actor identity context fields before policy evaluation."
-            )
+            precedence_explanation = "Strict mode requires actor identity context fields before policy evaluation."
             summary = (
                 f"Decision {decision_id}: BLOCKED due to missing identity field(s): "
                 f"{', '.join(identity_errors)}"
@@ -239,9 +263,7 @@ class PolicyEvaluator:
         if ai_metadata_errors:
             outcome = DecisionOutcome.BLOCKED
             missing_fields.update(ai_metadata_errors)
-            precedence_explanation = (
-                "AI-originated action proposals require deterministic governance metadata before policy evaluation."
-            )
+            precedence_explanation = "AI-originated action proposals require deterministic governance metadata before policy evaluation."
             summary = (
                 f"Decision {decision_id}: BLOCKED due to missing AI-governance field(s): "
                 f"{', '.join(ai_metadata_errors)}"
@@ -258,9 +280,7 @@ class PolicyEvaluator:
                     "found under strict allow mode."
                 )
             else:
-                precedence_explanation = (
-                    "Strict allow mode is enabled. Matching rules were found, but none were ALLOW."
-                )
+                precedence_explanation = "Strict allow mode is enabled. Matching rules were found, but none were ALLOW."
                 summary = (
                     f"Decision {decision_id}: BLOCKED because strict allow mode requires at "
                     "least one matching ALLOW rule."
@@ -308,13 +328,21 @@ class PolicyEvaluator:
             precedence_explanation,
         ]
         if matched_invariants:
-            outcome_rationale.append("Invariant violations are enforced before ordinary rule precedence.")
+            outcome_rationale.append(
+                "Invariant violations are enforced before ordinary rule precedence."
+            )
         if schema_errors:
-            outcome_rationale.append("Input context schema validation failed before rule evaluation.")
+            outcome_rationale.append(
+                "Input context schema validation failed before rule evaluation."
+            )
         if identity_errors:
-            outcome_rationale.append("Strict identity checks failed before rule evaluation.")
+            outcome_rationale.append(
+                "Strict identity checks failed before rule evaluation."
+            )
         if ai_metadata_errors:
-            outcome_rationale.append("AI-originated metadata checks failed before rule evaluation.")
+            outcome_rationale.append(
+                "AI-originated metadata checks failed before rule evaluation."
+            )
         if any(result.missing_evidence for result in matched):
             outcome_rationale.append(
                 "Missing governance evidence influenced one or more matched AI-assisted controls."
@@ -324,9 +352,13 @@ class PolicyEvaluator:
             "Retain decision hash and input fingerprint for audit replay.",
         ]
         if outcome == DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW:
-            reviewer_guidance.append("Manual approval is required before action execution.")
+            reviewer_guidance.append(
+                "Manual approval is required before action execution."
+            )
         if outcome == DecisionOutcome.BLOCKED:
-            reviewer_guidance.append("Treat as control failure until remediating evidence is attached.")
+            reviewer_guidance.append(
+                "Treat as control failure until remediating evidence is attached."
+            )
 
         decision_timestamp = datetime.now(timezone.utc)
         canonical_payload = {
@@ -337,13 +369,19 @@ class PolicyEvaluator:
                 "actor_role": proposal.actor_role,
                 "attributes": proposal.attributes,
                 "action_origin": proposal.action_origin.value,
-                "ai_metadata": asdict(proposal.ai_metadata) if proposal.ai_metadata else None,
-                "autonomous_metadata": asdict(proposal.autonomous_metadata) if proposal.autonomous_metadata else None,
+                "ai_metadata": asdict(proposal.ai_metadata)
+                if proposal.ai_metadata
+                else None,
+                "autonomous_metadata": asdict(proposal.autonomous_metadata)
+                if proposal.autonomous_metadata
+                else None,
             },
             "facts": facts,
         }
         input_fingerprint = hashlib.sha256(
-            json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
         ).hexdigest()
         decision_hash = hashlib.sha256(
             json.dumps(
@@ -354,7 +392,9 @@ class PolicyEvaluator:
                         "version": self.policy_bundle.version,
                     },
                     "matched_rule_ids": sorted(r.rule_id for r in matched),
-                    "matched_invariant_ids": sorted(r.invariant_id for r in matched_invariants),
+                    "matched_invariant_ids": sorted(
+                        r.invariant_id for r in matched_invariants
+                    ),
                     "outcome": outcome.value,
                 },
                 sort_keys=True,
@@ -382,9 +422,13 @@ class PolicyEvaluator:
         source_metadata = {
             key: value
             for key, value in proposal.attributes.items()
-            if key.startswith("source_") or key.startswith("servicenow_") or key.startswith("jira_")
+            if key.startswith("source_")
+            or key.startswith("servicenow_")
+            or key.startswith("jira_")
         }
-        event_type = str(source_metadata.get("source_event_type") or "decision.evaluated")
+        event_type = str(
+            source_metadata.get("source_event_type") or "decision.evaluated"
+        )
 
         audit_record = AuditRecord(
             decision_id=decision_id,

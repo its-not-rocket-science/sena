@@ -38,7 +38,13 @@ def test_lifecycle_diff_invariants(ids: list[str]) -> None:
 
 
 @settings(max_examples=60)
-@given(record=st.dictionaries(st.text(min_size=1, max_size=6), st.one_of(st.integers(), st.text(max_size=8)), max_size=5))
+@given(
+    record=st.dictionaries(
+        st.text(min_size=1, max_size=6),
+        st.one_of(st.integers(), st.text(max_size=8)),
+        max_size=5,
+    )
+)
 def test_audit_chain_hash_is_stable(record: dict[str, object]) -> None:
     first = compute_chain_hash(record, "prev")
     second = compute_chain_hash(record, "prev")

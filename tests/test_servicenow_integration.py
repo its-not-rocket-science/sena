@@ -17,7 +17,9 @@ def _fixture(name: str) -> dict:
 
 
 def test_load_servicenow_mapping_config() -> None:
-    cfg = load_servicenow_mapping_config("src/sena/examples/integrations/servicenow_mappings.yaml")
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
     assert "change_approval.requested" in cfg.routes
     assert cfg.outbound.mode == "callback"
 
@@ -36,7 +38,9 @@ def test_servicenow_connector_maps_change_approval_examples(
     fixture_name: str,
     expected_flags: tuple[bool, bool, bool],
 ) -> None:
-    cfg = load_servicenow_mapping_config("src/sena/examples/integrations/servicenow_mappings.yaml")
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
     connector = ServiceNowConnector(config=cfg)
     payload = _fixture(fixture_name)
 
@@ -57,7 +61,9 @@ def test_servicenow_connector_maps_change_approval_examples(
 
 
 def test_servicenow_connector_duplicate_delivery_is_replay_safe() -> None:
-    cfg = load_servicenow_mapping_config("src/sena/examples/integrations/servicenow_mappings.yaml")
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
     connector = ServiceNowConnector(config=cfg)
     payload = _fixture("emergency_change")
     envelope = {
@@ -72,7 +78,9 @@ def test_servicenow_connector_duplicate_delivery_is_replay_safe() -> None:
 
 
 def test_servicenow_connector_returns_stable_error_for_mapping_mismatch() -> None:
-    cfg = load_servicenow_mapping_config("src/sena/examples/integrations/servicenow_mappings.yaml")
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
     connector = ServiceNowConnector(config=cfg)
     payload = _fixture("missing_approver_chain")
     del payload["requested_by"]["user_id"]
@@ -87,9 +95,12 @@ def test_servicenow_connector_returns_stable_error_for_mapping_mismatch() -> Non
         )
 
 
-
-def test_servicenow_round_trip_source_payload_to_normalized_to_action_proposal() -> None:
-    cfg = load_servicenow_mapping_config("src/sena/examples/integrations/servicenow_mappings.yaml")
+def test_servicenow_round_trip_source_payload_to_normalized_to_action_proposal() -> (
+    None
+):
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
     connector = ServiceNowConnector(config=cfg)
     payload = _fixture("emergency_change")
 
@@ -108,15 +119,22 @@ def test_servicenow_round_trip_source_payload_to_normalized_to_action_proposal()
     assert normalized["workflow_stage"] == "requested"
     assert normalized["requested_action"] == "approve_vendor_payment"
     assert normalized["actor"]["actor_role"] == payload["requested_by"]["role"]
-    assert proposal.attributes["risk_attributes"]["risk_level"] == payload["risk"]["level"]
+    assert (
+        proposal.attributes["risk_attributes"]["risk_level"] == payload["risk"]["level"]
+    )
     assert proposal.attributes["evidence_references"]
 
 
 def test_servicenow_connector_rejects_missing_required_normalized_fields() -> None:
-    cfg = load_servicenow_mapping_config("src/sena/examples/integrations/servicenow_mappings.yaml")
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
     broken_route = cfg.routes["change_approval.requested"]
     cfg.routes["change_approval.requested"] = broken_route.__class__(
-        **{**broken_route.__dict__, "correlation_key_path": "change_request.missing_number"}
+        **{
+            **broken_route.__dict__,
+            "correlation_key_path": "change_request.missing_number",
+        }
     )
     connector = ServiceNowConnector(config=cfg)
 
@@ -130,8 +148,11 @@ def test_servicenow_connector_rejects_missing_required_normalized_fields() -> No
             }
         )
 
+
 def test_servicenow_send_decision_returns_deterministic_callback_shape() -> None:
-    cfg = load_servicenow_mapping_config("src/sena/examples/integrations/servicenow_mappings.yaml")
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
     connector = ServiceNowConnector(config=cfg)
 
     response = connector.send_decision(
