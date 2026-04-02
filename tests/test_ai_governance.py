@@ -67,6 +67,39 @@ def test_ai_suggested_actions_evaluate_deterministically_when_fields_present() -
     assert package["facts_and_actor"]["request_origin"]["ai_metadata"]["originating_system"] == "copilot"
 
 
+def test_ai_assisted_high_risk_action_blocks_when_evidence_bundle_is_incomplete() -> None:
+    evaluator = _evaluator()
+    trace = evaluator.evaluate(
+        ActionProposal(
+            action_type="approve_vendor_payment",
+            action_origin=ActionOrigin.AI_SUGGESTED,
+            actor_id="fin-1",
+            actor_role="finance_analyst",
+            attributes={"amount": 400, "vendor_verified": True},
+            ai_metadata=AIActionMetadata(
+                originating_system="copilot",
+                originating_model="gpt-5.3-codex",
+                prompt_context_ref="policy://approvals/v3",
+                requested_action="approve_vendor_payment",
+                evidence_references=["evidence://vendor/123"],
+                citation_references=["doc://controls/fin-12"],
+                human_requester="requester-7",
+                human_owner="fin-risk-owner",
+                risk_classification=RiskClassification(
+                    category="financial_disbursement",
+                    level="high",
+                ),
+            ),
+        ),
+        facts={},
+    )
+
+    assert trace.outcome == DecisionOutcome.BLOCKED
+    assert "evidence.change_ticket" in trace.missing_fields
+    package = build_decision_review_package(trace)
+    assert "change_ticket" in package["governance_evidence"]["missing_evidence_classes"]
+
+
 def test_evaluate_request_schema_requires_ai_metadata_for_ai_origin() -> None:
     try:
         EvaluateRequest(

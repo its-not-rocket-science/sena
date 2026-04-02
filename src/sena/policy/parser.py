@@ -103,6 +103,12 @@ def parse_policy_file(path: str | Path) -> list[PolicyRule]:
                     condition=dict(normalized_item["condition"]),
                     decision=RuleDecision(normalized_item["decision"]),
                     reason=normalized_item["reason"],
+                    required_evidence=list(normalized_item.get("required_evidence", [])),
+                    missing_evidence_decision=(
+                        RuleDecision(normalized_item["missing_evidence_decision"])
+                        if normalized_item.get("missing_evidence_decision") is not None
+                        else None
+                    ),
                 )
             )
         except (PolicyValidationError, ValueError, TypeError) as exc:

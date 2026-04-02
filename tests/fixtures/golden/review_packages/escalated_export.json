@@ -17,7 +17,9 @@
         "matched": true,
         "decision": "ESCALATE",
         "inviolable": false,
-        "reason": "Sensitive export requires DPO approval."
+        "reason": "Sensitive export requires DPO approval.",
+        "required_evidence": [],
+        "missing_evidence": []
       }
     ],
     "applicable": [
@@ -26,14 +28,18 @@
         "matched": false,
         "decision": null,
         "inviolable": true,
-        "reason": null
+        "reason": null,
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "export_escalate_sensitive_fields_without_dpo",
         "matched": true,
         "decision": "ESCALATE",
         "inviolable": false,
-        "reason": "Sensitive export requires DPO approval."
+        "reason": "Sensitive export requires DPO approval.",
+        "required_evidence": [],
+        "missing_evidence": []
       }
     ],
     "evaluated": [
@@ -42,14 +48,18 @@
         "matched": false,
         "decision": null,
         "inviolable": true,
-        "reason": null
+        "reason": null,
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "export_escalate_sensitive_fields_without_dpo",
         "matched": true,
         "decision": "ESCALATE",
         "inviolable": false,
-        "reason": "Sensitive export requires DPO approval."
+        "reason": "Sensitive export requires DPO approval.",
+        "required_evidence": [],
+        "missing_evidence": []
       }
     ],
     "conflicting_rule_ids": []
@@ -67,6 +77,11 @@
     ]
   },
   "facts_and_actor": {
+    "request_origin": {
+      "classification": "human",
+      "ai_metadata": null,
+      "autonomous_metadata": null
+    },
     "actor": {
       "actor_id": "actor-2",
       "actor_role": "privacy_analyst"
@@ -76,27 +91,26 @@
       "request_id": "req-review-escalate",
       "actor_id": "actor-2",
       "actor_role": "privacy_analyst",
+      "action_origin": "human",
       "requested_fields": [
         "date_of_birth"
       ],
-      "dpo_approved": false,
-      "action_origin": "human"
+      "dpo_approved": false
     },
     "missing_fields": [
       "legal_basis"
-    ],
-    "request_origin": {
-      "classification": "human",
-      "ai_metadata": null,
-      "autonomous_metadata": null
-    }
+    ]
+  },
+  "governance_evidence": {
+    "missing_evidence_classes": [],
+    "missing_evidence_by_rule": {}
   },
   "policy_bundle_metadata": {
     "bundle_name": "enterprise-compliance-controls",
     "version": "2026.03",
     "lifecycle": "candidate",
     "schema_version": "1",
-    "integrity_sha256": "f24b9d5ba96b035a6c27747cf55e61d89e510798bada4f243ae87937de8c5dd0",
+    "integrity_sha256": "b19d962c26b4c723bf4a118e5bf891cf16fe085f4b25e67b1272afedd1e50770",
     "loaded_from": "/workspace/sena/src/sena/examples/policies"
   },
   "audit_identifiers": {

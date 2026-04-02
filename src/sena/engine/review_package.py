@@ -15,6 +15,8 @@ def _serialize_rule(result: RuleEvaluationResult) -> dict[str, Any]:
         "decision": result.decision.value if result.decision is not None else None,
         "inviolable": result.inviolable,
         "reason": result.reason,
+        "required_evidence": list(result.required_evidence),
+        "missing_evidence": list(result.missing_evidence),
     }
 
 
@@ -66,6 +68,18 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
     reasoning = trace.reasoning
     package_generated_at = (trace.decision_timestamp or datetime.now(timezone.utc)).isoformat()
     applicable_rule_set = set(trace.applicable_rules)
+    missing_evidence_by_rule = {
+        rule.rule_id: list(rule.missing_evidence)
+        for rule in trace.evaluated_rules
+        if rule.missing_evidence
+    }
+    missing_evidence_classes = sorted(
+        {
+            evidence
+            for values in missing_evidence_by_rule.values()
+            for evidence in values
+        }
+    )
 
     return {
         "package_schema_version": REVIEW_PACKAGE_SCHEMA_VERSION,
@@ -106,6 +120,10 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
             },
             "facts": trace.context,
             "missing_fields": list(trace.missing_fields),
+        },
+        "governance_evidence": {
+            "missing_evidence_classes": missing_evidence_classes,
+            "missing_evidence_by_rule": missing_evidence_by_rule,
         },
         "policy_bundle_metadata": {
             "bundle_name": trace.policy_bundle.bundle_name if trace.policy_bundle else None,

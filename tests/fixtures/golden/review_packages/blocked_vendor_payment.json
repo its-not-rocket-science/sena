@@ -17,14 +17,18 @@
         "matched": true,
         "decision": "BLOCK",
         "inviolable": true,
-        "reason": "Payment blocked because vendor verification is required before disbursement."
+        "reason": "Payment blocked because vendor verification is required before disbursement.",
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "payment_escalate_high_amount_non_director",
         "matched": true,
         "decision": "ESCALATE",
         "inviolable": false,
-        "reason": "High-value payments require finance director review."
+        "reason": "High-value payments require finance director review.",
+        "required_evidence": [],
+        "missing_evidence": []
       }
     ],
     "applicable": [
@@ -33,14 +37,47 @@
         "matched": true,
         "decision": "BLOCK",
         "inviolable": true,
-        "reason": "Payment blocked because vendor verification is required before disbursement."
+        "reason": "Payment blocked because vendor verification is required before disbursement.",
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "payment_escalate_high_amount_non_director",
         "matched": true,
         "decision": "ESCALATE",
         "inviolable": false,
-        "reason": "High-value payments require finance director review."
+        "reason": "High-value payments require finance director review.",
+        "required_evidence": [],
+        "missing_evidence": []
+      },
+      {
+        "rule_id": "payment_ai_assisted_medium_risk_governance_evidence",
+        "matched": false,
+        "decision": null,
+        "inviolable": false,
+        "reason": null,
+        "required_evidence": [
+          "source_citations",
+          "human_owner",
+          "model_provenance"
+        ],
+        "missing_evidence": []
+      },
+      {
+        "rule_id": "payment_ai_assisted_high_risk_governance_evidence",
+        "matched": false,
+        "decision": null,
+        "inviolable": true,
+        "reason": null,
+        "required_evidence": [
+          "source_citations",
+          "human_owner",
+          "change_ticket",
+          "simulation_preview",
+          "rollback_plan",
+          "model_provenance"
+        ],
+        "missing_evidence": []
       }
     ],
     "evaluated": [
@@ -49,14 +86,47 @@
         "matched": true,
         "decision": "BLOCK",
         "inviolable": true,
-        "reason": "Payment blocked because vendor verification is required before disbursement."
+        "reason": "Payment blocked because vendor verification is required before disbursement.",
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "payment_escalate_high_amount_non_director",
         "matched": true,
         "decision": "ESCALATE",
         "inviolable": false,
-        "reason": "High-value payments require finance director review."
+        "reason": "High-value payments require finance director review.",
+        "required_evidence": [],
+        "missing_evidence": []
+      },
+      {
+        "rule_id": "payment_ai_assisted_medium_risk_governance_evidence",
+        "matched": false,
+        "decision": null,
+        "inviolable": false,
+        "reason": null,
+        "required_evidence": [
+          "source_citations",
+          "human_owner",
+          "model_provenance"
+        ],
+        "missing_evidence": []
+      },
+      {
+        "rule_id": "payment_ai_assisted_high_risk_governance_evidence",
+        "matched": false,
+        "decision": null,
+        "inviolable": true,
+        "reason": null,
+        "required_evidence": [
+          "source_citations",
+          "human_owner",
+          "change_ticket",
+          "simulation_preview",
+          "rollback_plan",
+          "model_provenance"
+        ],
+        "missing_evidence": []
       }
     ],
     "conflicting_rule_ids": [
@@ -76,6 +146,11 @@
     ]
   },
   "facts_and_actor": {
+    "request_origin": {
+      "classification": "human",
+      "ai_metadata": null,
+      "autonomous_metadata": null
+    },
     "actor": {
       "actor_id": "actor-1",
       "actor_role": "finance_analyst"
@@ -85,24 +160,25 @@
       "request_id": "req-review-block",
       "actor_id": "actor-1",
       "actor_role": "finance_analyst",
+      "action_origin": "human",
       "amount": 15000,
       "vendor_verified": false,
-      "requester_role": "finance_analyst",
-      "action_origin": "human"
+      "requester_role": "finance_analyst"
     },
-    "missing_fields": [],
-    "request_origin": {
-      "classification": "human",
-      "ai_metadata": null,
-      "autonomous_metadata": null
-    }
+    "missing_fields": [
+      "ai_metadata.risk_classification.level"
+    ]
+  },
+  "governance_evidence": {
+    "missing_evidence_classes": [],
+    "missing_evidence_by_rule": {}
   },
   "policy_bundle_metadata": {
     "bundle_name": "enterprise-compliance-controls",
     "version": "2026.03",
     "lifecycle": "candidate",
     "schema_version": "1",
-    "integrity_sha256": "f24b9d5ba96b035a6c27747cf55e61d89e510798bada4f243ae87937de8c5dd0",
+    "integrity_sha256": "b19d962c26b4c723bf4a118e5bf891cf16fe085f4b25e67b1272afedd1e50770",
     "loaded_from": "/workspace/sena/src/sena/examples/policies"
   },
   "audit_identifiers": {
