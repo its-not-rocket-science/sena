@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+import json
 
 from sena.examples import DEFAULT_POLICY_DIR
 
@@ -38,6 +39,12 @@ class ApiSettings:
     bundle_signature_strict: bool = False
     bundle_signature_keyring_dir: str | None = None
     audit_verify_on_startup_strict: bool = False
+    promotion_gate_require_validation_artifact: bool = True
+    promotion_gate_require_simulation: bool = True
+    promotion_gate_required_scenario_ids: tuple[str, ...] = ()
+    promotion_gate_max_changed_outcomes: int | None = None
+    promotion_gate_max_regressions_by_outcome_type: tuple[tuple[str, int], ...] = ()
+    promotion_gate_break_glass_enabled: bool = True
 
 
 def _parse_api_keys(raw: str | None) -> tuple[tuple[str, str], ...]:
@@ -75,6 +82,24 @@ def _parse_float(raw: str | None, *, default: float) -> float:
     if raw is None:
         return default
     return float(raw)
+
+
+def _parse_csv(raw: str | None) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def _parse_regression_budgets(raw: str | None) -> tuple[tuple[str, int], ...]:
+    if raw is None:
+        return ()
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("SENA_PROMOTION_GATE_MAX_REGRESSIONS_BY_OUTCOME_TYPE must be a JSON object")
+    parsed: list[tuple[str, int]] = []
+    for key, value in payload.items():
+        parsed.append((str(key), int(value)))
+    return tuple(parsed)
 
 
 def load_settings_from_env() -> ApiSettings:
@@ -118,5 +143,25 @@ def load_settings_from_env() -> ApiSettings:
         bundle_signature_keyring_dir=os.getenv("SENA_BUNDLE_SIGNATURE_KEYRING_DIR"),
         audit_verify_on_startup_strict=_parse_bool(
             os.getenv("SENA_AUDIT_VERIFY_ON_STARTUP_STRICT"), default=False
+        ),
+        promotion_gate_require_validation_artifact=_parse_bool(
+            os.getenv("SENA_PROMOTION_GATE_REQUIRE_VALIDATION_ARTIFACT"), default=True
+        ),
+        promotion_gate_require_simulation=_parse_bool(
+            os.getenv("SENA_PROMOTION_GATE_REQUIRE_SIMULATION"), default=True
+        ),
+        promotion_gate_required_scenario_ids=_parse_csv(
+            os.getenv("SENA_PROMOTION_GATE_REQUIRED_SCENARIO_IDS")
+        ),
+        promotion_gate_max_changed_outcomes=(
+            _parse_int(os.getenv("SENA_PROMOTION_GATE_MAX_CHANGED_OUTCOMES"), default=0)
+            if os.getenv("SENA_PROMOTION_GATE_MAX_CHANGED_OUTCOMES") is not None
+            else None
+        ),
+        promotion_gate_max_regressions_by_outcome_type=_parse_regression_budgets(
+            os.getenv("SENA_PROMOTION_GATE_MAX_REGRESSIONS_BY_OUTCOME_TYPE")
+        ),
+        promotion_gate_break_glass_enabled=_parse_bool(
+            os.getenv("SENA_PROMOTION_GATE_BREAK_GLASS_ENABLED"), default=True
         ),
     )

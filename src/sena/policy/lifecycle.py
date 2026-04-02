@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from sena.core.enums import RuleDecision
 from sena.core.models import PolicyRule
@@ -25,6 +26,23 @@ class BundleDiff:
 class PromotionValidation:
     valid: bool
     errors: list[str]
+
+
+@dataclass(frozen=True)
+class PromotionFailure:
+    code: str
+    message: str
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PromotionGatePolicy:
+    require_validation_artifact: bool = True
+    require_simulation: bool = True
+    required_scenario_ids: tuple[str, ...] = ()
+    max_changed_outcomes: int | None = None
+    max_regressions_by_outcome_type: dict[str, int] = field(default_factory=dict)
+    break_glass_enabled: bool = True
 
 
 def validate_lifecycle_transition(source_lifecycle: str, target_lifecycle: str) -> PromotionValidation:
@@ -93,3 +111,107 @@ def validate_promotion(
         errors.append("active promotion requires a valid signed release manifest in strict mode")
 
     return PromotionValidation(valid=not errors, errors=errors)
+
+
+def evaluate_promotion_gate(
+    *,
+    target_lifecycle: str,
+    validation_artifact: str | None,
+    simulation_report: dict[str, Any] | None,
+    break_glass: bool,
+    break_glass_reason: str | None,
+    policy: PromotionGatePolicy,
+) -> list[PromotionFailure]:
+    failures: list[PromotionFailure] = []
+    if target_lifecycle != "active":
+        return failures
+
+    if break_glass:
+        if not policy.break_glass_enabled:
+            failures.append(
+                PromotionFailure(
+                    code="break_glass_disabled",
+                    message="break-glass override is disabled by policy",
+                )
+            )
+        if not (break_glass_reason or "").strip():
+            failures.append(
+                PromotionFailure(
+                    code="break_glass_reason_required",
+                    message="break_glass_reason is required when break_glass=true",
+                )
+            )
+        return failures
+
+    if policy.require_validation_artifact and not (validation_artifact or "").strip():
+        failures.append(
+            PromotionFailure(
+                code="missing_validation_artifact",
+                message="promotion to active requires validation artifact",
+            )
+        )
+    if policy.require_simulation and simulation_report is None:
+        failures.append(
+            PromotionFailure(
+                code="missing_simulation_report",
+                message="promotion to active requires simulation report",
+            )
+        )
+        return failures
+    if simulation_report is None:
+        return failures
+
+    observed_ids = {
+        str(item.get("scenario_id"))
+        for item in simulation_report.get("changes", [])
+        if isinstance(item, dict) and item.get("scenario_id")
+    }
+    missing_scenarios = sorted(set(policy.required_scenario_ids) - observed_ids)
+    if missing_scenarios:
+        failures.append(
+            PromotionFailure(
+                code="required_scenarios_missing",
+                message="simulation report does not contain all required scenarios",
+                details={"missing_scenario_ids": missing_scenarios},
+            )
+        )
+
+    if policy.max_changed_outcomes is not None:
+        changed = int(simulation_report.get("changed_scenarios", 0))
+        if changed > policy.max_changed_outcomes:
+            failures.append(
+                PromotionFailure(
+                    code="changed_outcome_budget_exceeded",
+                    message="changed outcome budget exceeded",
+                    details={"observed": changed, "max_allowed": policy.max_changed_outcomes},
+                )
+            )
+
+    for transition, max_allowed in policy.max_regressions_by_outcome_type.items():
+        before, _, after = transition.partition("->")
+        if not before or not after:
+            failures.append(
+                PromotionFailure(
+                    code="invalid_regression_budget_key",
+                    message="regression budget key must use BEFORE->AFTER format",
+                    details={"transition": transition},
+                )
+            )
+            continue
+        observed = sum(
+            1
+            for item in simulation_report.get("changes", [])
+            if isinstance(item, dict)
+            and item.get("before_outcome") == before
+            and item.get("after_outcome") == after
+            and item.get("before_outcome") != item.get("after_outcome")
+        )
+        if observed > max_allowed:
+            failures.append(
+                PromotionFailure(
+                    code="regression_budget_exceeded",
+                    message=f"regression budget exceeded for {transition}",
+                    details={"transition": transition, "observed": observed, "max_allowed": max_allowed},
+                )
+            )
+    return failures

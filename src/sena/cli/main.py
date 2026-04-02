@@ -19,7 +19,7 @@ from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.evidence_pack import build_evidence_pack, stable_zip_dir
 from sena.examples import DEFAULT_POLICY_DIR
-from sena.policy.lifecycle import diff_rule_sets, validate_promotion
+from sena.policy.lifecycle import PromotionGatePolicy, diff_rule_sets, evaluate_promotion_gate, validate_promotion
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.schema_evolution import (
     CURRENT_BUNDLE_SCHEMA_VERSION,
@@ -454,12 +454,46 @@ def _run_release_verify(args: argparse.Namespace) -> None:
 
 def _run_registry_promote(args: argparse.Namespace) -> None:
     repo = _registry_repo(args.sqlite_path)
+    bundle = repo.get_bundle(args.bundle_id)
+    if bundle is None:
+        raise SystemExit("Bundle id not found")
+    if bundle.metadata.lifecycle == args.target_lifecycle:
+        print(json.dumps({"status": "ok", "idempotent": True}, indent=2))
+        return
     simulation_scenarios: list[dict[str, Any]] = []
+    simulation_report: dict[str, Any] | None = None
     if args.simulation_scenarios:
         simulation_payload = _load_json_file(args.simulation_scenarios, "simulation scenarios")
         simulation_scenarios = [
             {"scenario_id": sid, **scenario} for sid, scenario in sorted(simulation_payload.items())
         ]
+        source_rules = bundle.rules
+        source_metadata = bundle.metadata
+        if args.target_lifecycle == "active":
+            active = repo.get_active_bundle(bundle.metadata.bundle_name)
+            if active is not None:
+                source_rules = active.rules
+                source_metadata = active.metadata
+        scenarios = {
+            item["scenario_id"]: SimulationScenario(
+                action_type=item["action_type"],
+                request_id=item.get("request_id"),
+                actor_id=item.get("actor_id"),
+                attributes=item.get("attributes", {}),
+                facts=item.get("facts", {}),
+                source_system=item.get("source_system"),
+                workflow_stage=item.get("workflow_stage"),
+                risk_category=item.get("risk_category"),
+            )
+            for item in simulation_scenarios
+        }
+        simulation_report = simulate_bundle_impact(
+            scenarios,
+            source_rules,
+            bundle.rules,
+            source_metadata,
+            bundle.metadata,
+        )
     thresholds = {
         "max_changed_outcomes": args.max_changed_outcomes,
         "max_block_to_approve_regressions": args.max_block_to_approve_regressions,
@@ -472,6 +506,49 @@ def _run_registry_promote(args: argparse.Namespace) -> None:
         if not risk or not raw_max:
             raise SystemExit("Invalid --max-changed-risk-category format. Use risk=max_changed_count")
         thresholds["max_changed_risk_categories"][risk] = int(raw_max)
+
+    settings = load_settings_from_env()
+    regression_budget = dict(settings.promotion_gate_max_regressions_by_outcome_type)
+    if args.max_block_to_approve_regressions is not None:
+        regression_budget["BLOCKED->APPROVED"] = args.max_block_to_approve_regressions
+    for item in args.max_regression_budget or []:
+        transition, _, raw_max = item.partition("=")
+        if not transition or not raw_max:
+            raise SystemExit("Invalid --max-regression-budget format. Use BEFORE->AFTER=max_count")
+        regression_budget[transition] = int(raw_max)
+    gate_failures = evaluate_promotion_gate(
+        target_lifecycle=args.target_lifecycle,
+        validation_artifact=args.validation_artifact,
+        simulation_report=simulation_report,
+        break_glass=args.break_glass,
+        break_glass_reason=args.break_glass_reason,
+        policy=PromotionGatePolicy(
+            require_validation_artifact=settings.promotion_gate_require_validation_artifact,
+            require_simulation=settings.promotion_gate_require_simulation,
+            required_scenario_ids=settings.promotion_gate_required_scenario_ids,
+            max_changed_outcomes=(
+                args.max_changed_outcomes
+                if args.max_changed_outcomes is not None
+                else settings.promotion_gate_max_changed_outcomes
+            ),
+            max_regressions_by_outcome_type=regression_budget,
+            break_glass_enabled=settings.promotion_gate_break_glass_enabled,
+        ),
+    )
+    must_block = (not args.break_glass) or any(
+        item.code in {"break_glass_reason_required", "break_glass_disabled"} for item in gate_failures
+    )
+    if gate_failures and must_block:
+        raise SystemExit(
+            json.dumps(
+                {
+                    "error": "promotion_validation_failed",
+                    "failures": [item.__dict__ for item in gate_failures],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
     repo.transition_bundle(
         args.bundle_id,
         args.target_lifecycle,
@@ -482,7 +559,9 @@ def _run_registry_promote(args: argparse.Namespace) -> None:
         evidence_json=json.dumps(
             {
                 "simulation_scenarios_count": len(simulation_scenarios),
+                "simulation_report": simulation_report,
                 "thresholds": thresholds,
+                "promotion_gate_failures": [item.__dict__ for item in gate_failures],
                 "break_glass_reason": args.break_glass_reason,
             },
             sort_keys=True,
@@ -810,6 +889,7 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     promote.add_argument("--simulation-scenarios", type=Path)
     promote.add_argument("--max-changed-outcomes", type=int)
     promote.add_argument("--max-block-to-approve-regressions", type=int)
+    promote.add_argument("--max-regression-budget", action="append")
     promote.add_argument("--max-missing-scenario-coverage", type=int)
     promote.add_argument("--required-risk-category", action="append")
     promote.add_argument("--max-changed-risk-category", action="append")

@@ -82,6 +82,17 @@ sena production-check --format both
 - `SENA_BUNDLE_SIGNATURE_STRICT`: require manifest verification
 - `SENA_BUNDLE_SIGNATURE_KEYRING_DIR`: keyring directory for verification
 
+### Promotion gates (candidate → active)
+
+- `SENA_PROMOTION_GATE_REQUIRE_VALIDATION_ARTIFACT` (default: `true`)
+- `SENA_PROMOTION_GATE_REQUIRE_SIMULATION` (default: `true`)
+- `SENA_PROMOTION_GATE_REQUIRED_SCENARIO_IDS` (CSV list of scenario IDs that must be present in simulation evidence)
+- `SENA_PROMOTION_GATE_MAX_CHANGED_OUTCOMES` (integer budget; promotion fails when exceeded)
+- `SENA_PROMOTION_GATE_MAX_REGRESSIONS_BY_OUTCOME_TYPE` (JSON object, e.g. `{"BLOCKED->APPROVED":0}`)
+- `SENA_PROMOTION_GATE_BREAK_GLASS_ENABLED` (default: `true`)
+
+Break-glass promotions must set `break_glass=true` **and** provide `break_glass_reason`; otherwise promotion is rejected.
+
 ### Audit sink
 
 - `SENA_AUDIT_SINK_JSONL`: file path to append audit records
@@ -128,6 +139,13 @@ See `docs/DEPLOYMENT_PROFILES.md` for full deployment profiles and copy-paste ex
 
 - versioned API endpoints under `/v1/*`
 - unversioned compatibility routes are removed and return deprecation error payloads.
+
+### Gated promotion flow example
+
+Use `examples/gated_promotion_flow.sh` to see a complete operator flow:
+1. register and promote to `candidate`,
+2. fail promotion to `active` due to missing simulation evidence,
+3. pass promotion with validation artifact + scenario simulation evidence.
 
 ## 9) Boundaries
 

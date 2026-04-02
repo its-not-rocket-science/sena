@@ -26,6 +26,12 @@ def _settings(**kwargs):
         "rate_limit_window_seconds": 60,
         "request_max_bytes": 1_048_576,
         "request_timeout_seconds": 15.0,
+        "promotion_gate_require_validation_artifact": True,
+        "promotion_gate_require_simulation": True,
+        "promotion_gate_required_scenario_ids": (),
+        "promotion_gate_max_changed_outcomes": None,
+        "promotion_gate_max_regressions_by_outcome_type": (),
+        "promotion_gate_break_glass_enabled": True,
     }
     defaults.update(kwargs)
     return ApiSettings(**defaults)
@@ -379,6 +385,45 @@ def test_bundle_promote_endpoint_enforces_transition_order(tmp_path) -> None:
     assert to_candidate.status_code == 200
 
 
+def test_active_promotion_passes_with_validation_and_simulation_evidence(tmp_path) -> None:
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    db_path = tmp_path / "policy_registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    metadata.lifecycle = "draft"
+    baseline_id = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(baseline_id, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(baseline_id, "active", promoted_by="ops", promotion_reason="go", validation_artifact="CAB-1")
+
+    metadata.version = "2026.99"
+    metadata.lifecycle = "draft"
+    candidate_id = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(candidate_id, "candidate", promoted_by="ops", promotion_reason="ready")
+
+    app = create_app(
+        _settings(policy_store_backend="sqlite", policy_store_sqlite_path=str(db_path), bundle_name=metadata.bundle_name)
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/bundle/promote",
+        json={
+            "bundle_id": candidate_id,
+            "target_lifecycle": "active",
+            "promoted_by": "ops",
+            "promotion_reason": "go",
+            "validation_artifact": "CAB-2",
+            "simulation_result": {
+                "changed_scenarios": 0,
+                "changes": [{"scenario_id": "s1", "before_outcome": "BLOCKED", "after_outcome": "BLOCKED"}],
+            },
+        },
+    )
+    assert response.status_code == 200
+
+
 def test_active_promotion_threshold_failure_and_break_glass_history(tmp_path) -> None:
     from sena.policy.parser import load_policy_bundle
     from sena.policy.store import SQLitePolicyBundleRepository
@@ -414,6 +459,7 @@ def test_active_promotion_threshold_failure_and_break_glass_history(tmp_path) ->
             "target_lifecycle": "active",
             "promoted_by": "ops",
             "promotion_reason": "go",
+            "validation_artifact": "CAB-2",
             "simulation_result": {
                 "changed_scenarios": 3,
                 "grouped_changes": {"risk_category": {"vendor_payment": {"changed": 2}}},
@@ -428,6 +474,7 @@ def test_active_promotion_threshold_failure_and_break_glass_history(tmp_path) ->
     )
     assert threshold_fail.status_code == 400
     assert threshold_fail.json()["error"]["code"] == "promotion_validation_failed"
+    assert threshold_fail.json()["error"]["details"]["failures"]
 
     break_glass = client.post(
         "/v1/bundle/promote",
@@ -478,6 +525,52 @@ def test_active_promotion_fails_without_any_evidence(tmp_path) -> None:
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "promotion_validation_failed"
+    failures = response.json()["error"]["details"]["failures"]
+    assert any(item["code"] == "missing_simulation_report" for item in failures)
+
+
+def test_active_promotion_is_idempotent_when_already_active(tmp_path) -> None:
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    db_path = tmp_path / "policy_registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    metadata.lifecycle = "draft"
+    bundle_id = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(bundle_id, "candidate", promoted_by="ops", promotion_reason="ready")
+
+    app = create_app(
+        _settings(policy_store_backend="sqlite", policy_store_sqlite_path=str(db_path), bundle_name=metadata.bundle_name)
+    )
+    client = TestClient(app)
+    first = client.post(
+        "/v1/bundle/promote",
+        json={
+            "bundle_id": bundle_id,
+            "target_lifecycle": "active",
+            "promoted_by": "ops",
+            "promotion_reason": "go",
+            "validation_artifact": "CAB-1",
+            "simulation_result": {
+                "changed_scenarios": 0,
+                "changes": [{"scenario_id": "s1", "before_outcome": "BLOCKED", "after_outcome": "BLOCKED"}],
+            },
+        },
+    )
+    assert first.status_code == 200
+    second = client.post(
+        "/v1/bundle/promote",
+        json={
+            "bundle_id": bundle_id,
+            "target_lifecycle": "active",
+            "promoted_by": "ops",
+            "promotion_reason": "go-again",
+        },
+    )
+    assert second.status_code == 200
+    assert second.json()["idempotent"] is True
 
 
 def test_register_bundle_fails_when_signature_strict_and_manifest_invalid(tmp_path) -> None:

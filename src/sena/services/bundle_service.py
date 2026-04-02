@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from sena.api.schemas import BundleInfo, BundlePromoteRequest, BundleRegisterRequest, BundleRollbackRequest
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
-from sena.policy.lifecycle import diff_rule_sets, validate_promotion
+from sena.policy.lifecycle import PromotionGatePolicy, diff_rule_sets, evaluate_promotion_gate, validate_promotion
 from sena.policy.parser import load_policy_bundle
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,13 @@ class BundleService:
         stored_bundle = self.policy_repo.get_bundle(payload.bundle_id)
         if stored_bundle is None:
             raise ValueError("bundle_not_found")
+        if stored_bundle.metadata.lifecycle == payload.target_lifecycle:
+            return {
+                "status": "ok",
+                "bundle_id": payload.bundle_id,
+                "lifecycle": payload.target_lifecycle,
+                "idempotent": True,
+            }
         source_rules = stored_bundle.rules
         current_active = None
         if payload.target_lifecycle == "active":
@@ -92,15 +99,15 @@ class BundleService:
                 stored_bundle.metadata,
             )
 
-        threshold_errors: list[str] = []
-        if payload.target_lifecycle == "active" and not payload.break_glass:
-            if not payload.validation_artifact and simulation_report is None:
-                threshold_errors.append(
-                    "promotion to active requires simulation_result, simulation_scenarios, or validation_artifact unless break_glass=true"
-                )
-            threshold_errors.extend(self._evaluate_thresholds(simulation_report, payload.thresholds))
-        if payload.break_glass and payload.target_lifecycle == "active" and not payload.break_glass_reason:
-            threshold_errors.append("break_glass_reason is required when break_glass=true for active promotion")
+        threshold_errors = self._evaluate_thresholds(simulation_report, payload.thresholds)
+        gate_failures = evaluate_promotion_gate(
+            target_lifecycle=payload.target_lifecycle,
+            validation_artifact=payload.validation_artifact,
+            simulation_report=simulation_report,
+            break_glass=payload.break_glass,
+            break_glass_reason=payload.break_glass_reason,
+            policy=self._effective_gate_policy(payload.thresholds),
+        )
 
         validation = validate_promotion(
             stored_bundle.metadata.lifecycle,
@@ -111,9 +118,21 @@ class BundleService:
             signature_verified=stored_bundle.signature_verified,
             signature_verification_strict=stored_bundle.signature_verification_strict,
         )
-        errors = [*validation.errors, *threshold_errors]
-        if errors and not payload.break_glass:
-            raise RuntimeError("promotion_validation_failed:" + "; ".join(errors))
+        errors = [*validation.errors, *threshold_errors, *[item.message for item in gate_failures]]
+        requires_block = (not payload.break_glass) or any(
+            item.code in {"break_glass_reason_required", "break_glass_disabled"} for item in gate_failures
+        )
+        if errors and requires_block:
+            raise RuntimeError(
+                "promotion_validation_failed:"
+                + json.dumps(
+                    {
+                        "messages": errors,
+                        "failures": [item.__dict__ for item in gate_failures],
+                    },
+                    sort_keys=True,
+                )
+            )
 
         self.policy_repo.transition_bundle(
             payload.bundle_id,
@@ -126,7 +145,8 @@ class BundleService:
                 {
                     "simulation_report": simulation_report,
                     "thresholds": payload.thresholds.model_dump() if payload.thresholds else {},
-                    "threshold_errors": errors,
+                    "threshold_errors": threshold_errors,
+                    "promotion_gate_failures": [item.__dict__ for item in gate_failures],
                     "break_glass_reason": payload.break_glass_reason,
                 },
                 sort_keys=True,
@@ -140,6 +160,28 @@ class BundleService:
             self.state.rules = active.rules
             self.state.metadata = active.metadata
         return {"status": "ok", "bundle_id": payload.bundle_id, "lifecycle": payload.target_lifecycle}
+
+    def _effective_gate_policy(
+        self,
+        thresholds: BundlePromoteRequest.PromotionThresholds | None,
+    ) -> PromotionGatePolicy:
+        combined_regressions = dict(self.settings.promotion_gate_max_regressions_by_outcome_type)
+        if thresholds and thresholds.max_block_to_approve_regressions is not None:
+            combined_regressions["BLOCKED->APPROVED"] = thresholds.max_block_to_approve_regressions
+        if thresholds:
+            combined_regressions.update(thresholds.max_regressions_by_outcome_type)
+        return PromotionGatePolicy(
+            require_validation_artifact=self.settings.promotion_gate_require_validation_artifact,
+            require_simulation=self.settings.promotion_gate_require_simulation,
+            required_scenario_ids=self.settings.promotion_gate_required_scenario_ids,
+            max_changed_outcomes=(
+                thresholds.max_changed_outcomes
+                if thresholds and thresholds.max_changed_outcomes is not None
+                else self.settings.promotion_gate_max_changed_outcomes
+            ),
+            max_regressions_by_outcome_type=combined_regressions,
+            break_glass_enabled=self.settings.promotion_gate_break_glass_enabled,
+        )
 
     def _evaluate_thresholds(
         self,
