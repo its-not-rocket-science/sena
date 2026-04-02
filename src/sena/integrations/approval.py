@@ -6,7 +6,8 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from sena.core.models import ActionProposal
+from sena.core.enums import ActionOrigin
+from sena.core.models import ActionProposal, AutonomousToolMetadata
 from sena.integrations.base import IntegrationError
 
 
@@ -104,6 +105,13 @@ def to_action_proposal(event: NormalizedApprovalEvent, route: ApprovalEventRoute
         actor_id=event.actor.actor_id,
         actor_role=event.actor.actor_role,
         attributes=attrs,
+        action_origin=ActionOrigin.AUTONOMOUS_TOOL,
+        autonomous_metadata=AutonomousToolMetadata(
+            tool_name=event.source_system,
+            trigger_type=event.source_event_type,
+            trigger_reference=event.source_object_id,
+            supervising_owner=event.actor.actor_id,
+        ),
     )
 
 

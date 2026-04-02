@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
+from sena.core.enums import ActionOrigin
 from sena.policy.validation import validate_identity_fields
 
 
@@ -11,11 +12,41 @@ NonEmptyStr = Annotated[str, StringConstraints(min_length=1, strip_whitespace=Tr
 
 
 class EvaluateRequest(BaseModel):
+    class RiskClassificationRequest(BaseModel):
+        category: NonEmptyStr
+        level: NonEmptyStr
+        tags: list[str] = Field(default_factory=list)
+        rationale: str | None = None
+
+    class AIActionMetadataRequest(BaseModel):
+        originating_system: NonEmptyStr
+        originating_model: str | None = None
+        prompt_context_ref: NonEmptyStr
+        confidence: float | None = None
+        uncertainty: str | None = None
+        requested_tool: str | None = None
+        requested_action: NonEmptyStr
+        evidence_references: list[NonEmptyStr] = Field(min_length=1)
+        citation_references: list[str] = Field(default_factory=list)
+        human_requester: NonEmptyStr
+        human_owner: NonEmptyStr
+        human_approver: str | None = None
+        risk_classification: "EvaluateRequest.RiskClassificationRequest"
+
+    class AutonomousMetadataRequest(BaseModel):
+        tool_name: NonEmptyStr
+        trigger_type: NonEmptyStr
+        trigger_reference: str | None = None
+        supervising_owner: str | None = None
+
     action_type: NonEmptyStr
     request_id: str | None = None
     actor_id: str | None = None
     actor_role: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
+    action_origin: ActionOrigin = ActionOrigin.HUMAN
+    ai_metadata: AIActionMetadataRequest | None = None
+    autonomous_metadata: AutonomousMetadataRequest | None = None
     facts: dict[str, Any] = Field(default_factory=dict)
     default_decision: Literal["APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"] = (
         "APPROVED"
@@ -31,6 +62,14 @@ class EvaluateRequest(BaseModel):
                 raise ValueError(
                     f"strict_require_allow=true requires identity fields: {missing_label}"
                 )
+        if self.action_origin == ActionOrigin.AI_SUGGESTED and self.ai_metadata is None:
+            raise ValueError(
+                "action_origin=ai_suggested requires ai_metadata with deterministic governance fields"
+            )
+        if self.action_origin != ActionOrigin.AI_SUGGESTED and self.ai_metadata is not None:
+            raise ValueError("ai_metadata is only valid for action_origin=ai_suggested")
+        if self.action_origin == ActionOrigin.AUTONOMOUS_TOOL and self.autonomous_metadata is None:
+            raise ValueError("action_origin=autonomous_tool requires autonomous_metadata")
         return self
 
 

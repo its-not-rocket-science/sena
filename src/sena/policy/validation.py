@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from sena.core.enums import ActionOrigin
+from sena.core.models import ActionProposal
 from sena.core.models import PolicyRule
 from sena.policy.grammar import COMPARISON_OPERATORS, LOGICAL_OPERATORS
 
@@ -135,4 +137,43 @@ def validate_identity_fields(actor_id: str | None, actor_role: str | None) -> li
         missing.append("actor_id")
     if not actor_role:
         missing.append("actor_role")
+    return missing
+
+
+def validate_ai_originated_action_fields(proposal: ActionProposal) -> list[str]:
+    if proposal.action_origin != ActionOrigin.AI_SUGGESTED:
+        return []
+
+    missing: list[str] = []
+    metadata = proposal.ai_metadata
+    if metadata is None:
+        return [
+            "ai_metadata",
+            "ai_metadata.originating_system",
+            "ai_metadata.prompt_context_ref",
+            "ai_metadata.requested_action",
+            "ai_metadata.evidence_references",
+            "ai_metadata.human_requester",
+            "ai_metadata.human_owner",
+            "ai_metadata.risk_classification",
+        ]
+    if not metadata.originating_system:
+        missing.append("ai_metadata.originating_system")
+    if not metadata.prompt_context_ref:
+        missing.append("ai_metadata.prompt_context_ref")
+    if not metadata.requested_action:
+        missing.append("ai_metadata.requested_action")
+    if not metadata.evidence_references:
+        missing.append("ai_metadata.evidence_references")
+    if not metadata.human_requester:
+        missing.append("ai_metadata.human_requester")
+    if not metadata.human_owner:
+        missing.append("ai_metadata.human_owner")
+    if metadata.risk_classification is None:
+        missing.append("ai_metadata.risk_classification")
+    else:
+        if not metadata.risk_classification.category:
+            missing.append("ai_metadata.risk_classification.category")
+        if not metadata.risk_classification.level:
+            missing.append("ai_metadata.risk_classification.level")
     return missing

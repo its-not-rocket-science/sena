@@ -13,6 +13,16 @@ The normalized event model introduces a strict intermediate contract:
 
 This separation enables portability, stronger governance, and reusable policy bundles.
 
+## Request-origin governance classes
+
+SENA classifies proposals into deterministic governance classes:
+
+- `human`: directly user-originated requests.
+- `ai_suggested`: AI/agent-proposed requests requiring additional governance metadata.
+- `autonomous_tool`: tool-triggered automation events with trigger metadata.
+
+For `ai_suggested`, SENA requires metadata for model/system provenance, prompt/policy context, requested tool/action, evidence/citations, human requester/owner/approver chain, and risk classification. Missing fields deterministically block evaluation.
+
 ## Canonical normalized event
 
 `NormalizedApprovalEvent` fields:

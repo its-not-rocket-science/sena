@@ -1,0 +1,33 @@
+{
+  "action_type": "approve_vendor_payment",
+  "request_id": "ai-approval-001",
+  "actor_id": "analyst-14",
+  "actor_role": "finance_analyst",
+  "action_origin": "ai_suggested",
+  "ai_metadata": {
+    "originating_system": "copilot",
+    "originating_model": "gpt-5.3-codex",
+    "prompt_context_ref": "policy://finance/vendor_payments/v2",
+    "confidence": 0.71,
+    "uncertainty": "missing supplier tenure history",
+    "requested_tool": "payments_api",
+    "requested_action": "approve_vendor_payment",
+    "evidence_references": ["evidence://invoice/INV-9001", "evidence://vendor/V-190"],
+    "citation_references": ["control://fin/ap-12"],
+    "human_requester": "requester-portal-user-4",
+    "human_owner": "finance-risk-owner",
+    "human_approver": "director-22",
+    "risk_classification": {
+      "category": "financial_disbursement",
+      "level": "medium",
+      "tags": ["vendor", "invoice"],
+      "rationale": "Medium amount and verified vendor"
+    }
+  },
+  "attributes": {
+    "amount": 1200,
+    "vendor_verified": true,
+    "source_system": "copilot"
+  },
+  "facts": {}
+}

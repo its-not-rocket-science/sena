@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from dataclasses import asdict
 from datetime import datetime, timezone
 
 from sena import __version__ as SENA_VERSION
@@ -19,7 +20,11 @@ from sena.core.models import (
 )
 from sena.policy.interpreter import evaluate_condition_with_trace
 from sena.policy.schema_evolution import evaluate_bundle_compatibility
-from sena.policy.validation import validate_context_schema, validate_identity_fields
+from sena.policy.validation import (
+    validate_ai_originated_action_fields,
+    validate_context_schema,
+    validate_identity_fields,
+)
 
 
 class PolicyEvaluator:
@@ -47,20 +52,26 @@ class PolicyEvaluator:
             "request_id": proposal.request_id,
             "actor_id": proposal.actor_id,
             "actor_role": proposal.actor_role,
+            "action_origin": proposal.action_origin.value,
             **proposal.attributes,
             **facts,
         }
+        if proposal.ai_metadata is not None:
+            context["ai_metadata"] = asdict(proposal.ai_metadata)
+        if proposal.autonomous_metadata is not None:
+            context["autonomous_metadata"] = asdict(proposal.autonomous_metadata)
         applicable = [r for r in self.rules if proposal.action_type in r.applies_to]
         evaluated: list[RuleEvaluationResult] = []
         missing_fields: set[str] = set()
         schema_errors: list[str] = []
         identity_errors: list[str] = []
+        ai_metadata_errors: list[str] = validate_ai_originated_action_fields(proposal)
         if self.config.require_allow_match:
             identity_errors = validate_identity_fields(proposal.actor_id, proposal.actor_role)
         if self.config.enforce_context_schema and self.policy_bundle.context_schema:
             schema_errors = validate_context_schema(context, self.policy_bundle.context_schema)
 
-        if not schema_errors and not identity_errors:
+        if not schema_errors and not identity_errors and not ai_metadata_errors:
             for rule in applicable:
                 condition_result = evaluate_condition_with_trace(rule.condition, context)
                 matched = condition_result.matched
@@ -141,6 +152,16 @@ class PolicyEvaluator:
                 f"Decision {decision_id}: BLOCKED due to missing identity field(s): "
                 f"{', '.join(identity_errors)}"
             )
+        if ai_metadata_errors:
+            outcome = DecisionOutcome.BLOCKED
+            missing_fields.update(ai_metadata_errors)
+            precedence_explanation = (
+                "AI-originated action proposals require deterministic governance metadata before policy evaluation."
+            )
+            summary = (
+                f"Decision {decision_id}: BLOCKED due to missing AI-governance field(s): "
+                f"{', '.join(ai_metadata_errors)}"
+            )
         if self.config.require_allow_match and not allows:
             outcome = DecisionOutcome.BLOCKED
             if not matched:
@@ -178,6 +199,7 @@ class PolicyEvaluator:
             "requested_action": proposal.attributes.get("requested_action"),
             "workflow_stage": proposal.attributes.get("workflow_stage"),
             "source_system": proposal.attributes.get("source_system"),
+            "action_origin": proposal.action_origin.value,
         }
         matched_controls = [
             {
@@ -196,6 +218,8 @@ class PolicyEvaluator:
             outcome_rationale.append("Input context schema validation failed before rule evaluation.")
         if identity_errors:
             outcome_rationale.append("Strict identity checks failed before rule evaluation.")
+        if ai_metadata_errors:
+            outcome_rationale.append("AI-originated metadata checks failed before rule evaluation.")
         reviewer_guidance = [
             "Verify matched controls align with control owner expectations.",
             "Retain decision hash and input fingerprint for audit replay.",
@@ -213,6 +237,9 @@ class PolicyEvaluator:
                 "actor_id": proposal.actor_id,
                 "actor_role": proposal.actor_role,
                 "attributes": proposal.attributes,
+                "action_origin": proposal.action_origin.value,
+                "ai_metadata": asdict(proposal.ai_metadata) if proposal.ai_metadata else None,
+                "autonomous_metadata": asdict(proposal.autonomous_metadata) if proposal.autonomous_metadata else None,
             },
             "facts": facts,
         }

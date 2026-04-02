@@ -22,6 +22,11 @@ Each package is emitted as JSON with stable top-level keys:
 - `rules`: matched/applicable/evaluated rules and conflict IDs.
 - `precedence`: precedence explanation and reviewer guidance.
 - `facts_and_actor`: actor metadata, decision facts/context, and missing fields.
+  - Includes `request_origin` classification:
+    - `human`
+    - `ai_suggested`
+    - `autonomous_tool`
+  - AI-suggested requests also carry first-class governance metadata (originating model/system, prompt context ref, requested tool/action, evidence/citations, human owner chain, and risk classification).
 - `policy_bundle_metadata`: bundle name/version/lifecycle/schema/integrity metadata.
 - `audit_identifiers`: request, decision hash, chain hashes, storage sequence IDs.
 - `normalized_source_system_references`: normalized source-system IDs and references.
@@ -64,3 +69,11 @@ Decision Review Packages are designed to support compliance stakeholders by maki
 - **Evidence-friendly**: links policy bundle metadata and decision hashes for control attestation.
 
 In short, SENA can now support both runtime control enforcement and downstream governance evidence pipelines.
+
+## Deterministic governance for AI-driven actions
+
+SENA treats AI-assisted actions as a **stricter governed request class**, not as a probabilistic score.
+
+- AI-originated proposals must include deterministic governance metadata before rule evaluation.
+- Missing AI governance fields result in deterministic `BLOCKED` outcomes.
+- Policy allow/block precedence remains unchanged and does not depend on model confidence.

@@ -87,9 +87,15 @@
       "actor_role": "finance_analyst",
       "amount": 15000,
       "vendor_verified": false,
-      "requester_role": "finance_analyst"
+      "requester_role": "finance_analyst",
+      "action_origin": "human"
     },
-    "missing_fields": []
+    "missing_fields": [],
+    "request_origin": {
+      "classification": "human",
+      "ai_metadata": null,
+      "autonomous_metadata": null
+    }
   },
   "policy_bundle_metadata": {
     "bundle_name": "enterprise-compliance-controls",
