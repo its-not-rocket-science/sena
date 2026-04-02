@@ -107,6 +107,16 @@ class SimulationRequest(BaseModel):
     scenarios: list[SimulationScenarioRequest] = Field(min_length=1)
 
 
+class ReplayDriftRequest(BaseModel):
+    replay_payload: dict[str, Any]
+    baseline_policy_dir: NonEmptyStr
+    candidate_policy_dir: str | None = None
+    baseline_mapping_mode: Literal["jira", "servicenow", "webhook"] | None = None
+    baseline_mapping_config_path: str | None = None
+    candidate_mapping_mode: Literal["jira", "servicenow", "webhook"] | None = None
+    candidate_mapping_config_path: str | None = None
+
+
 class BundleInfo(BaseModel):
     bundle_name: str
     version: str

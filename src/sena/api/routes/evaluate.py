@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request
 
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, parse_default_decision
-from sena.api.schemas import BatchEvaluateRequest, EvaluateRequest, SimulationRequest
+from sena.api.schemas import BatchEvaluateRequest, EvaluateRequest, ReplayDriftRequest, SimulationRequest
 from sena.services.audit_service import AuditService
 from sena.services.evaluation_service import EvaluationService
 
@@ -74,6 +74,18 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
             baseline_policy_dir=req.baseline_policy_dir,
             candidate_policy_dir=req.candidate_policy_dir,
             scenarios=[item.model_dump() for item in req.scenarios],
+        )
+
+    @router.post("/replay/drift")
+    def replay_drift(req: ReplayDriftRequest) -> dict:
+        return evaluation_service.replay_policy_drift(
+            replay_payload=req.replay_payload,
+            baseline_policy_dir=req.baseline_policy_dir,
+            candidate_policy_dir=req.candidate_policy_dir,
+            baseline_mapping_mode=req.baseline_mapping_mode,
+            baseline_mapping_config_path=req.baseline_mapping_config_path,
+            candidate_mapping_mode=req.candidate_mapping_mode,
+            candidate_mapping_config_path=req.candidate_mapping_config_path,
         )
 
     return router
