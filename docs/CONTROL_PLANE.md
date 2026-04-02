@@ -1,71 +1,63 @@
 # SENA Control Plane (Alpha)
 
-SENA's control-plane surface is an **alpha governance layer** for AI-assisted enterprise workflows.
+SENA’s control plane is an **alpha deterministic governance layer** for AI-assisted enterprise approval workflows.
 
-Its purpose is to make policy decisions deterministic, traceable, and release-controlled across heterogeneous workflow systems.
+## Positioning
 
-## Positioning summary
+SENA is a deterministic policy decision system, not a generalized AI safety platform and not a formal verification framework.
 
-SENA is not a generalized AI safety platform or a formal verification framework. It is a deterministic policy-enforcement engine with operational controls for evidence-backed policy releases.
+## Primary wedge
+
+**One normalized policy model across Jira + ServiceNow approval events**, with deterministic outcomes and evidence-first release workflows.
 
 ## Implemented capabilities
 
-1. **Deterministic policy simulation and impact analysis**
-   - Compare baseline vs candidate bundles on fixed scenarios.
-   - Report changed outcomes grouped by `source_system`, `workflow_stage`, and `risk_category`.
-   - CLI: `--compare-policy-dir ... --simulate-scenarios src/sena/examples/scenarios/simulation_scenarios.json`
-   - API: `POST /v1/simulation`
+1. **Deterministic evaluation core**
+   - Strict rule validation and deterministic precedence handling.
+   - Explicit outcomes: allow, block, escalate.
 
-2. **Cross-system normalized approval model + portable policy packs (supported depth)**
-   - Jira and ServiceNow connectors normalize events into the same `NormalizedApprovalEvent` contract.
-   - Policy bundles target normalized attributes (not vendor-specific payload fields), improving portability.
-   - Example portable pack: `src/sena/examples/policy_packs/portable_vendor_approvals`.
+2. **Normalized integration depth (supported today)**
+   - Jira webhook normalization + evaluation.
+   - ServiceNow webhook normalization + evaluation.
+   - Shared normalized approval contract enables portable policy bundles.
 
-3. **Policy lifecycle and promotion validation**
-   - Bundle manifest supports `lifecycle` (`draft`, `candidate`, `active`, `deprecated`).
-   - Bundle diff and promotion checks:
-     - API: `POST /v1/bundle/diff`
-     - API: `POST /v1/bundle/promotion/validate`
+3. **Release evidence primitives**
+   - Bundle diff and promotion validation APIs.
+   - Scenario simulation for baseline vs candidate impact.
+   - Trace/provenance metadata for every decision.
 
-4. **Auditable decision traces and tamper-evident audit chain**
-   - Decision output includes rationale, reviewer guidance, and provenance metadata.
-   - Audit sink appends `previous_chain_hash` and `chain_hash`.
-   - Verification:
-     - API: `GET /v1/audit/verify`
-     - CLI: `--verify-audit-chain path/to/audit.jsonl`
+4. **Auditable decision records**
+   - Hash-linked JSONL audit chain.
+   - Verification endpoint for tamper detection.
 
-5. **Deterministic DSL hardening**
-   - Additional operators: `starts_with`, `ends_with`, `matches_regex`, `exists`, `between`.
-   - Operator shape validation is strict.
-   - Optional bundle `context_schema` enforces deterministic fail-closed behavior.
+5. **Policy lifecycle controls**
+   - Bundle lifecycle states (`draft`, `candidate`, `active`, `deprecated`).
+   - Registry/promotion endpoints for explicit state transitions.
 
-6. **Release evidence workflow primitives**
-   - Bundle metadata and provenance support release records.
-   - Diff/simulation outputs provide before/after evidence for policy promotions.
-   - Decision hashes + input fingerprints support replay-oriented investigation.
+## Integration status labels
 
-7. **API hardening and scale wedge**
-   - Batch evaluation endpoint: `POST /v1/evaluate/batch` (up to 500 requests).
-   - Bundle inspection endpoint: `GET /v1/bundle/inspect`.
-
-## Surface boundaries (hardening pass)
-
-Supported integration depth:
+### Supported (productized depth)
 - `POST /v1/integrations/jira/webhook`
 - `POST /v1/integrations/servicenow/webhook`
 
-Experimental integration endpoints (evaluation-only):
+### Experimental (evaluation-only)
 - `POST /v1/integrations/webhook`
 - `POST /v1/integrations/slack/interactions`
 
-## Current maturity and explicit limitations
+Experimental surfaces are intentionally unstable and may change without backward-compatibility guarantees.
 
-SENA remains alpha. The current implementation supports deterministic governance pilots, not full enterprise platform maturity.
+## Current maturity boundary
 
-Current limitations:
+SENA is **alpha** and should be represented as pilot-prep infrastructure.
 
-- Lifecycle workflow state is file-manifest driven unless explicitly using the optional SQLite registry path.
-- No built-in RBAC, OIDC, tenant partitioning, or policy authoring UI yet.
-- No asynchronous long-running simulation jobs yet.
-- Audit chain is local-file based (JSONL), not replicated/WORM-backed storage yet.
-- Integration depth is strongest for Jira + ServiceNow; generic webhook and Slack paths are explicitly experimental.
+Not yet included as built-in platform controls:
+- tenant isolation and enterprise identity/RBAC administration,
+- replicated/WORM-native audit storage,
+- asynchronous long-running simulation orchestration,
+- full policy authoring/approval UI.
+
+## Near-term roadmap alignment
+
+1. Harden Jira + ServiceNow workflows and failure-mode coverage.
+2. Enforce simulation-backed promotion gates with better evidence packaging.
+3. Improve operational durability (persistence + audit recovery drills).

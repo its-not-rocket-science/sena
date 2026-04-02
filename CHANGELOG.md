@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Repositioned product documentation (README, control plane, architecture) around deterministic governance claims and added explicit alpha maturity boundaries.
 - Standardized project version declarations to `0.3.0`.
+- Reconciled product story across README, roadmap, and core architecture/control-plane docs around one wedge: deterministic policy governance for Jira + ServiceNow approval workflows.
+- Standardized integration labeling across docs: Jira + ServiceNow as supported; generic webhook + Slack as experimental.
+- Added canonical positioning decision record: `docs/PRODUCT_POSITIONING_DECISIONS.md`.
+- Toned down maturity language to reflect alpha status with explicit pilot-ready criteria and non-goals.
+
 
 ## [0.3.0] - 2026-03-31
 

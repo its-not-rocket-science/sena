@@ -1,106 +1,58 @@
 # SENA Architecture (Supported vs Legacy)
 
-## Product architecture intent
+## Architecture intent
 
-SENA is architected as a deterministic policy-enforcement and governance engine for AI-assisted enterprise workflows.
+SENA is a deterministic policy control plane for AI-assisted approval workflows, with **Jira + ServiceNow normalization** as the current productized integration wedge.
 
-The architecture emphasizes:
-- deterministic evaluation behavior,
-- normalized cross-system inputs,
-- auditable decision traces,
-- lifecycle-controlled policy bundles,
-- replay/simulation support,
-- explicit human escalation outcomes.
+## Supported architecture (source of truth)
 
-## Supported architecture (current product path)
+Supported code lives in `src/sena/*`:
 
-SENA's supported path is implemented in `src/sena/*`:
+1. Policy parsing/loading (`sena.policy.parser`)
+2. Policy validation (`sena.policy.validation`)
+3. Safe interpretation (`sena.policy.interpreter`)
+4. Deterministic evaluation (`sena.engine.evaluator`)
+5. API/CLI runtime surfaces (`sena.api.*`, `sena.cli.main`)
 
-1. **Policy bundle loading** (`sena.policy.parser`)
-2. **Policy validation** (`sena.policy.validation`)
-3. **Safe condition interpretation** (`sena.policy.interpreter`)
-4. **Deterministic evaluation + precedence** (`sena.engine.evaluator`)
-5. **Operational interfaces** (`sena.cli.main`, `sena.api.app`)
+Legacy code under `src/sena/legacy/*` is not part of supported claims.
 
-This path is the source of truth for current capability claims.
+## Decision flow
 
-## Runtime surfaces
-
-### CLI
-- Single-shot scenario evaluation
-- Coverage validation toggles
-- Deterministic simulation and compare flows
-
-### API
-- Versioned endpoints under `/v1`
-- Unversioned aliases are deprecated stubs returning `410 Gone`
-- Request ID propagation (`x-request-id`) and structured error envelope
-- Optional API key middleware for self-hosted baseline controls
-- Supported integration depth: Jira + ServiceNow normalized approval endpoints
-- Experimental integration endpoints: generic webhook + Slack interactions
-
-### API module layout
-- `sena.api.app`: app factory and top-level wiring only.
-- `sena.api.middleware`: request ID, request-size enforcement, timeout, API key auth, and rate limiting middleware.
-- `sena.api.error_handlers`: shared error envelope helper and FastAPI exception handler registration.
-- `sena.api.runtime`: startup validation, bundle loading, and runtime state initialization.
-- `sena.api.dependencies`: shared runtime-state accessor helpers for request-scoped dependencies.
-- `sena.api.routes.health`: health/readiness and bundle introspection routes.
-- `sena.api.routes.evaluate`: evaluation, review package, batch evaluation, and simulation routes.
-- `sena.api.routes.bundles`: bundle registry, promotion/rollback, history, and diff/validation routes.
-- `sena.api.routes.integrations`: webhook/Jira/ServiceNow/Slack integration routes.
-
-This layout keeps route responsibilities coherent while preserving existing API response shapes and error semantics.
-
-## Policy bundle model
-
-Policy bundles are local directories containing:
-- Rule files (`*.yaml`, `*.yml`, `*.json`) with list-of-rule payloads
-- Optional manifest (`bundle.yaml|yml|json`) validated against schema
-
-Bundle metadata includes:
-- `schema_version`
-- deterministic `integrity_sha256` over policy files
-- `policy_file_count`
-- lifecycle state (`draft`, `candidate`, `active`, `deprecated`)
-
-## Deterministic decision flow
-
-1. Build context from action attributes + facts.
-2. Evaluate applicable rules via allowed operators only.
+1. Normalize input event into policy context.
+2. Evaluate rule conditions with allowed operators only.
 3. Apply precedence:
-   - inviolable `BLOCK`
-   - ordinary `BLOCK`
-   - `ESCALATE`
-   - configured default decision (`APPROVED` by default)
-4. Emit `EvaluationTrace` + `AuditRecord` with input fingerprint and decision hash.
+   - inviolable block,
+   - ordinary block,
+   - escalate,
+   - default decision (`APPROVED` if unspecified).
+4. Emit deterministic trace + review/audit metadata.
 
-## Governance evidence flow
+## Integration architecture status
 
-SENA exposes release-evidence primitives rather than full governance automation:
+### Supported integrations (today)
+- Jira: `POST /v1/integrations/jira/webhook`
+- ServiceNow: `POST /v1/integrations/servicenow/webhook`
 
-- Bundle diff + promotion validation for controlled policy rollout.
-- Simulation outputs for baseline-vs-candidate comparisons.
-- Trace/provenance/audit hashing for post-decision review.
-- Human escalation outcomes for review queue handoff.
+### Experimental integrations
+- Generic webhook mapper: `POST /v1/integrations/webhook`
+- Slack interactions: `POST /v1/integrations/slack/interactions`
 
-## Observability seam
+Experimental integrations are intentionally marked non-contractual for this alpha phase.
 
-- JSON structured logs from API runtime.
-- Request correlation via `x-request-id`.
-- Optional JSONL audit sink file append (`SENA_AUDIT_SINK_JSONL`) for integration with external pipelines.
+## Governance evidence architecture
+
+- Bundle diff + promotion validation APIs.
+- Scenario simulation and replay/drift evaluation.
+- Hash-linked audit records with verification endpoint.
+
+This is release-evidence infrastructure, not a full enterprise governance suite.
 
 ## Maturity boundary
 
-SENA is currently alpha and should be positioned as deterministic governance infrastructure for pilots and controlled deployments.
+SENA is **alpha** today. Pilot-ready objectives are documented in `docs/TECHNICAL_MATURITY_PLAN.md` and `ROADMAP.md`.
 
-Not yet implemented as production-complete architecture:
-- HA multi-region control plane,
-- first-class tenant isolation,
-- fully integrated OIDC/RBAC admin plane,
+Not yet built-in:
+- enterprise tenancy and OIDC/RBAC admin plane,
 - replicated/WORM-native audit persistence,
-- asynchronous job orchestration for large simulation workloads.
-
-## Deprecated / legacy architecture
-
-Historical modules under `src/sena/legacy/*` are retained for reference only. They are not part of the supported SENA product path.
+- asynchronous large simulation jobs,
+- policy authoring UI.
