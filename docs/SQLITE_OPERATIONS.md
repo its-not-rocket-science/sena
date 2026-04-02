@@ -18,6 +18,19 @@ The SQLite policy registry uses explicit PRAGMA settings on every connection:
 - If an environment requires lower write latency and accepts a wider crash-loss window, operators may choose `synchronous=NORMAL` only with CAB approval and documented rollback plans.
 - WAL mode is preferred for mixed read/write workloads. If running on filesystems with known WAL incompatibilities, switch to `DELETE` mode and accept reduced reader concurrency.
 
+
+## Schema migration operations
+
+Use explicit migration lifecycle commands before changing registry consumers:
+
+```bash
+python -m sena.cli.main registry --sqlite-path /var/lib/sena/policy-registry.db schema-status
+python -m sena.cli.main registry --sqlite-path /var/lib/sena/policy-registry.db upgrade --dry-run
+python -m sena.cli.main registry --sqlite-path /var/lib/sena/policy-registry.db upgrade
+```
+
+Rollback policy is restore-based (forward-only migrations): take a backup before upgrades and restore if rollback is required. See `docs/MIGRATIONS.md` for details.
+
 ## Backup cadence
 
 Recommended baseline:

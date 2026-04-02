@@ -666,3 +666,25 @@ def test_audit_verify_archive_reports_missing_segment(tmp_path) -> None:
     assert verify_archive.returncode != 0
     payload = json.loads(verify_archive.stdout)
     assert any("missing_archive_segment" in error for error in payload["errors"])
+
+
+def test_registry_schema_status_and_upgrade_dry_run(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    base = ["registry", "--sqlite-path", str(db_path)]
+
+    dry_run = _run_cli(base + ["upgrade", "--dry-run"])
+    dry_run.check_returncode()
+    dry_payload = json.loads(dry_run.stdout)
+    assert dry_payload["status"] == "dry-run"
+    assert dry_payload["pending_versions"]
+
+    apply_result = _run_cli(base + ["upgrade"])
+    apply_result.check_returncode()
+    apply_payload = json.loads(apply_result.stdout)
+    assert apply_payload["status"] == "ok"
+
+    status = _run_cli(base + ["schema-status"])
+    status.check_returncode()
+    status_payload = json.loads(status.stdout)
+    assert status_payload["current_version"] == status_payload["latest_available_version"]
+    assert status_payload["pending_versions"] == []
