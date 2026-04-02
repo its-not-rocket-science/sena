@@ -8,6 +8,7 @@ from typing import Any
 
 from sena import __version__ as SENA_VERSION
 from sena.audit.chain import locate_decision_in_audit, summarize_audit_chain, verify_audit_chain
+from sena.audit.archive import create_audit_archive, restore_audit_archive, verify_audit_archive
 from sena.api.config import load_settings_from_env
 from sena.api.production_check import run_production_readiness_check
 from sena.core.enums import DecisionOutcome
@@ -670,6 +671,33 @@ def _run_audit_locate_decision(args: argparse.Namespace) -> None:
         raise SystemExit("Decision not found in audit chain")
 
 
+def _run_audit_archive(args: argparse.Namespace) -> None:
+    result = create_audit_archive(
+        str(args.audit_path),
+        str(args.archive_dir),
+        include_active_segment=not args.rotated_only,
+    )
+    print(json.dumps(result, indent=2))
+
+
+def _run_audit_verify_archive(args: argparse.Namespace) -> None:
+    result = verify_audit_archive(str(args.archive_manifest))
+    print(json.dumps(result, indent=2))
+    if not result.get("valid", False):
+        raise SystemExit("Audit archive verification failed")
+
+
+def _run_audit_restore_archive(args: argparse.Namespace) -> None:
+    restored = restore_audit_archive(str(args.archive_manifest), str(args.restore_audit_path))
+    verify_result = verify_audit_chain(str(args.restore_audit_path)) if args.verify_after_restore else None
+    payload: dict[str, Any] = {"restore": restored}
+    if verify_result is not None:
+        payload["verify"] = verify_result
+    print(json.dumps(payload, indent=2))
+    if verify_result is not None and not verify_result.get("valid", False):
+        raise SystemExit("Restored audit chain failed verification")
+
+
 def _run_production_check(args: argparse.Namespace) -> None:
     settings = load_settings_from_env()
     report = run_production_readiness_check(settings)
@@ -1000,6 +1028,21 @@ def _build_audit_parser() -> argparse.ArgumentParser:
     locate = sub.add_parser("locate-decision", help="Locate a specific decision id within audit chain")
     locate.add_argument("decision_id")
     locate.set_defaults(handler=_run_audit_locate_decision)
+
+    archive = sub.add_parser("archive", help="Create deterministic local archive artifacts for rotated/live segments")
+    archive.add_argument("--archive-dir", type=Path, required=True)
+    archive.add_argument("--rotated-only", action="store_true", help="Archive rotated segments only")
+    archive.set_defaults(handler=_run_audit_archive)
+
+    verify_archive = sub.add_parser("verify-archive", help="Verify archive manifest checksums and chain continuity")
+    verify_archive.add_argument("--archive-manifest", type=Path, required=True)
+    verify_archive.set_defaults(handler=_run_audit_verify_archive)
+
+    restore_archive = sub.add_parser("restore-archive", help="Restore an archived chain into a local audit sink path")
+    restore_archive.add_argument("--archive-manifest", type=Path, required=True)
+    restore_archive.add_argument("--restore-audit-path", type=Path, required=True)
+    restore_archive.add_argument("--verify-after-restore", action="store_true")
+    restore_archive.set_defaults(handler=_run_audit_restore_archive)
     return parser
 
 
