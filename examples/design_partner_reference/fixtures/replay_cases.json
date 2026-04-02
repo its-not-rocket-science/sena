@@ -1,0 +1,79 @@
+{
+  "cases": [
+    {
+      "case_id": "sn_low_risk_with_cab",
+      "event": {
+        "headers": {
+          "X-ServiceNow-Delivery-Id": "replay-sn-1002"
+        },
+        "payload": {
+          "event_type": "change_approval.requested",
+          "source_system": "servicenow",
+          "requested_action": "approve_change_request",
+          "service_tier": "tier2",
+          "environment": "production",
+          "risk": {
+            "score": 40
+          },
+          "flags": {
+            "privileged": false,
+            "emergency": false
+          },
+          "requested_by": {
+            "user_id": "u.change.002",
+            "role": "release_manager"
+          },
+          "change_request": {
+            "number": "CHG0091002",
+            "sys_id": "e11d03f45d9f1010ba2d55368b4bcf77",
+            "table": "change_request",
+            "stage": "awaiting_approval"
+          },
+          "cab_review": {
+            "evidence_id": "CAB-REV-6621"
+          },
+          "approver_chain": [
+            "ops_manager",
+            "security_oncall"
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "sn_emergency_privileged_no_chain",
+      "event": {
+        "headers": {
+          "X-ServiceNow-Delivery-Id": "replay-sn-1003"
+        },
+        "payload": {
+          "event_type": "change_approval.requested",
+          "source_system": "servicenow",
+          "requested_action": "approve_change_request",
+          "service_tier": "tier1",
+          "environment": "production",
+          "risk": {
+            "score": 82
+          },
+          "flags": {
+            "privileged": true,
+            "emergency": true
+          },
+          "requested_by": {
+            "user_id": "u.change.003",
+            "role": "platform_admin"
+          },
+          "change_request": {
+            "number": "CHG0091003",
+            "sys_id": "f54bc5f45d9f1010ba2d55368b4bcf90",
+            "table": "change_request",
+            "stage": "awaiting_approval"
+          },
+          "cab_review": {
+            "evidence_id": "CAB-REV-7001"
+          },
+          "approver_chain": null
+        }
+      }
+    }
+  ]
+}

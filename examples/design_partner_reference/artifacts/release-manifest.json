@@ -2,7 +2,7 @@
   "schema_version": "1",
   "bundle_name": "acme-change-governance",
   "version": "2026.04.0",
-  "created_at": "2026-04-01T14:51:32.334103+00:00",
+  "created_at": "2026-04-02T16:14:31.392365+00:00",
   "file_digests": [
     {
       "path": "rules.yaml",
@@ -14,8 +14,8 @@
   "signer": {
     "key_id": "design-partner-ops",
     "algorithm": "hmac-sha256",
-    "signed_at": "2026-04-01T14:51:32.334593+00:00",
-    "signature": "0eef821afc680e2cfc038cbcbbe58861fa0346dc607434521bf105567acfc187",
+    "signed_at": "2026-04-02T16:14:31.392764+00:00",
+    "signature": "bf23922273ad784921e384c5a1a2fc442245565c67e949c3828371734f2088f3",
     "signer": "acme-risk-ops"
   },
   "compatibility_notes": "Validated against SENA supported schema v1 and runtime compatibility range.",

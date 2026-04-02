@@ -1,17 +1,17 @@
 {
   "valid": true,
-  "records": 10,
-  "head": "bd242cfd4bafe1a23ffd4eb251907573d1306363cd41f7a71da2ed9e27c33d4a",
+  "records": 13,
+  "head": "e64fbf4e5bac8b1776d33f194abe5a4335e0a36ea76153cad7dad77cb5eaa8d9",
   "segments": [
     {
       "file": "audit.jsonl",
-      "records": 10,
+      "records": 13,
       "rotated": false
     }
   ],
   "manifest": {
     "schema_version": "1",
     "segment_count": 0,
-    "next_sequence": 11
+    "next_sequence": 14
   }
 }

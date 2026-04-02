@@ -17,7 +17,8 @@
       "risk_score": "int",
       "privileged_change": "bool",
       "cab_review_evidence_id": "str"
-    }
+    },
+    "invariants": []
   },
   "active_bundle": {
     "bundle_name": "acme-change-governance",
@@ -37,7 +38,8 @@
       "risk_score": "int",
       "privileged_change": "bool",
       "cab_review_evidence_id": "str"
-    }
+    },
+    "invariants": []
   },
   "signature_verification": {
     "valid": true,

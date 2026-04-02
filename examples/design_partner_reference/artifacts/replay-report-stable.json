@@ -1,0 +1,62 @@
+{
+  "replay_type": "sena.ai_workflow_drift",
+  "baseline_label": "active_bundle_replay_1",
+  "candidate_label": "active_bundle_replay_2",
+  "total_cases": 2,
+  "changed_outcomes": 0,
+  "changed_matched_controls": 0,
+  "changed_missing_evidence": 0,
+  "escalation_rates": {
+    "before": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "after": {
+      "count": 0,
+      "rate": 0.0
+    },
+    "delta": 0.0
+  },
+  "changes": [
+    {
+      "case_id": "sn_low_risk_with_cab",
+      "before_outcome": "APPROVED",
+      "after_outcome": "APPROVED",
+      "outcome_changed": false,
+      "before_matched_controls": [
+        "allow_standard_low_risk_changes"
+      ],
+      "after_matched_controls": [
+        "allow_standard_low_risk_changes"
+      ],
+      "matched_controls_changed": false,
+      "before_missing_evidence": [],
+      "after_missing_evidence": [],
+      "missing_evidence_changed": false,
+      "source_system": "servicenow",
+      "workflow_stage": "awaiting_approval",
+      "risk_category": "general"
+    },
+    {
+      "case_id": "sn_emergency_privileged_no_chain",
+      "before_outcome": "BLOCKED",
+      "after_outcome": "BLOCKED",
+      "outcome_changed": false,
+      "before_matched_controls": [
+        "block_emergency_privileged_changes_without_approver",
+        "escalate_privileged_production_changes"
+      ],
+      "after_matched_controls": [
+        "block_emergency_privileged_changes_without_approver",
+        "escalate_privileged_production_changes"
+      ],
+      "matched_controls_changed": false,
+      "before_missing_evidence": [],
+      "after_missing_evidence": [],
+      "missing_evidence_changed": false,
+      "source_system": "servicenow",
+      "workflow_stage": "awaiting_approval",
+      "risk_category": "general"
+    }
+  ]
+}

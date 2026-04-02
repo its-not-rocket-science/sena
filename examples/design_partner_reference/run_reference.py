@@ -7,9 +7,15 @@ from pathlib import Path
 from sena.audit.chain import append_audit_record, verify_audit_chain
 from sena.audit.sinks import JsonlFileAuditSink, RotationPolicy
 from sena.engine.evaluator import PolicyEvaluator
+from sena.engine.replay import build_drift_report, evaluate_replay_cases, load_replay_cases
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.integrations.base import DecisionPayload
+from sena.integrations.jira import (
+    AllowAllJiraWebhookVerifier,
+    JiraConnector,
+    load_jira_mapping_config,
+)
 from sena.integrations.servicenow import ServiceNowConnector, load_servicenow_mapping_config
 from sena.policy.lifecycle import validate_promotion
 from sena.policy.parser import load_policy_bundle
@@ -41,6 +47,114 @@ def _event_files() -> list[Path]:
     return sorted(FIXTURES.glob("servicenow_event_*.json"))
 
 
+def _build_replay_artifacts(
+    *,
+    candidate_rules,
+    active_rules,
+    candidate_meta,
+    active_meta,
+) -> None:
+    replay_payload = _load_json(FIXTURES / "replay_cases.json")
+
+    stable_cases = load_replay_cases(
+        replay_payload,
+        mapping_mode="servicenow",
+        mapping_config_path=str(ROOT / "integration" / "servicenow_mapping.yaml"),
+    )
+    stable_before = evaluate_replay_cases(
+        cases=stable_cases,
+        rules=active_rules,
+        metadata=active_meta,
+    )
+    stable_after = evaluate_replay_cases(
+        cases=stable_cases,
+        rules=active_rules,
+        metadata=active_meta,
+    )
+    stable_report = build_drift_report(
+        cases=stable_cases,
+        baseline=stable_before,
+        candidate=stable_after,
+        baseline_label="active_bundle_replay_1",
+        candidate_label="active_bundle_replay_2",
+    )
+    _write_json(ARTIFACTS / "replay-report-stable.json", stable_report)
+
+    update_before = evaluate_replay_cases(
+        cases=stable_cases,
+        rules=candidate_rules,
+        metadata=candidate_meta,
+    )
+    update_after = evaluate_replay_cases(
+        cases=stable_cases,
+        rules=active_rules,
+        metadata=active_meta,
+    )
+    update_report = build_drift_report(
+        cases=stable_cases,
+        baseline=update_before,
+        candidate=update_after,
+        baseline_label="candidate_bundle",
+        candidate_label="active_bundle",
+    )
+    _write_json(ARTIFACTS / "replay-report-policy-update.json", update_report)
+
+
+def _build_portability_examples(active_rules, active_meta) -> None:
+    servicenow_connector = ServiceNowConnector(
+        config=load_servicenow_mapping_config(str(ROOT / "integration" / "servicenow_mapping.yaml"))
+    )
+    jira_connector = JiraConnector(
+        config=load_jira_mapping_config(str(ROOT / "integration" / "jira_mapping.yaml")),
+        verifier=AllowAllJiraWebhookVerifier(),
+    )
+    evaluator = PolicyEvaluator(active_rules, policy_bundle=active_meta)
+
+    examples: list[dict] = []
+
+    servicenow_event = _load_json(FIXTURES / "servicenow_event_low_risk_with_cab.json")
+    servicenow_mapped = servicenow_connector.handle_event(
+        {
+            "headers": {"x-servicenow-delivery-id": "portability-servicenow-1"},
+            "payload": servicenow_event["payload"],
+            "raw_body": b"",
+        }
+    )
+    servicenow_decision = evaluator.evaluate(servicenow_mapped["action_proposal"], facts={})
+    examples.append(
+        {
+            "source_fixture": "servicenow_event_low_risk_with_cab.json",
+            "source_system": "servicenow",
+            "normalized_event": servicenow_mapped["normalized_event"],
+            "decision": servicenow_decision.summary,
+            "matched_rules": [rule.rule_id for rule in servicenow_decision.matched_rules],
+        }
+    )
+
+    jira_event = _load_json(FIXTURES / "jira_event_low_risk_with_cab.json")
+    jira_payload = jira_event["payload"]
+    jira_raw = json.dumps(jira_payload).encode("utf-8")
+    jira_mapped = jira_connector.handle_event(
+        {
+            "headers": {"x-atlassian-webhook-identifier": "portability-jira-1"},
+            "payload": jira_payload,
+            "raw_body": jira_raw,
+        }
+    )
+    jira_decision = evaluator.evaluate(jira_mapped["action_proposal"], facts={})
+    examples.append(
+        {
+            "source_fixture": "jira_event_low_risk_with_cab.json",
+            "source_system": "jira",
+            "normalized_event": jira_mapped["normalized_event"],
+            "decision": jira_decision.summary,
+            "matched_rules": [rule.rule_id for rule in jira_decision.matched_rules],
+        }
+    )
+
+    _write_json(ARTIFACTS / "normalized-event-examples.json", examples)
+
+
 def run() -> None:
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     KEYRING.mkdir(parents=True, exist_ok=True)
@@ -54,7 +168,6 @@ def run() -> None:
     candidate_rules, candidate_meta = load_policy_bundle(POLICY_CANDIDATE)
     active_rules, active_meta = load_policy_bundle(POLICY_ACTIVE)
 
-    # Signed bundle release artifact.
     manifest = generate_release_manifest(
         POLICY_ACTIVE,
         key_id="design-partner-ops",
@@ -72,7 +185,6 @@ def run() -> None:
         strict=True,
     )
 
-    # Simulation before promotion.
     scenario_rows = _load_json(FIXTURES / "simulation_scenarios.json")
     scenarios = {
         name: SimulationScenario(
@@ -110,7 +222,6 @@ def run() -> None:
     if not promotion.valid:
         raise RuntimeError(f"Promotion validation failed: {promotion.errors}")
 
-    # Evaluation flow + audit sink.
     audit_sink = JsonlFileAuditSink(
         path=str(ARTIFACTS / "audit" / "audit.jsonl"),
         append_only=True,
@@ -159,10 +270,17 @@ def run() -> None:
     _write_json(ARTIFACTS / "evaluation-results.json", evaluations)
     _write_json(ARTIFACTS / "audit-chain-verification.json", verify_audit_chain(audit_sink))
 
+    _build_replay_artifacts(
+        candidate_rules=candidate_rules,
+        active_rules=active_rules,
+        candidate_meta=candidate_meta,
+        active_meta=active_meta,
+    )
+    _build_portability_examples(active_rules, active_meta)
+
     lock_file = ARTIFACTS / "audit" / "audit.jsonl.lock"
     if lock_file.exists():
         lock_file.unlink()
-
 
 
 if __name__ == "__main__":
