@@ -446,6 +446,10 @@ The API image is production-oriented: slim base image, dedicated non-root user, 
 - Control plane capabilities and alpha boundaries: `docs/CONTROL_PLANE.md`
 - Operations/deployment: `docs/OPERATIONS.md`
 - Deployment profiles (dev/pilot/production-like): `docs/DEPLOYMENT_PROFILES.md`
+- Policy lifecycle and promotion gates: `docs/POLICY_LIFECYCLE.md`
+- Decision review packages: `docs/DECISION_REVIEW_PACKAGES.md`
+- Audit guarantees and verification workflow: `docs/AUDIT_GUARANTEES.md`
+- Design-partner release gate checks: `docs/DESIGN_PARTNER_READY.md`
 - Integration runbooks (supported): `docs/integrations/JIRA.md`, `docs/integrations/SERVICENOW.md`
 - Legacy migration boundary: `docs/MIGRATION.md`
 - Gap analysis: `ENTERPRISE_GAP_ANALYSIS.md`
