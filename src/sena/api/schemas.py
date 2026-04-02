@@ -163,6 +163,7 @@ class BundlePromoteRequest(BaseModel):
     class PromotionThresholds(BaseModel):
         max_changed_outcomes: int | None = Field(default=None, ge=0)
         max_block_to_approve_regressions: int | None = Field(default=None, ge=0)
+        max_regressions_by_outcome_type: dict[str, int] = Field(default_factory=dict)
         max_missing_scenario_coverage: int | None = Field(default=None, ge=0)
         max_changed_risk_categories: dict[str, int] = Field(default_factory=dict)
         required_risk_categories: list[str] = Field(default_factory=list)

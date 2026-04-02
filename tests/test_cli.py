@@ -86,6 +86,18 @@ def test_policy_validate_returns_human_readable_error(tmp_path) -> None:
 def test_registry_lifecycle_commands(tmp_path) -> None:
     db_path = tmp_path / "registry.db"
     base = ["registry", "--sqlite-path", str(db_path)]
+    scenarios_path = tmp_path / "scenarios.json"
+    scenarios_path.write_text(
+        json.dumps(
+            {
+                "s1": {
+                    "action_type": "approve_vendor_payment",
+                    "attributes": {"amount": 10, "vendor_verified": True},
+                    "facts": {},
+                }
+            }
+        )
+    )
 
     register = _run_cli(
         base
@@ -137,6 +149,8 @@ def test_registry_lifecycle_commands(tmp_path) -> None:
             "go",
             "--validation-artifact",
             "CAB-123",
+            "--simulation-scenarios",
+            str(scenarios_path),
         ]
     )
     to_active.check_returncode()
@@ -184,6 +198,114 @@ def test_registry_promote_break_glass_without_artifact(tmp_path) -> None:
         ]
     )
     promote.check_returncode()
+
+
+def test_registry_promote_fails_when_simulation_missing(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    base = ["registry", "--sqlite-path", str(db_path)]
+    register = _run_cli(
+        base
+        + [
+            "register",
+            "--policy-dir",
+            "src/sena/examples/policies",
+            "--bundle-name",
+            "enterprise-compliance-controls",
+            "--bundle-version",
+            "2026.07",
+        ]
+    )
+    register.check_returncode()
+    bundle_id = json.loads(register.stdout)["bundle_id"]
+    _run_cli(
+        base + ["promote", "--bundle-id", str(bundle_id), "--target-lifecycle", "candidate", "--promoted-by", "ops", "--promotion-reason", "ready"]
+    ).check_returncode()
+    missing_sim = _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "active",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "go",
+            "--validation-artifact",
+            "CAB-1",
+        ]
+    )
+    assert missing_sim.returncode != 0
+    assert "missing_simulation_report" in (missing_sim.stderr + missing_sim.stdout)
+
+
+def test_registry_promote_idempotent_repeated_attempt(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    base = ["registry", "--sqlite-path", str(db_path)]
+    scenarios_path = tmp_path / "scenarios.json"
+    scenarios_path.write_text(
+        json.dumps(
+            {
+                "s1": {
+                    "action_type": "approve_vendor_payment",
+                    "attributes": {"amount": 10, "vendor_verified": True},
+                    "facts": {},
+                }
+            }
+        )
+    )
+    register = _run_cli(
+        base
+        + [
+            "register",
+            "--policy-dir",
+            "src/sena/examples/policies",
+            "--bundle-name",
+            "enterprise-compliance-controls",
+            "--bundle-version",
+            "2026.08",
+        ]
+    )
+    register.check_returncode()
+    bundle_id = json.loads(register.stdout)["bundle_id"]
+    _run_cli(
+        base + ["promote", "--bundle-id", str(bundle_id), "--target-lifecycle", "candidate", "--promoted-by", "ops", "--promotion-reason", "ready"]
+    ).check_returncode()
+    _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "active",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "go",
+            "--validation-artifact",
+            "CAB-1",
+            "--simulation-scenarios",
+            str(scenarios_path),
+        ]
+    ).check_returncode()
+    second = _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "active",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "go-again",
+        ]
+    )
+    second.check_returncode()
+    assert json.loads(second.stdout)["idempotent"] is True
 
 
 def test_bundle_release_manifest_commands(tmp_path) -> None:

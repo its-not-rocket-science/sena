@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter
@@ -43,8 +44,15 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             raise_api_error("promotion_validation_failed", details={"errors": [str(exc)]})
         except RuntimeError as exc:
             if str(exc).startswith("promotion_validation_failed:"):
-                errors = str(exc).split(":", 1)[1].split("; ")
-                raise_api_error("promotion_validation_failed", details={"errors": errors})
+                raw = str(exc).split(":", 1)[1]
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    payload = {"messages": raw.split("; "), "failures": []}
+                raise_api_error(
+                    "promotion_validation_failed",
+                    details={"errors": payload.get("messages", []), "failures": payload.get("failures", [])},
+                )
             raise_api_error("promotion_validation_failed", details={"errors": [str(exc)]})
 
     @router.post("/bundle/rollback")
