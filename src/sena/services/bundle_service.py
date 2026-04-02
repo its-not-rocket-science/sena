@@ -9,6 +9,7 @@ from sena.api.schemas import BundleInfo, BundlePromoteRequest, BundleRegisterReq
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.policy.lifecycle import PromotionGatePolicy, diff_rule_sets, evaluate_promotion_gate, validate_promotion
 from sena.policy.parser import load_policy_bundle
+from sena.policy.store import PolicyStoreError
 
 logger = logging.getLogger(__name__)
 
@@ -134,27 +135,30 @@ class BundleService:
                 )
             )
 
-        self.policy_repo.transition_bundle(
-            payload.bundle_id,
-            payload.target_lifecycle,
-            promoted_by=payload.promoted_by,
-            promotion_reason=payload.promotion_reason if not payload.break_glass else f"[BREAK_GLASS] {payload.promotion_reason}",
-            validation_artifact=payload.validation_artifact,
-            policy_diff_summary=json.dumps(policy_diff, sort_keys=True),
-            evidence_json=json.dumps(
-                {
-                    "simulation_report": simulation_report,
-                    "thresholds": payload.thresholds.model_dump() if payload.thresholds else {},
-                    "threshold_errors": threshold_errors,
-                    "promotion_gate_failures": [item.__dict__ for item in gate_failures],
-                    "break_glass_reason": payload.break_glass_reason,
-                },
-                sort_keys=True,
-            ),
-            break_glass=payload.break_glass,
-            audit_marker="break_glass_promotion" if payload.break_glass else "promotion",
-            action="promote_break_glass" if payload.break_glass else "promote",
-        )
+        try:
+            self.policy_repo.transition_bundle(
+                payload.bundle_id,
+                payload.target_lifecycle,
+                promoted_by=payload.promoted_by,
+                promotion_reason=payload.promotion_reason if not payload.break_glass else f"[BREAK_GLASS] {payload.promotion_reason}",
+                validation_artifact=payload.validation_artifact,
+                policy_diff_summary=json.dumps(policy_diff, sort_keys=True),
+                evidence_json=json.dumps(
+                    {
+                        "simulation_report": simulation_report,
+                        "thresholds": payload.thresholds.model_dump() if payload.thresholds else {},
+                        "threshold_errors": threshold_errors,
+                        "promotion_gate_failures": [item.__dict__ for item in gate_failures],
+                        "break_glass_reason": payload.break_glass_reason,
+                    },
+                    sort_keys=True,
+                ),
+                break_glass=payload.break_glass,
+                audit_marker="break_glass_promotion" if payload.break_glass else "promotion",
+                action="promote_break_glass" if payload.break_glass else "promote",
+            )
+        except PolicyStoreError as exc:
+            raise RuntimeError(str(exc)) from exc
         active = self.policy_repo.get_active_bundle(self.settings.bundle_name)
         if active is not None:
             self.state.rules = active.rules
@@ -230,13 +234,16 @@ class BundleService:
         return errors
 
     def rollback_bundle(self, payload: BundleRollbackRequest) -> dict[str, Any]:
-        self.policy_repo.rollback_bundle(
-            payload.bundle_name,
-            payload.to_bundle_id,
-            promoted_by=payload.promoted_by,
-            promotion_reason=payload.promotion_reason,
-            validation_artifact=payload.validation_artifact,
-        )
+        try:
+            self.policy_repo.rollback_bundle(
+                payload.bundle_name,
+                payload.to_bundle_id,
+                promoted_by=payload.promoted_by,
+                promotion_reason=payload.promotion_reason,
+                validation_artifact=payload.validation_artifact,
+            )
+        except PolicyStoreError as exc:
+            raise ValueError(str(exc)) from exc
         active = self.policy_repo.get_active_bundle(payload.bundle_name)
         if active is not None and payload.bundle_name == self.settings.bundle_name:
             self.state.rules = active.rules
