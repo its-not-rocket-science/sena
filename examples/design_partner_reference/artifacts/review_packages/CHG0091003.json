@@ -1,14 +1,14 @@
 {
   "package_schema_version": "1.0",
   "package_type": "sena.decision_review_package",
-  "package_generated_at": "2026-04-01T14:51:32.348873+00:00",
+  "package_generated_at": "2026-04-02T16:14:31.403332+00:00",
   "decision_summary": {
-    "decision_id": "dec_d72aeb440ddc",
+    "decision_id": "dec_831a9073a1e3",
     "decision": "BLOCKED",
     "outcome": "BLOCKED",
     "action_type": "approve_change_request",
-    "summary": "Decision dec_d72aeb440ddc: BLOCKED due to inviolable policy constraints (block_emergency_privileged_changes_without_approver).",
-    "decision_timestamp": "2026-04-01T14:51:32.348873+00:00"
+    "summary": "Decision dec_831a9073a1e3: BLOCKED due to inviolable policy constraints (block_emergency_privileged_changes_without_approver).",
+    "decision_timestamp": "2026-04-02T16:14:31.403332+00:00"
   },
   "rules": {
     "matched": [
@@ -17,14 +17,18 @@
         "matched": true,
         "decision": "BLOCK",
         "inviolable": true,
-        "reason": "Emergency privileged changes require a recorded approver chain."
+        "reason": "Emergency privileged changes require a recorded approver chain.",
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "escalate_privileged_production_changes",
         "matched": true,
         "decision": "ESCALATE",
         "inviolable": false,
-        "reason": "Privileged production changes require security approval."
+        "reason": "Privileged production changes require security approval.",
+        "required_evidence": [],
+        "missing_evidence": []
       }
     ],
     "applicable": [
@@ -33,28 +37,36 @@
         "matched": false,
         "decision": null,
         "inviolable": true,
-        "reason": null
+        "reason": null,
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "block_emergency_privileged_changes_without_approver",
         "matched": true,
         "decision": "BLOCK",
         "inviolable": true,
-        "reason": "Emergency privileged changes require a recorded approver chain."
+        "reason": "Emergency privileged changes require a recorded approver chain.",
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "escalate_privileged_production_changes",
         "matched": true,
         "decision": "ESCALATE",
         "inviolable": false,
-        "reason": "Privileged production changes require security approval."
+        "reason": "Privileged production changes require security approval.",
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "allow_standard_low_risk_changes",
         "matched": false,
         "decision": null,
         "inviolable": false,
-        "reason": null
+        "reason": null,
+        "required_evidence": [],
+        "missing_evidence": []
       }
     ],
     "evaluated": [
@@ -63,33 +75,45 @@
         "matched": false,
         "decision": null,
         "inviolable": true,
-        "reason": null
+        "reason": null,
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "block_emergency_privileged_changes_without_approver",
         "matched": true,
         "decision": "BLOCK",
         "inviolable": true,
-        "reason": "Emergency privileged changes require a recorded approver chain."
+        "reason": "Emergency privileged changes require a recorded approver chain.",
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "escalate_privileged_production_changes",
         "matched": true,
         "decision": "ESCALATE",
         "inviolable": false,
-        "reason": "Privileged production changes require security approval."
+        "reason": "Privileged production changes require security approval.",
+        "required_evidence": [],
+        "missing_evidence": []
       },
       {
         "rule_id": "allow_standard_low_risk_changes",
         "matched": false,
         "decision": null,
         "inviolable": false,
-        "reason": null
+        "reason": null,
+        "required_evidence": [],
+        "missing_evidence": []
       }
     ],
     "conflicting_rule_ids": [
       "escalate_privileged_production_changes"
     ]
+  },
+  "invariants": {
+    "matched": [],
+    "evaluated": []
   },
   "precedence": {
     "explanation": "One or more inviolable BLOCK rules matched. Inviolable BLOCK has highest precedence and overrides all other matches. Multiple conflicting rules matched; BLOCK takes precedence over ESCALATE and ALLOW.",
@@ -104,6 +128,16 @@
     ]
   },
   "facts_and_actor": {
+    "request_origin": {
+      "classification": "autonomous_tool",
+      "ai_metadata": null,
+      "autonomous_metadata": {
+        "tool_name": "servicenow",
+        "trigger_type": "change_approval.requested",
+        "trigger_reference": "d31dd3a017dd2010ba2d55368b4bcf21",
+        "supervising_owner": "u.change.003"
+      }
+    },
     "actor": {
       "actor_id": "u.change.003",
       "actor_role": "platform_engineer"
@@ -113,6 +147,7 @@
       "request_id": "CHG0091003",
       "actor_id": "u.change.003",
       "actor_role": "platform_engineer",
+      "action_origin": "autonomous_tool",
       "source_event_type": "change_approval.requested",
       "source_record_id": "d31dd3a017dd2010ba2d55368b4bcf21",
       "source_object_type": "change_request",
@@ -137,9 +172,19 @@
       },
       "evidence_references": [],
       "servicenow_table": "change_request",
-      "servicenow_change_number": "CHG0091003"
+      "servicenow_change_number": "CHG0091003",
+      "autonomous_metadata": {
+        "tool_name": "servicenow",
+        "trigger_type": "change_approval.requested",
+        "trigger_reference": "d31dd3a017dd2010ba2d55368b4bcf21",
+        "supervising_owner": "u.change.003"
+      }
     },
     "missing_fields": []
+  },
+  "governance_evidence": {
+    "missing_evidence_classes": [],
+    "missing_evidence_by_rule": {}
   },
   "policy_bundle_metadata": {
     "bundle_name": "acme-change-governance",
@@ -151,11 +196,11 @@
   },
   "audit_identifiers": {
     "request_id": "CHG0091003",
-    "decision_hash": "174d6a492b5a5238e5a0990daf6f1ae163bf8b5ca17da74ed8635ee68a8540a7",
-    "input_fingerprint": "d03a6736a8b8e8bb6fd5ab1a8ee7bde83b39642331e5b142a3e832e79b5d8f9f",
-    "chain_hash": "ec48570a2378a0452cb8c31422cc6e8581acf9ca31d9440861d77b10b74dcb98",
-    "previous_chain_hash": "44c0b4339ea5ec98541e585c67b9c840fcf0b9dbf1f019557e4596ac60d4cf9b",
-    "storage_sequence_number": 8
+    "decision_hash": "c2470e0ce1dc60fb4d1e88c28ca902dda4509132b2157ca56cdb1b33a3e80f1b",
+    "input_fingerprint": "cafe4fc703576fa651d562e7a9c4264c7871ea6e5023a2ccb7275868816c5020",
+    "chain_hash": "bfd5e82d59a852a1e8d28728c8d1989276a1517a8bf785a1e838639a54e8a856",
+    "previous_chain_hash": "bd242cfd4bafe1a23ffd4eb251907573d1306363cd41f7a71da2ed9e27c33d4a",
+    "storage_sequence_number": 11
   },
   "normalized_source_system_references": [
     {

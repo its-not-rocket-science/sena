@@ -112,6 +112,22 @@ See `CONTRIBUTING.md` for contributor workflow and local quality guidance.
 |---|---|---|
 | Deterministic governance failure modes | Expanded | See `docs/FAILURE_MODE_MATRIX.md` for tested vs not-yet-tested classes and stable error contracts. |
 
+## 15-minute canonical integration quickstart
+
+Run the design-partner-grade ServiceNow pack (with Jira portability proof):
+
+```bash
+PYTHONPATH=src python examples/design_partner_reference/run_reference.py
+examples/design_partner_reference/demo_15m.sh
+```
+
+What you should see in `examples/design_partner_reference/artifacts/`:
+- promotion gate evidence (`simulation-report.json`, `promotion-validation.json`),
+- deterministic replay evidence (`replay-report-stable.json`),
+- policy-update drift evidence (`replay-report-policy-update.json`),
+- audit verification (`audit-chain-verification.json`),
+- normalized portability examples (`normalized-event-examples.json`).
+
 ## CLI quickstart
 
 ```bash

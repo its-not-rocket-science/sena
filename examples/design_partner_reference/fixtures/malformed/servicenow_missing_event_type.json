@@ -1,0 +1,19 @@
+{
+  "headers": {
+    "X-ServiceNow-Delivery-Id": "sn-malformed-1"
+  },
+  "payload": {
+    "source_system": "servicenow",
+    "requested_by": {
+      "user_id": "u.change.bad",
+      "role": "release_manager"
+    },
+    "change_request": {
+      "number": "CHG0091991",
+      "sys_id": "bad-sys-id",
+      "table": "change_request",
+      "stage": "awaiting_approval"
+    }
+  },
+  "raw_body": ""
+}

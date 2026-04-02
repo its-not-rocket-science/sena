@@ -1,6 +1,7 @@
 {
-  "head_hash": "bd242cfd4bafe1a23ffd4eb251907573d1306363cd41f7a71da2ed9e27c33d4a",
-  "next_sequence": 11,
+  "head_hash": "e64fbf4e5bac8b1776d33f194abe5a4335e0a36ea76153cad7dad77cb5eaa8d9",
+  "manifest_present": true,
+  "next_sequence": 14,
   "schema_version": "1",
   "segments": []
 }

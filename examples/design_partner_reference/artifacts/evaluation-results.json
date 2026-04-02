@@ -14,7 +14,7 @@
         "actor_role": "platform_engineer"
       },
       "request_id": "CHG0091003",
-      "event_timestamp": "2026-04-01T14:51:32.348619+00:00",
+      "event_timestamp": "2026-04-02T16:14:31.403112+00:00",
       "attributes": {
         "source_event_type": "change_approval.requested",
         "source_record_id": "d31dd3a017dd2010ba2d55368b4bcf21",
@@ -47,11 +47,11 @@
     "decision": {
       "action_type": "approve_change_request",
       "outcome": "BLOCKED",
-      "summary": "Decision dec_d72aeb440ddc: BLOCKED due to inviolable policy constraints (block_emergency_privileged_changes_without_approver).",
-      "decision_id": "dec_d72aeb440ddc",
+      "summary": "Decision dec_831a9073a1e3: BLOCKED due to inviolable policy constraints (block_emergency_privileged_changes_without_approver).",
+      "decision_id": "dec_831a9073a1e3",
       "decision": "BLOCKED",
-      "decision_timestamp": "2026-04-01 14:51:32.348873+00:00",
-      "decision_hash": "174d6a492b5a5238e5a0990daf6f1ae163bf8b5ca17da74ed8635ee68a8540a7",
+      "decision_timestamp": "2026-04-02 16:14:31.403332+00:00",
+      "decision_hash": "c2470e0ce1dc60fb4d1e88c28ca902dda4509132b2157ca56cdb1b33a3e80f1b",
       "request_id": "CHG0091003",
       "policy_bundle": {
         "bundle_name": "acme-change-governance",
@@ -71,11 +71,12 @@
           "risk_score": "int",
           "privileged_change": "bool",
           "cab_review_evidence_id": "str"
-        }
+        },
+        "invariants": []
       },
       "reasoning": {
         "precedence_explanation": "One or more inviolable BLOCK rules matched. Inviolable BLOCK has highest precedence and overrides all other matches. Multiple conflicting rules matched; BLOCK takes precedence over ESCALATE and ALLOW.",
-        "summary": "Decision dec_d72aeb440ddc: BLOCKED due to inviolable policy constraints (block_emergency_privileged_changes_without_approver).",
+        "summary": "Decision dec_831a9073a1e3: BLOCKED due to inviolable policy constraints (block_emergency_privileged_changes_without_approver).",
         "outcome_rationale": [
           "Outcome resolved to BLOCKED using deterministic precedence.",
           "One or more inviolable BLOCK rules matched. Inviolable BLOCK has highest precedence and overrides all other matches. Multiple conflicting rules matched; BLOCK takes precedence over ESCALATE and ALLOW."
@@ -85,15 +86,20 @@
             "rule_id": "block_emergency_privileged_changes_without_approver",
             "decision": "BLOCK",
             "inviolable": true,
-            "reason": "Emergency privileged changes require a recorded approver chain."
+            "reason": "Emergency privileged changes require a recorded approver chain.",
+            "required_evidence": [],
+            "missing_evidence": []
           },
           {
             "rule_id": "escalate_privileged_production_changes",
             "decision": "ESCALATE",
             "inviolable": false,
-            "reason": "Privileged production changes require security approval."
+            "reason": "Privileged production changes require security approval.",
+            "required_evidence": [],
+            "missing_evidence": []
           }
         ],
+        "matched_invariants": [],
         "risk_summary": {
           "risk_attributes": {
             "risk_score": 82,
@@ -103,7 +109,8 @@
           },
           "requested_action": "approve_change_request",
           "workflow_stage": "awaiting_approval",
-          "source_system": "servicenow"
+          "source_system": "servicenow",
+          "action_origin": "autonomous_tool"
         },
         "reviewer_guidance": [
           "Verify matched controls align with control owner expectations.",
@@ -115,8 +122,8 @@
           "bundle_version": "2026.04.0",
           "schema_version": "1",
           "evaluator_version": "0.3.0",
-          "input_fingerprint": "d03a6736a8b8e8bb6fd5ab1a8ee7bde83b39642331e5b142a3e832e79b5d8f9f",
-          "decision_hash": "174d6a492b5a5238e5a0990daf6f1ae163bf8b5ca17da74ed8635ee68a8540a7"
+          "input_fingerprint": "cafe4fc703576fa651d562e7a9c4264c7871ea6e5023a2ccb7275868816c5020",
+          "decision_hash": "c2470e0ce1dc60fb4d1e88c28ca902dda4509132b2157ca56cdb1b33a3e80f1b"
         }
       },
       "applicable_rules": [
@@ -131,28 +138,36 @@
           "matched": false,
           "decision": null,
           "inviolable": true,
-          "reason": null
+          "reason": null,
+          "required_evidence": [],
+          "missing_evidence": []
         },
         {
           "rule_id": "block_emergency_privileged_changes_without_approver",
           "matched": true,
           "decision": "BLOCK",
           "inviolable": true,
-          "reason": "Emergency privileged changes require a recorded approver chain."
+          "reason": "Emergency privileged changes require a recorded approver chain.",
+          "required_evidence": [],
+          "missing_evidence": []
         },
         {
           "rule_id": "escalate_privileged_production_changes",
           "matched": true,
           "decision": "ESCALATE",
           "inviolable": false,
-          "reason": "Privileged production changes require security approval."
+          "reason": "Privileged production changes require security approval.",
+          "required_evidence": [],
+          "missing_evidence": []
         },
         {
           "rule_id": "allow_standard_low_risk_changes",
           "matched": false,
           "decision": null,
           "inviolable": false,
-          "reason": null
+          "reason": null,
+          "required_evidence": [],
+          "missing_evidence": []
         }
       ],
       "matched_rules": [
@@ -161,16 +176,22 @@
           "matched": true,
           "decision": "BLOCK",
           "inviolable": true,
-          "reason": "Emergency privileged changes require a recorded approver chain."
+          "reason": "Emergency privileged changes require a recorded approver chain.",
+          "required_evidence": [],
+          "missing_evidence": []
         },
         {
           "rule_id": "escalate_privileged_production_changes",
           "matched": true,
           "decision": "ESCALATE",
           "inviolable": false,
-          "reason": "Privileged production changes require security approval."
+          "reason": "Privileged production changes require security approval.",
+          "required_evidence": [],
+          "missing_evidence": []
         }
       ],
+      "evaluated_invariants": [],
+      "matched_invariants": [],
       "conflicting_rules": [
         "escalate_privileged_production_changes"
       ],
@@ -180,6 +201,7 @@
         "request_id": "CHG0091003",
         "actor_id": "u.change.003",
         "actor_role": "platform_engineer",
+        "action_origin": "autonomous_tool",
         "source_event_type": "change_approval.requested",
         "source_record_id": "d31dd3a017dd2010ba2d55368b4bcf21",
         "source_object_type": "change_request",
@@ -204,11 +226,17 @@
         },
         "evidence_references": [],
         "servicenow_table": "change_request",
-        "servicenow_change_number": "CHG0091003"
+        "servicenow_change_number": "CHG0091003",
+        "autonomous_metadata": {
+          "tool_name": "servicenow",
+          "trigger_type": "change_approval.requested",
+          "trigger_reference": "d31dd3a017dd2010ba2d55368b4bcf21",
+          "supervising_owner": "u.change.003"
+        }
       },
       "audit_record": {
-        "decision_id": "dec_d72aeb440ddc",
-        "timestamp": "2026-04-01 14:51:32.348873+00:00",
+        "decision_id": "dec_831a9073a1e3",
+        "timestamp": "2026-04-02 16:14:31.403332+00:00",
         "write_timestamp": null,
         "event_type": "change_approval.requested",
         "action_type": "approve_change_request",
@@ -234,7 +262,8 @@
             "risk_score": "int",
             "privileged_change": "bool",
             "cab_review_evidence_id": "str"
-          }
+          },
+          "invariants": []
         },
         "matched_rule_ids": [
           "block_emergency_privileged_changes_without_approver",
@@ -248,8 +277,8 @@
         ],
         "missing_fields": [],
         "precedence_explanation": "One or more inviolable BLOCK rules matched. Inviolable BLOCK has highest precedence and overrides all other matches. Multiple conflicting rules matched; BLOCK takes precedence over ESCALATE and ALLOW.",
-        "input_fingerprint": "d03a6736a8b8e8bb6fd5ab1a8ee7bde83b39642331e5b142a3e832e79b5d8f9f",
-        "decision_hash": "174d6a492b5a5238e5a0990daf6f1ae163bf8b5ca17da74ed8635ee68a8540a7",
+        "input_fingerprint": "cafe4fc703576fa651d562e7a9c4264c7871ea6e5023a2ccb7275868816c5020",
+        "decision_hash": "c2470e0ce1dc60fb4d1e88c28ca902dda4509132b2157ca56cdb1b33a3e80f1b",
         "source_metadata": {
           "source_event_type": "change_approval.requested",
           "source_record_id": "d31dd3a017dd2010ba2d55368b4bcf21",
@@ -262,9 +291,9 @@
         "request_correlation_id": "CHG0091003",
         "evaluator_version": "0.3.0",
         "policy_bundle_release_id": "2026.04.0",
-        "storage_sequence_number": 8,
-        "chain_hash": "ec48570a2378a0452cb8c31422cc6e8581acf9ca31d9440861d77b10b74dcb98",
-        "previous_chain_hash": "44c0b4339ea5ec98541e585c67b9c840fcf0b9dbf1f019557e4596ac60d4cf9b"
+        "storage_sequence_number": 11,
+        "chain_hash": "bfd5e82d59a852a1e8d28728c8d1989276a1517a8bf785a1e838639a54e8a856",
+        "previous_chain_hash": "bd242cfd4bafe1a23ffd4eb251907573d1306363cd41f7a71da2ed9e27c33d4a"
       }
     },
     "delivery": {
@@ -272,10 +301,10 @@
       "payload": {
         "schema_version": "1",
         "source_system": "servicenow",
-        "decision_id": "dec_d72aeb440ddc",
+        "decision_id": "dec_831a9073a1e3",
         "request_id": "CHG0091003",
         "action_type": "approve_change_request",
-        "decision": "Decision dec_d72aeb440ddc: BLOCKED due to inviolable policy constraints (block_emergency_privileged_changes_without_approver).",
+        "decision": "Decision dec_831a9073a1e3: BLOCKED due to inviolable policy constraints (block_emergency_privileged_changes_without_approver).",
         "matched_rule_ids": [
           "block_emergency_privileged_changes_without_approver",
           "escalate_privileged_production_changes"
@@ -306,7 +335,7 @@
         "actor_role": "site_reliability_engineer"
       },
       "request_id": "CHG0091001",
-      "event_timestamp": "2026-04-01T14:51:32.358798+00:00",
+      "event_timestamp": "2026-04-02T16:14:31.406776+00:00",
       "attributes": {
         "source_event_type": "change_approval.requested",
         "source_record_id": "f4eaf8fb1b552010ba2d55368b4bcbee",
@@ -339,11 +368,11 @@
     "decision": {
       "action_type": "approve_change_request",
       "outcome": "BLOCKED",
-      "summary": "Decision dec_8a81df6744c4: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
-      "decision_id": "dec_8a81df6744c4",
+      "summary": "Decision dec_15b98400ae02: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
+      "decision_id": "dec_15b98400ae02",
       "decision": "BLOCKED",
-      "decision_timestamp": "2026-04-01 14:51:32.358946+00:00",
-      "decision_hash": "a3bb473761ce1d4070164bdec2d3c47dba91477a43a3ed30946df480da5b28c7",
+      "decision_timestamp": "2026-04-02 16:14:31.406876+00:00",
+      "decision_hash": "41bdb14522336c4cf207847f8649ccfe05555521050aa58aaec2872f09429bbb",
       "request_id": "CHG0091001",
       "policy_bundle": {
         "bundle_name": "acme-change-governance",
@@ -363,17 +392,19 @@
           "risk_score": "int",
           "privileged_change": "bool",
           "cab_review_evidence_id": "str"
-        }
+        },
+        "invariants": []
       },
       "reasoning": {
         "precedence_explanation": "Context schema validation failed before policy evaluation; blocked deterministically.",
-        "summary": "Decision dec_8a81df6744c4: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
+        "summary": "Decision dec_15b98400ae02: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
         "outcome_rationale": [
           "Outcome resolved to BLOCKED using deterministic precedence.",
           "Context schema validation failed before policy evaluation; blocked deterministically.",
           "Input context schema validation failed before rule evaluation."
         ],
         "matched_controls": [],
+        "matched_invariants": [],
         "risk_summary": {
           "risk_attributes": {
             "risk_score": 97,
@@ -383,7 +414,8 @@
           },
           "requested_action": "approve_change_request",
           "workflow_stage": "awaiting_approval",
-          "source_system": "servicenow"
+          "source_system": "servicenow",
+          "action_origin": "autonomous_tool"
         },
         "reviewer_guidance": [
           "Verify matched controls align with control owner expectations.",
@@ -395,8 +427,8 @@
           "bundle_version": "2026.04.0",
           "schema_version": "1",
           "evaluator_version": "0.3.0",
-          "input_fingerprint": "c4cc9d4dc88d8f151e7433058ab67326e3d185b77220429dee829d1c28e08497",
-          "decision_hash": "a3bb473761ce1d4070164bdec2d3c47dba91477a43a3ed30946df480da5b28c7"
+          "input_fingerprint": "55d43d12ab23b7de6bbe42a507a7f4f3a42a5345c27689f0bfb9596f5736c5e8",
+          "decision_hash": "41bdb14522336c4cf207847f8649ccfe05555521050aa58aaec2872f09429bbb"
         }
       },
       "applicable_rules": [
@@ -407,6 +439,8 @@
       ],
       "evaluated_rules": [],
       "matched_rules": [],
+      "evaluated_invariants": [],
+      "matched_invariants": [],
       "conflicting_rules": [],
       "missing_fields": [],
       "context": {
@@ -414,6 +448,7 @@
         "request_id": "CHG0091001",
         "actor_id": "u.change.001",
         "actor_role": "site_reliability_engineer",
+        "action_origin": "autonomous_tool",
         "source_event_type": "change_approval.requested",
         "source_record_id": "f4eaf8fb1b552010ba2d55368b4bcbee",
         "source_object_type": "change_request",
@@ -438,11 +473,17 @@
         },
         "evidence_references": [],
         "servicenow_table": "change_request",
-        "servicenow_change_number": "CHG0091001"
+        "servicenow_change_number": "CHG0091001",
+        "autonomous_metadata": {
+          "tool_name": "servicenow",
+          "trigger_type": "change_approval.requested",
+          "trigger_reference": "f4eaf8fb1b552010ba2d55368b4bcbee",
+          "supervising_owner": "u.change.001"
+        }
       },
       "audit_record": {
-        "decision_id": "dec_8a81df6744c4",
-        "timestamp": "2026-04-01 14:51:32.358946+00:00",
+        "decision_id": "dec_15b98400ae02",
+        "timestamp": "2026-04-02 16:14:31.406876+00:00",
         "write_timestamp": null,
         "event_type": "change_approval.requested",
         "action_type": "approve_change_request",
@@ -468,14 +509,15 @@
             "risk_score": "int",
             "privileged_change": "bool",
             "cab_review_evidence_id": "str"
-          }
+          },
+          "invariants": []
         },
         "matched_rule_ids": [],
         "evaluated_rule_ids": [],
         "missing_fields": [],
         "precedence_explanation": "Context schema validation failed before policy evaluation; blocked deterministically.",
-        "input_fingerprint": "c4cc9d4dc88d8f151e7433058ab67326e3d185b77220429dee829d1c28e08497",
-        "decision_hash": "a3bb473761ce1d4070164bdec2d3c47dba91477a43a3ed30946df480da5b28c7",
+        "input_fingerprint": "55d43d12ab23b7de6bbe42a507a7f4f3a42a5345c27689f0bfb9596f5736c5e8",
+        "decision_hash": "41bdb14522336c4cf207847f8649ccfe05555521050aa58aaec2872f09429bbb",
         "source_metadata": {
           "source_event_type": "change_approval.requested",
           "source_record_id": "f4eaf8fb1b552010ba2d55368b4bcbee",
@@ -488,9 +530,9 @@
         "request_correlation_id": "CHG0091001",
         "evaluator_version": "0.3.0",
         "policy_bundle_release_id": "2026.04.0",
-        "storage_sequence_number": 9,
-        "chain_hash": "7fbc69bbf2f8b3a9c5e82af81eb6ea5895c8d04e11cad556ee5802b3722d5d84",
-        "previous_chain_hash": "ec48570a2378a0452cb8c31422cc6e8581acf9ca31d9440861d77b10b74dcb98"
+        "storage_sequence_number": 12,
+        "chain_hash": "61c742727b54a9a5adcd45a5ca63ea77f6a87374685c159e5275d7a0fe08517e",
+        "previous_chain_hash": "bfd5e82d59a852a1e8d28728c8d1989276a1517a8bf785a1e838639a54e8a856"
       }
     },
     "delivery": {
@@ -498,10 +540,10 @@
       "payload": {
         "schema_version": "1",
         "source_system": "servicenow",
-        "decision_id": "dec_8a81df6744c4",
+        "decision_id": "dec_15b98400ae02",
         "request_id": "CHG0091001",
         "action_type": "approve_change_request",
-        "decision": "Decision dec_8a81df6744c4: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
+        "decision": "Decision dec_15b98400ae02: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
         "matched_rule_ids": [],
         "status": "completed",
         "deterministic": true
@@ -529,7 +571,7 @@
         "actor_role": "release_manager"
       },
       "request_id": "CHG0091002",
-      "event_timestamp": "2026-04-01T14:51:32.362492+00:00",
+      "event_timestamp": "2026-04-02T16:14:31.410866+00:00",
       "attributes": {
         "source_event_type": "change_approval.requested",
         "source_record_id": "e11d03f45d9f1010ba2d55368b4bcf77",
@@ -565,11 +607,11 @@
     "decision": {
       "action_type": "approve_change_request",
       "outcome": "APPROVED",
-      "summary": "Decision dec_63fcc5004203: APPROVED. No matching policy rules for action 'approve_change_request'.",
-      "decision_id": "dec_63fcc5004203",
+      "summary": "Decision dec_49833f2ac82c: APPROVED. No matching policy rules for action 'approve_change_request'.",
+      "decision_id": "dec_49833f2ac82c",
       "decision": "APPROVED",
-      "decision_timestamp": "2026-04-01 14:51:32.362712+00:00",
-      "decision_hash": "921f347580a5e6693fc9551b69ec44316ab3b95556a276dd6b5203e4e66dceab",
+      "decision_timestamp": "2026-04-02 16:14:31.411041+00:00",
+      "decision_hash": "57408e427c4d32cfa7da9028728b810e672681e2d686146f9def01dac1a2c20d",
       "request_id": "CHG0091002",
       "policy_bundle": {
         "bundle_name": "acme-change-governance",
@@ -589,11 +631,12 @@
           "risk_score": "int",
           "privileged_change": "bool",
           "cab_review_evidence_id": "str"
-        }
+        },
+        "invariants": []
       },
       "reasoning": {
         "precedence_explanation": "No rules matched. Fallback decision is APPROVED per evaluator configuration.",
-        "summary": "Decision dec_63fcc5004203: APPROVED. No matching policy rules for action 'approve_change_request'.",
+        "summary": "Decision dec_49833f2ac82c: APPROVED. No matching policy rules for action 'approve_change_request'.",
         "outcome_rationale": [
           "Outcome resolved to APPROVED using deterministic precedence.",
           "No rules matched. Fallback decision is APPROVED per evaluator configuration."
@@ -603,9 +646,12 @@
             "rule_id": "allow_standard_low_risk_changes",
             "decision": "ALLOW",
             "inviolable": false,
-            "reason": "Low-risk changes with CAB evidence can proceed automatically."
+            "reason": "Low-risk changes with CAB evidence can proceed automatically.",
+            "required_evidence": [],
+            "missing_evidence": []
           }
         ],
+        "matched_invariants": [],
         "risk_summary": {
           "risk_attributes": {
             "risk_score": 40,
@@ -615,7 +661,8 @@
           },
           "requested_action": "approve_change_request",
           "workflow_stage": "awaiting_approval",
-          "source_system": "servicenow"
+          "source_system": "servicenow",
+          "action_origin": "autonomous_tool"
         },
         "reviewer_guidance": [
           "Verify matched controls align with control owner expectations.",
@@ -626,8 +673,8 @@
           "bundle_version": "2026.04.0",
           "schema_version": "1",
           "evaluator_version": "0.3.0",
-          "input_fingerprint": "39dda9bd6c6d30394fd9665e371e1bf725af187b2a9bcbd33bb7f05f13e26062",
-          "decision_hash": "921f347580a5e6693fc9551b69ec44316ab3b95556a276dd6b5203e4e66dceab"
+          "input_fingerprint": "94396c99aea848cce5df7a1a1122aecfebb7735fa5bd228db15f3a445993e394",
+          "decision_hash": "57408e427c4d32cfa7da9028728b810e672681e2d686146f9def01dac1a2c20d"
         }
       },
       "applicable_rules": [
@@ -642,28 +689,36 @@
           "matched": false,
           "decision": null,
           "inviolable": true,
-          "reason": null
+          "reason": null,
+          "required_evidence": [],
+          "missing_evidence": []
         },
         {
           "rule_id": "block_emergency_privileged_changes_without_approver",
           "matched": false,
           "decision": null,
           "inviolable": true,
-          "reason": null
+          "reason": null,
+          "required_evidence": [],
+          "missing_evidence": []
         },
         {
           "rule_id": "escalate_privileged_production_changes",
           "matched": false,
           "decision": null,
           "inviolable": false,
-          "reason": null
+          "reason": null,
+          "required_evidence": [],
+          "missing_evidence": []
         },
         {
           "rule_id": "allow_standard_low_risk_changes",
           "matched": true,
           "decision": "ALLOW",
           "inviolable": false,
-          "reason": "Low-risk changes with CAB evidence can proceed automatically."
+          "reason": "Low-risk changes with CAB evidence can proceed automatically.",
+          "required_evidence": [],
+          "missing_evidence": []
         }
       ],
       "matched_rules": [
@@ -672,9 +727,13 @@
           "matched": true,
           "decision": "ALLOW",
           "inviolable": false,
-          "reason": "Low-risk changes with CAB evidence can proceed automatically."
+          "reason": "Low-risk changes with CAB evidence can proceed automatically.",
+          "required_evidence": [],
+          "missing_evidence": []
         }
       ],
+      "evaluated_invariants": [],
+      "matched_invariants": [],
       "conflicting_rules": [],
       "missing_fields": [],
       "context": {
@@ -682,6 +741,7 @@
         "request_id": "CHG0091002",
         "actor_id": "u.change.002",
         "actor_role": "release_manager",
+        "action_origin": "autonomous_tool",
         "source_event_type": "change_approval.requested",
         "source_record_id": "e11d03f45d9f1010ba2d55368b4bcf77",
         "source_object_type": "change_request",
@@ -709,11 +769,17 @@
         },
         "evidence_references": [],
         "servicenow_table": "change_request",
-        "servicenow_change_number": "CHG0091002"
+        "servicenow_change_number": "CHG0091002",
+        "autonomous_metadata": {
+          "tool_name": "servicenow",
+          "trigger_type": "change_approval.requested",
+          "trigger_reference": "e11d03f45d9f1010ba2d55368b4bcf77",
+          "supervising_owner": "u.change.002"
+        }
       },
       "audit_record": {
-        "decision_id": "dec_63fcc5004203",
-        "timestamp": "2026-04-01 14:51:32.362712+00:00",
+        "decision_id": "dec_49833f2ac82c",
+        "timestamp": "2026-04-02 16:14:31.411041+00:00",
         "write_timestamp": null,
         "event_type": "change_approval.requested",
         "action_type": "approve_change_request",
@@ -739,7 +805,8 @@
             "risk_score": "int",
             "privileged_change": "bool",
             "cab_review_evidence_id": "str"
-          }
+          },
+          "invariants": []
         },
         "matched_rule_ids": [
           "allow_standard_low_risk_changes"
@@ -752,8 +819,8 @@
         ],
         "missing_fields": [],
         "precedence_explanation": "No rules matched. Fallback decision is APPROVED per evaluator configuration.",
-        "input_fingerprint": "39dda9bd6c6d30394fd9665e371e1bf725af187b2a9bcbd33bb7f05f13e26062",
-        "decision_hash": "921f347580a5e6693fc9551b69ec44316ab3b95556a276dd6b5203e4e66dceab",
+        "input_fingerprint": "94396c99aea848cce5df7a1a1122aecfebb7735fa5bd228db15f3a445993e394",
+        "decision_hash": "57408e427c4d32cfa7da9028728b810e672681e2d686146f9def01dac1a2c20d",
         "source_metadata": {
           "source_event_type": "change_approval.requested",
           "source_record_id": "e11d03f45d9f1010ba2d55368b4bcf77",
@@ -766,9 +833,9 @@
         "request_correlation_id": "CHG0091002",
         "evaluator_version": "0.3.0",
         "policy_bundle_release_id": "2026.04.0",
-        "storage_sequence_number": 10,
-        "chain_hash": "bd242cfd4bafe1a23ffd4eb251907573d1306363cd41f7a71da2ed9e27c33d4a",
-        "previous_chain_hash": "7fbc69bbf2f8b3a9c5e82af81eb6ea5895c8d04e11cad556ee5802b3722d5d84"
+        "storage_sequence_number": 13,
+        "chain_hash": "e64fbf4e5bac8b1776d33f194abe5a4335e0a36ea76153cad7dad77cb5eaa8d9",
+        "previous_chain_hash": "61c742727b54a9a5adcd45a5ca63ea77f6a87374685c159e5275d7a0fe08517e"
       }
     },
     "delivery": {
@@ -776,10 +843,10 @@
       "payload": {
         "schema_version": "1",
         "source_system": "servicenow",
-        "decision_id": "dec_63fcc5004203",
+        "decision_id": "dec_49833f2ac82c",
         "request_id": "CHG0091002",
         "action_type": "approve_change_request",
-        "decision": "Decision dec_63fcc5004203: APPROVED. No matching policy rules for action 'approve_change_request'.",
+        "decision": "Decision dec_49833f2ac82c: APPROVED. No matching policy rules for action 'approve_change_request'.",
         "matched_rule_ids": [
           "allow_standard_low_risk_changes"
         ],

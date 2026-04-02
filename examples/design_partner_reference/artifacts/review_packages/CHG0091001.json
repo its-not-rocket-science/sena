@@ -1,20 +1,24 @@
 {
   "package_schema_version": "1.0",
   "package_type": "sena.decision_review_package",
-  "package_generated_at": "2026-04-01T14:51:32.358946+00:00",
+  "package_generated_at": "2026-04-02T16:14:31.406876+00:00",
   "decision_summary": {
-    "decision_id": "dec_8a81df6744c4",
+    "decision_id": "dec_15b98400ae02",
     "decision": "BLOCKED",
     "outcome": "BLOCKED",
     "action_type": "approve_change_request",
-    "summary": "Decision dec_8a81df6744c4: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
-    "decision_timestamp": "2026-04-01T14:51:32.358946+00:00"
+    "summary": "Decision dec_15b98400ae02: BLOCKED due to context schema errors: missing required field 'cab_review_evidence_id'",
+    "decision_timestamp": "2026-04-02T16:14:31.406876+00:00"
   },
   "rules": {
     "matched": [],
     "applicable": [],
     "evaluated": [],
     "conflicting_rule_ids": []
+  },
+  "invariants": {
+    "matched": [],
+    "evaluated": []
   },
   "precedence": {
     "explanation": "Context schema validation failed before policy evaluation; blocked deterministically.",
@@ -30,6 +34,16 @@
     ]
   },
   "facts_and_actor": {
+    "request_origin": {
+      "classification": "autonomous_tool",
+      "ai_metadata": null,
+      "autonomous_metadata": {
+        "tool_name": "servicenow",
+        "trigger_type": "change_approval.requested",
+        "trigger_reference": "f4eaf8fb1b552010ba2d55368b4bcbee",
+        "supervising_owner": "u.change.001"
+      }
+    },
     "actor": {
       "actor_id": "u.change.001",
       "actor_role": "site_reliability_engineer"
@@ -39,6 +53,7 @@
       "request_id": "CHG0091001",
       "actor_id": "u.change.001",
       "actor_role": "site_reliability_engineer",
+      "action_origin": "autonomous_tool",
       "source_event_type": "change_approval.requested",
       "source_record_id": "f4eaf8fb1b552010ba2d55368b4bcbee",
       "source_object_type": "change_request",
@@ -63,9 +78,19 @@
       },
       "evidence_references": [],
       "servicenow_table": "change_request",
-      "servicenow_change_number": "CHG0091001"
+      "servicenow_change_number": "CHG0091001",
+      "autonomous_metadata": {
+        "tool_name": "servicenow",
+        "trigger_type": "change_approval.requested",
+        "trigger_reference": "f4eaf8fb1b552010ba2d55368b4bcbee",
+        "supervising_owner": "u.change.001"
+      }
     },
     "missing_fields": []
+  },
+  "governance_evidence": {
+    "missing_evidence_classes": [],
+    "missing_evidence_by_rule": {}
   },
   "policy_bundle_metadata": {
     "bundle_name": "acme-change-governance",
@@ -77,11 +102,11 @@
   },
   "audit_identifiers": {
     "request_id": "CHG0091001",
-    "decision_hash": "a3bb473761ce1d4070164bdec2d3c47dba91477a43a3ed30946df480da5b28c7",
-    "input_fingerprint": "c4cc9d4dc88d8f151e7433058ab67326e3d185b77220429dee829d1c28e08497",
-    "chain_hash": "7fbc69bbf2f8b3a9c5e82af81eb6ea5895c8d04e11cad556ee5802b3722d5d84",
-    "previous_chain_hash": "ec48570a2378a0452cb8c31422cc6e8581acf9ca31d9440861d77b10b74dcb98",
-    "storage_sequence_number": 9
+    "decision_hash": "41bdb14522336c4cf207847f8649ccfe05555521050aa58aaec2872f09429bbb",
+    "input_fingerprint": "55d43d12ab23b7de6bbe42a507a7f4f3a42a5345c27689f0bfb9596f5736c5e8",
+    "chain_hash": "61c742727b54a9a5adcd45a5ca63ea77f6a87374685c159e5275d7a0fe08517e",
+    "previous_chain_hash": "bfd5e82d59a852a1e8d28728c8d1989276a1517a8bf785a1e838639a54e8a856",
+    "storage_sequence_number": 12
   },
   "normalized_source_system_references": [
     {

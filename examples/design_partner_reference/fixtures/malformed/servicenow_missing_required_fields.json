@@ -1,0 +1,24 @@
+{
+  "headers": {
+    "X-ServiceNow-Delivery-Id": "sn-malformed-2"
+  },
+  "payload": {
+    "event_type": "change_approval.requested",
+    "source_system": "servicenow",
+    "requested_action": "approve_change_request",
+    "requested_by": {
+      "role": "release_manager"
+    },
+    "risk": {
+      "score": 95
+    },
+    "environment": "production",
+    "change_request": {
+      "number": "CHG0091992",
+      "sys_id": "bad-sys-id-2",
+      "table": "change_request",
+      "stage": "awaiting_approval"
+    }
+  },
+  "raw_body": ""
+}
