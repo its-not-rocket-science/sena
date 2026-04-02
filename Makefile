@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint format quality api docker-up bump-version
+.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence
 
 install:
 	pip install -e .
@@ -30,3 +30,7 @@ docker-up:
 bump-version:
 	@test -n "$(VERSION)" || (echo "Usage: make bump-version VERSION=X.Y.Z" && exit 1)
 	python scripts/bump_version.py $(VERSION)
+
+
+pilot-evidence:
+	PYTHONPATH=src python scripts/generate_pilot_evidence.py --output-dir docs/examples/pilot_evidence_sample --clean

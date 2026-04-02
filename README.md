@@ -106,6 +106,14 @@ pytest
 
 See `CONTRIBUTING.md` for contributor workflow and local quality guidance.
 
+## Pilot acceptance evidence
+
+Define and verify "good enough for pilot" using:
+
+- Criteria + checklist: `docs/PILOT_ACCEPTANCE.md`
+- Reproducible evidence command: `make pilot-evidence`
+- Sample committed bundle: `docs/examples/pilot_evidence_sample/`
+
 ## Failure-mode coverage matrix
 
 | Area | Coverage status | Details |
