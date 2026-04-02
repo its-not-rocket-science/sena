@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 from sena.core.enums import RuleDecision, Severity
 from sena.core.models import PolicyBundleMetadata, PolicyRule
-from sena.policy.migrations import SQLiteMigrationManager
+from sena.policy.migrations import MigrationRunResult, SQLiteMigrationManager
 from sena.policy.persistence_models import BundleHistoryRow, BundleRow
 
 ALLOWED_TRANSITIONS: set[tuple[str, str]] = {
@@ -140,25 +140,16 @@ class SQLitePolicyBundleRepository:
 
     def initialize(self) -> None:
         with self._connect() as conn:
-            self._migration_manager.initialize_table(conn)
-            applied_versions = self._migration_manager.applied_versions(conn)
-            for migration in self._migration_manager.discover():
-                if migration.version in applied_versions:
-                    continue
-                conn.executescript(migration.sql)
-                conn.execute(
-                    """
-                    INSERT INTO schema_migrations (version, name, checksum, applied_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (
-                        migration.version,
-                        migration.name,
-                        migration.checksum,
-                        datetime.now(timezone.utc).isoformat(),
-                    ),
-                )
+            self._migration_manager.upgrade(conn)
             self._run_startup_integrity_checks(conn)
+
+    def upgrade_schema(self, *, dry_run: bool = False, target_version: int | None = None) -> MigrationRunResult:
+        with self._connect() as conn:
+            return self._migration_manager.upgrade(conn, dry_run=dry_run, target_version=target_version)
+
+    def inspect_schema(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            return self._migration_manager.inspect_schema(conn)
 
     @contextmanager
     def _write_transaction(self) -> Any:

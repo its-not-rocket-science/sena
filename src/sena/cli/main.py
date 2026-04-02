@@ -317,9 +317,13 @@ def _run_policy_verify_compatibility(args: argparse.Namespace) -> None:
 
 
 def _registry_repo(sqlite_path: Path) -> SQLitePolicyBundleRepository:
-    repo = SQLitePolicyBundleRepository(str(sqlite_path))
+    repo = _registry_raw_repo(sqlite_path)
     repo.initialize()
     return repo
+
+
+def _registry_raw_repo(sqlite_path: Path) -> SQLitePolicyBundleRepository:
+    return SQLitePolicyBundleRepository(str(sqlite_path))
 
 
 def _resolve_signature_verification(
@@ -601,6 +605,28 @@ def _run_registry_fetch(args: argparse.Namespace) -> None:
     if bundle is None:
         raise SystemExit("Bundle not found")
     print(json.dumps({"bundle_id": bundle.id, "bundle_name": bundle.metadata.bundle_name, "version": bundle.metadata.version, "lifecycle": bundle.metadata.lifecycle}, indent=2))
+
+
+def _run_registry_upgrade(args: argparse.Namespace) -> None:
+    repo = _registry_raw_repo(args.sqlite_path)
+    result = repo.upgrade_schema(dry_run=args.dry_run, target_version=args.target_version)
+    print(
+        json.dumps(
+            {
+                "status": "dry-run" if result.dry_run else "ok",
+                "initial_version": result.initial_version,
+                "target_version": result.target_version,
+                "applied_versions": result.applied_versions,
+                "pending_versions": result.pending_versions,
+            },
+            indent=2,
+        )
+    )
+
+
+def _run_registry_schema_status(args: argparse.Namespace) -> None:
+    repo = _registry_raw_repo(args.sqlite_path)
+    print(json.dumps(repo.inspect_schema(), indent=2))
 
 
 def _run_registry_backup(args: argparse.Namespace) -> None:
@@ -891,6 +917,14 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="SENA sqlite policy registry commands")
     parser.add_argument("--sqlite-path", type=Path, required=True)
     sub = parser.add_subparsers(dest="registry_command", required=True)
+
+    upgrade = sub.add_parser("upgrade", help="Apply ordered registry schema migrations")
+    upgrade.add_argument("--target-version", type=int)
+    upgrade.add_argument("--dry-run", action="store_true", help="Plan migrations without applying")
+    upgrade.set_defaults(handler=_run_registry_upgrade)
+
+    schema_status = sub.add_parser("schema-status", help="Inspect current schema migration state")
+    schema_status.set_defaults(handler=_run_registry_schema_status)
 
     register = sub.add_parser("register")
     register.add_argument("--policy-dir", type=Path, required=True)
