@@ -202,3 +202,64 @@ def test_startup_integrity_check_detects_multiple_active(tmp_path) -> None:
     broken = SQLitePolicyBundleRepository(str(db_path))
     with pytest.raises(PolicyStoreIntegrityError, match="multiple active bundles detected"):
         broken.initialize()
+
+
+
+def test_lock_contention_raises_domain_conflict_error(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+
+    holder = SQLitePolicyBundleRepository(str(db_path))
+    conn = holder._connect()  # test-only lock simulation
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        contended = SQLitePolicyBundleRepository(
+            str(db_path),
+            busy_timeout_ms=1,
+            lock_retry_attempts=1,
+            lock_retry_delay_seconds=0.001,
+        )
+        with pytest.raises(PolicyBundleConflictError, match="retry budget exhaustion"):
+            with contended._write_transaction():
+                pass
+    finally:
+        conn.rollback()
+        conn.close()
+
+
+def test_write_transaction_rolls_back_on_interrupted_write(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    metadata.lifecycle = "draft"
+
+    original_insert = repo._insert_history
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated interruption")
+
+    monkeypatch.setattr(repo, "_insert_history", _boom)
+    with pytest.raises(RuntimeError, match="simulated interruption"):
+        repo.register_bundle(metadata, rules)
+
+    with sqlite3.connect(db_path) as conn:
+        bundle_rows = conn.execute("SELECT COUNT(*) FROM bundles").fetchone()[0]
+        rule_rows = conn.execute("SELECT COUNT(*) FROM rules").fetchone()[0]
+    assert bundle_rows == 0
+    assert rule_rows == 0
+
+    monkeypatch.setattr(repo, "_insert_history", original_insert)
+
+
+def test_verify_integrity_reports_sqlite_settings(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path), journal_mode="WAL", synchronous="FULL")
+    repo.initialize()
+
+    report = repo.verify_integrity()
+    assert report["db_integrity_ok"] is True
+    assert report["single_active_bundle_ok"] is True
+    assert report["journal_mode"] == "WAL"
+    assert report["synchronous"] == "FULL"

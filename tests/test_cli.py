@@ -510,3 +510,79 @@ def test_production_check_fails_for_invalid_timeout_configuration() -> None:
     payload = json.loads(result.stdout)
     assert payload["ok"] is False
     assert "request limits and timeout sanity" in payload["fatal_failures"]
+
+
+
+def test_registry_backup_restore_and_verify_commands(tmp_path) -> None:
+    from sena.audit.chain import append_audit_record
+    db_path = tmp_path / "registry.db"
+    base = ["registry", "--sqlite-path", str(db_path)]
+    register = _run_cli(
+        base
+        + [
+            "register",
+            "--policy-dir",
+            "src/sena/examples/policies",
+            "--bundle-name",
+            "enterprise-compliance-controls",
+            "--bundle-version",
+            "2026.09",
+        ]
+    )
+    register.check_returncode()
+    bundle_id = json.loads(register.stdout)["bundle_id"]
+    _run_cli(
+        base + ["promote", "--bundle-id", str(bundle_id), "--target-lifecycle", "candidate", "--promoted-by", "ops", "--promotion-reason", "ready"]
+    ).check_returncode()
+    _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(bundle_id),
+            "--target-lifecycle",
+            "active",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "go",
+            "--validation-artifact",
+            "CAB-verify",
+            "--break-glass",
+            "--break-glass-reason",
+            "drill",
+        ]
+    ).check_returncode()
+
+    audit_path = tmp_path / "audit.jsonl"
+    append_audit_record(str(audit_path), {"event": "drill", "bundle_id": bundle_id})
+    backup_db = tmp_path / "backup.db"
+    backup = _run_cli(base + ["backup", "--output-db", str(backup_db), "--audit-chain", str(audit_path)])
+    backup.check_returncode()
+    backup_payload = json.loads(backup.stdout)
+
+    restored_db = tmp_path / "restored.db"
+    restored_audit = tmp_path / "restored.audit.jsonl"
+    restore = _run_cli(
+        base
+        + [
+            "restore",
+            "--backup-db",
+            backup_payload["backup_db_path"],
+            "--backup-manifest",
+            backup_payload["backup_manifest_path"],
+            "--backup-audit",
+            backup_payload["backup_audit_path"],
+            "--restore-db",
+            str(restored_db),
+            "--restore-audit",
+            str(restored_audit),
+        ]
+    )
+    restore.check_returncode()
+
+    verify = _run_cli(["registry", "--sqlite-path", str(restored_db), "verify", "--audit-chain", str(restored_audit)])
+    verify.check_returncode()
+    verify_payload = json.loads(verify.stdout)
+    assert verify_payload["status"] == "ok"
+    assert verify_payload["checks"]["db_integrity"]["ok"] is True

@@ -40,6 +40,7 @@ from sena.policy.disaster_recovery import (
     DisasterRecoveryError,
     create_policy_registry_backup,
     restore_policy_registry_backup,
+    verify_policy_registry_snapshot,
 )
 from sena.policy.store import SQLitePolicyBundleRepository
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
@@ -621,6 +622,20 @@ def _run_registry_backup(args: argparse.Namespace) -> None:
     )
 
 
+def _run_registry_verify(args: argparse.Namespace) -> None:
+    result = verify_policy_registry_snapshot(
+        sqlite_path=args.sqlite_path,
+        audit_chain_path=args.audit_chain,
+        keyring_dir=args.keyring_dir,
+        policy_dir=args.policy_dir,
+        active_only=args.active_only,
+    )
+    payload = {"status": "ok" if result.valid else "failed", "checks": result.checks, "errors": result.errors}
+    print(json.dumps(payload, indent=2))
+    if not result.valid:
+        raise SystemExit("registry verification failed")
+
+
 def _run_registry_restore(args: argparse.Namespace) -> None:
     try:
         result = restore_policy_registry_backup(
@@ -920,6 +935,13 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     backup.add_argument("--audit-chain", type=Path)
     backup.add_argument("--output-manifest", type=Path)
     backup.set_defaults(handler=_run_registry_backup)
+
+    verify = sub.add_parser("verify")
+    verify.add_argument("--audit-chain", type=Path)
+    verify.add_argument("--policy-dir", type=Path)
+    verify.add_argument("--keyring-dir", type=Path)
+    verify.add_argument("--active-only", action="store_true")
+    verify.set_defaults(handler=_run_registry_verify)
 
     restore = sub.add_parser("restore")
     restore.add_argument("--backup-db", type=Path, required=True)

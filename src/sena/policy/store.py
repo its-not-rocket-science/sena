@@ -3,10 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from contextlib import contextmanager
 from typing import Any, Protocol
 
 from sena.core.enums import RuleDecision, Severity
@@ -96,16 +97,32 @@ class PolicyBundleRepository(Protocol):
 class SQLitePolicyBundleRepository:
     """SQLite-backed policy repository.
 
-    Concurrency assumptions:
-    - lifecycle-changing operations acquire a write lock using ``BEGIN IMMEDIATE``
-      so promotion/rollback transitions are serialized across writers.
-    - readers remain non-blocking while there is no active writer transaction.
-    - lock contention is surfaced as ``PolicyBundleConflictError`` rather than
-      leaking sqlite3 implementation exceptions.
+    SQLite hardening defaults:
+    - ``journal_mode=WAL`` for concurrent readers during writes.
+    - ``synchronous=FULL`` for strongest fsync durability (safer than NORMAL at
+      the cost of write latency).
+    - ``BEGIN IMMEDIATE`` for lifecycle-changing operations so promotion/rollback
+      transitions are serialized across writers.
+    - bounded retry/backoff on lock contention with explicit
+      ``PolicyBundleConflictError`` on exhaustion.
     """
 
-    def __init__(self, db_path: str):
+    def __init__(
+        self,
+        db_path: str,
+        *,
+        journal_mode: str = "WAL",
+        synchronous: str = "FULL",
+        busy_timeout_ms: int = 5000,
+        lock_retry_attempts: int = 4,
+        lock_retry_delay_seconds: float = 0.05,
+    ):
         self.db_path = db_path
+        self.journal_mode = journal_mode
+        self.synchronous = synchronous
+        self.busy_timeout_ms = busy_timeout_ms
+        self.lock_retry_attempts = lock_retry_attempts
+        self.lock_retry_delay_seconds = lock_retry_delay_seconds
         self._migration_manager = SQLiteMigrationManager(
             Path(__file__).resolve().parents[3] / "scripts" / "migrations"
         )
@@ -114,7 +131,11 @@ class SQLitePolicyBundleRepository:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA busy_timeout = 3000")
+        conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
+        conn.execute(f"PRAGMA journal_mode = {self.journal_mode}")
+        conn.execute(f"PRAGMA synchronous = {self.synchronous}")
+        conn.execute("PRAGMA wal_autocheckpoint = 1000")
+        conn.execute("PRAGMA temp_store = MEMORY")
         return conn
 
     def initialize(self) -> None:
@@ -142,13 +163,29 @@ class SQLitePolicyBundleRepository:
     @contextmanager
     def _write_transaction(self) -> Any:
         conn = self._connect()
+        attempt = 0
+        while True:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                break
+            except sqlite3.OperationalError as exc:
+                if not self._is_lock_contention_error(exc):
+                    conn.close()
+                    raise
+                attempt += 1
+                if attempt >= self.lock_retry_attempts:
+                    conn.close()
+                    raise PolicyBundleConflictError(
+                        "policy store is busy after retry budget exhaustion"
+                    ) from exc
+                time.sleep(self.lock_retry_delay_seconds * (2 ** (attempt - 1)))
+
         try:
-            conn.execute("BEGIN IMMEDIATE")
             yield conn
             conn.commit()
         except sqlite3.OperationalError as exc:
             conn.rollback()
-            if "locked" in str(exc).lower():
+            if self._is_lock_contention_error(exc):
                 raise PolicyBundleConflictError("policy store is busy; retry operation") from exc
             raise
         except Exception:
@@ -557,6 +594,35 @@ class SQLitePolicyBundleRepository:
                 history.created_at,
             ),
         )
+
+
+    @staticmethod
+    def _is_lock_contention_error(exc: sqlite3.OperationalError) -> bool:
+        detail = str(exc).lower()
+        return "locked" in detail or "busy" in detail
+
+    def verify_integrity(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            check_row = conn.execute("PRAGMA integrity_check").fetchone()
+            bad_rows = conn.execute(
+                """
+                SELECT name, COUNT(*) AS active_count
+                FROM bundles
+                WHERE lifecycle = 'active'
+                GROUP BY name
+                HAVING COUNT(*) > 1
+                """
+            ).fetchall()
+        return {
+            "db_integrity_ok": check_row is not None and check_row[0] == "ok",
+            "db_integrity_result": check_row[0] if check_row else None,
+            "single_active_bundle_ok": not bad_rows,
+            "multiple_active": [
+                {"bundle_name": row["name"], "active_count": int(row["active_count"])} for row in bad_rows
+            ],
+            "journal_mode": self.journal_mode,
+            "synchronous": self.synchronous,
+        }
 
     def _run_startup_integrity_checks(self, conn: sqlite3.Connection) -> None:
         check_row = conn.execute("PRAGMA integrity_check").fetchone()
