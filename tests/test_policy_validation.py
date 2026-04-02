@@ -51,3 +51,37 @@ def test_policy_coverage_detects_missing_action_type() -> None:
         required_action_types=["approve_vendor_payment", "issue_refund"],
     )
     assert missing == ["issue_refund"]
+
+
+def test_rule_payload_rejects_unsupported_evidence_class() -> None:
+    with pytest.raises(PolicyValidationError, match="unsupported class"):
+        validate_rule_payload(
+            {
+                "id": "r-evidence-unsupported",
+                "description": "invalid",
+                "severity": "high",
+                "inviolable": False,
+                "applies_to": ["approve_vendor_payment"],
+                "condition": {"field": "action_origin", "eq": "ai_suggested"},
+                "decision": "ALLOW",
+                "reason": "invalid",
+                "required_evidence": ["unknown_evidence"],
+            }
+        )
+
+
+def test_rule_payload_requires_evidence_if_missing_decision_provided() -> None:
+    with pytest.raises(PolicyValidationError, match="requires non-empty"):
+        validate_rule_payload(
+            {
+                "id": "r-missing-evidence-list",
+                "description": "invalid",
+                "severity": "high",
+                "inviolable": False,
+                "applies_to": ["approve_vendor_payment"],
+                "condition": {"field": "action_origin", "eq": "ai_suggested"},
+                "decision": "ALLOW",
+                "reason": "invalid",
+                "missing_evidence_decision": "ESCALATE",
+            }
+        )

@@ -76,6 +76,8 @@ class PolicyRule:
     condition: dict[str, Any]
     decision: RuleDecision
     reason: str
+    required_evidence: list[str] = field(default_factory=list)
+    missing_evidence_decision: RuleDecision | None = None
 
 
 @dataclass
@@ -85,6 +87,8 @@ class RuleEvaluationResult:
     decision: RuleDecision | None = None
     inviolable: bool = False
     reason: str | None = None
+    required_evidence: list[str] = field(default_factory=list)
+    missing_evidence: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

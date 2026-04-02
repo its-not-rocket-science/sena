@@ -76,3 +76,27 @@ def test_parse_policy_file_supports_deprecated_action_field(tmp_path) -> None:
 
     rules = parse_policy_file(policy_file)
     assert rules[0].applies_to == ["approve_vendor_payment"]
+
+
+def test_parse_policy_file_supports_evidence_requirements(tmp_path) -> None:
+    policy_file = tmp_path / "rules.yaml"
+    policy_file.write_text(
+        """
+- id: ai_evidence_guard
+  description: require governance evidence
+  severity: high
+  inviolable: false
+  applies_to: [approve_vendor_payment]
+  condition:
+    field: action_origin
+    eq: ai_suggested
+  decision: ALLOW
+  reason: allow when evidence exists
+  required_evidence: [source_citations, human_owner]
+  missing_evidence_decision: ESCALATE
+""".strip()
+        + "\n"
+    )
+    rules = parse_policy_file(policy_file)
+    assert rules[0].required_evidence == ["source_citations", "human_owner"]
+    assert rules[0].missing_evidence_decision is not None

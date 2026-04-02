@@ -28,6 +28,7 @@ Each package is emitted as JSON with stable top-level keys:
     - `autonomous_tool`
   - AI-suggested requests also carry first-class governance metadata (originating model/system, prompt context ref, requested tool/action, evidence/citations, human owner chain, and risk classification).
 - `policy_bundle_metadata`: bundle name/version/lifecycle/schema/integrity metadata.
+- `governance_evidence`: normalized missing evidence classes and per-rule evidence gaps for AI-assisted governance controls.
 - `audit_identifiers`: request, decision hash, chain hashes, storage sequence IDs.
 - `normalized_source_system_references`: normalized source-system IDs and references.
 
@@ -76,4 +77,5 @@ SENA treats AI-assisted actions as a **stricter governed request class**, not as
 
 - AI-originated proposals must include deterministic governance metadata before rule evaluation.
 - Missing AI governance fields result in deterministic `BLOCKED` outcomes.
+- Rules can declare evidence bundles (`required_evidence`) with deterministic `missing_evidence_decision` behavior (`ESCALATE` or `BLOCK`).
 - Policy allow/block precedence remains unchanged and does not depend on model confidence.

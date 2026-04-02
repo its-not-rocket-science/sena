@@ -23,5 +23,46 @@
     },
     "decision": "ESCALATE",
     "reason": "High-value payments require finance director review."
+  },
+  {
+    "id": "payment_ai_assisted_medium_risk_governance_evidence",
+    "description": "AI-assisted medium-risk payments must include core governance evidence",
+    "severity": "high",
+    "inviolable": false,
+    "applies_to": ["approve_vendor_payment"],
+    "condition": {
+      "and": [
+        {"field": "action_origin", "eq": "ai_suggested"},
+        {"field": "ai_metadata.risk_classification.level", "eq": "medium"}
+      ]
+    },
+    "required_evidence": ["source_citations", "human_owner", "model_provenance"],
+    "missing_evidence_decision": "ESCALATE",
+    "decision": "ALLOW",
+    "reason": "Medium-risk AI-assisted payments can proceed when governance evidence is complete."
+  },
+  {
+    "id": "payment_ai_assisted_high_risk_governance_evidence",
+    "description": "AI-assisted high-risk payments must include expanded governance evidence bundle",
+    "severity": "critical",
+    "inviolable": true,
+    "applies_to": ["approve_vendor_payment"],
+    "condition": {
+      "and": [
+        {"field": "action_origin", "eq": "ai_suggested"},
+        {"field": "ai_metadata.risk_classification.level", "eq": "high"}
+      ]
+    },
+    "required_evidence": [
+      "source_citations",
+      "human_owner",
+      "change_ticket",
+      "simulation_preview",
+      "rollback_plan",
+      "model_provenance"
+    ],
+    "missing_evidence_decision": "BLOCK",
+    "decision": "ALLOW",
+    "reason": "High-risk AI-assisted payments are only approvable with full governance evidence."
   }
 ]

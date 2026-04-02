@@ -21,10 +21,38 @@ from sena.core.models import (
 from sena.policy.interpreter import evaluate_condition_with_trace
 from sena.policy.schema_evolution import evaluate_bundle_compatibility
 from sena.policy.validation import (
+    SUPPORTED_EVIDENCE_CLASSES,
     validate_ai_originated_action_fields,
     validate_context_schema,
     validate_identity_fields,
 )
+
+EVIDENCE_CLASS_TO_FIELDS: dict[str, list[str]] = {
+    "source_citations": ["ai_metadata.citation_references"],
+    "human_owner": ["ai_metadata.human_owner"],
+    "change_ticket": ["change_ticket_id"],
+    "simulation_preview": ["simulation_preview_ref"],
+    "rollback_plan": ["rollback_plan_ref"],
+    "model_provenance": ["ai_metadata.originating_model"],
+}
+
+
+def _missing_evidence_for_class(class_name: str, context: dict[str, object]) -> bool:
+    fields = EVIDENCE_CLASS_TO_FIELDS.get(class_name, [class_name])
+    for field in fields:
+        value = context
+        for part in field.split("."):
+            if isinstance(value, dict) and part in value:
+                value = value[part]
+            else:
+                return True
+        if value is None:
+            return True
+        if isinstance(value, str) and not value.strip():
+            return True
+        if isinstance(value, list) and not value:
+            return True
+    return False
 
 
 class PolicyEvaluator:
@@ -76,13 +104,39 @@ class PolicyEvaluator:
                 condition_result = evaluate_condition_with_trace(rule.condition, context)
                 matched = condition_result.matched
                 missing_fields.update(condition_result.missing_fields)
+                rule_decision = rule.decision if matched else None
+                rule_reason = rule.reason if matched else None
+                missing_evidence: list[str] = []
+                if (
+                    matched
+                    and proposal.action_origin.value == "ai_suggested"
+                    and rule.required_evidence
+                ):
+                    missing_evidence = [
+                        class_name
+                        for class_name in rule.required_evidence
+                        if class_name in SUPPORTED_EVIDENCE_CLASSES
+                        and _missing_evidence_for_class(class_name, context)
+                    ]
+                    if missing_evidence:
+                        missing_fields.update(
+                            f"evidence.{class_name}" for class_name in missing_evidence
+                        )
+                        rule_decision = rule.missing_evidence_decision or RuleDecision.ESCALATE
+                        rule_reason = (
+                            f"{rule.reason} Missing governance evidence: "
+                            + ", ".join(sorted(missing_evidence))
+                            + "."
+                        )
                 evaluated.append(
                     RuleEvaluationResult(
                         rule_id=rule.id,
                         matched=matched,
-                        decision=rule.decision if matched else None,
+                        decision=rule_decision,
                         inviolable=rule.inviolable,
-                        reason=rule.reason if matched else None,
+                        reason=rule_reason,
+                        required_evidence=list(rule.required_evidence),
+                        missing_evidence=missing_evidence,
                     )
                 )
 
@@ -207,6 +261,8 @@ class PolicyEvaluator:
                 "decision": result.decision.value if result.decision else None,
                 "inviolable": result.inviolable,
                 "reason": result.reason,
+                "required_evidence": result.required_evidence,
+                "missing_evidence": result.missing_evidence,
             }
             for result in matched
         ]
@@ -220,6 +276,10 @@ class PolicyEvaluator:
             outcome_rationale.append("Strict identity checks failed before rule evaluation.")
         if ai_metadata_errors:
             outcome_rationale.append("AI-originated metadata checks failed before rule evaluation.")
+        if any(result.missing_evidence for result in matched):
+            outcome_rationale.append(
+                "Missing governance evidence influenced one or more matched AI-assisted controls."
+            )
         reviewer_guidance = [
             "Verify matched controls align with control owner expectations.",
             "Retain decision hash and input fingerprint for audit replay.",

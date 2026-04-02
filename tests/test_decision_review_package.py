@@ -84,4 +84,4 @@ def test_review_package_handles_missing_optional_fields() -> None:
     assert package["policy_bundle_metadata"]["bundle_name"] is None
     assert package["normalized_source_system_references"] == []
     assert package["precedence"]["explanation"] is None
-
+    assert package["governance_evidence"]["missing_evidence_classes"] == []

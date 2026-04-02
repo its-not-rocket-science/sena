@@ -2,10 +2,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from sena.core.enums import ActionOrigin
+from sena.core.enums import ActionOrigin, RuleDecision
 from sena.core.models import ActionProposal
 from sena.core.models import PolicyRule
 from sena.policy.grammar import COMPARISON_OPERATORS, LOGICAL_OPERATORS
+
+SUPPORTED_EVIDENCE_CLASSES = {
+    "source_citations",
+    "human_owner",
+    "change_ticket",
+    "simulation_preview",
+    "rollback_plan",
+    "model_provenance",
+}
 
 
 class PolicyValidationError(ValueError):
@@ -76,6 +85,37 @@ def validate_rule_payload(rule: dict[str, Any]) -> None:
         raise PolicyValidationError("'applies_to' must be a non-empty list")
 
     validate_condition(rule["condition"])
+
+    required_evidence = rule.get("required_evidence", [])
+    if required_evidence is None:
+        required_evidence = []
+    if not isinstance(required_evidence, list):
+        raise PolicyValidationError("'required_evidence' must be a list when provided")
+    unsupported = sorted(
+        class_name for class_name in required_evidence if class_name not in SUPPORTED_EVIDENCE_CLASSES
+    )
+    if unsupported:
+        raise PolicyValidationError(
+            f"'required_evidence' includes unsupported class(es): {unsupported}"
+        )
+
+    missing_evidence_decision = rule.get("missing_evidence_decision")
+    if missing_evidence_decision is not None and not required_evidence:
+        raise PolicyValidationError(
+            "'missing_evidence_decision' requires non-empty 'required_evidence'"
+        )
+    normalized_missing_evidence_decision = (
+        missing_evidence_decision.value
+        if isinstance(missing_evidence_decision, RuleDecision)
+        else missing_evidence_decision
+    )
+    if normalized_missing_evidence_decision is not None and normalized_missing_evidence_decision not in {
+        "BLOCK",
+        "ESCALATE",
+    }:
+        raise PolicyValidationError(
+            "'missing_evidence_decision' must be BLOCK or ESCALATE when provided"
+        )
 
 
 def validate_policy_coverage(
