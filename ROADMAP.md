@@ -8,6 +8,13 @@ SENA is pivoting from a broad "policy engine for enterprise workflows" to a focu
 
 The near-term product is **not** a generic policy platform and **not** a broad integration marketplace. It is one complete, high-trust approval workflow that proves AI-generated actions can be approved (or blocked) with evidence that can be independently verified.
 
+## Investor-focused milestones (next 4 months)
+
+- **Month 1:** Merkle proof audit API + K8s demo
+- **Month 2:** LangChain integration (audit every LLM tool call)
+- **Month 3:** SOC2 Type I with audit proof requirements
+- **Month 4:** 5 enterprise design partners
+
 ## Why this is different (VC narrative)
 
 Most governance tools answer: **"what decision did the engine return?"**
