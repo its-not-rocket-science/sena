@@ -32,6 +32,7 @@ langchain = [
 api = [
   "fastapi>=0.111",
   "prometheus-client>=0.20",
+  "structlog>=24.4",
   "uvicorn>=0.30",
 ]
 legacy = []

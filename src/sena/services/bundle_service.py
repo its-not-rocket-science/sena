@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import logging
 import json
 import hashlib
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from sena.api.logging import get_logger
 from sena.api.schemas import (
     BundleInfo,
     BundlePromoteRequest,
@@ -22,7 +22,7 @@ from sena.policy.lifecycle import (
 from sena.policy.parser import load_policy_bundle
 from sena.policy.store import PolicyStoreError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -201,6 +201,7 @@ class BundleService:
         if active is not None:
             self.state.rules = active.rules
             self.state.metadata = active.metadata
+            self.state.metrics.observe_active_policies(count=len(active.rules))
         return {
             "status": "ok",
             "bundle_id": payload.bundle_id,
@@ -303,6 +304,7 @@ class BundleService:
         if active is not None and payload.bundle_name == self.settings.bundle_name:
             self.state.rules = active.rules
             self.state.metadata = active.metadata
+            self.state.metrics.observe_active_policies(count=len(active.rules))
         return {
             "status": "ok",
             "bundle_name": payload.bundle_name,
@@ -430,7 +432,8 @@ class BundleService:
             signature_verified = verified
             if errors and not verified:
                 logger.warning(
-                    "bundle promotion validation signature errors: %s", errors
+                    "bundle_promotion_signature_validation_errors",
+                    errors=errors,
                 )
         return validate_promotion(
             payload.get("source_lifecycle", source_meta.lifecycle),

@@ -17,35 +17,35 @@ class _RequestMetricLabels:
 
 
 class TractionMetrics:
-    """Prometheus metrics used for traction and investor-facing demos."""
+    """Prometheus metrics used for API observability."""
 
     def __init__(self, *, registry) -> None:
-        # Request + API telemetry.
         self.request_count = Counter(
             "request_count",
             "Total API requests processed",
             labelnames=("method", "path", "status_code"),
             registry=registry,
         )
-
-        # Decision metrics.
         self.sena_decisions_total = Counter(
             "sena_decisions_total",
             "Total decisions",
-            labelnames=("outcome",),
+            labelnames=("outcome", "policy"),
             registry=registry,
         )
         self.sena_evaluation_seconds = Histogram(
             "sena_evaluation_seconds",
             "Evaluation latency",
             registry=registry,
-            buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5),
+            buckets=(0.01, 0.05, 0.1, 0.5, 1),
         )
-
-        # Audit metrics.
         self.sena_audit_entries_total = Counter(
             "sena_audit_entries_total",
             "Audit entries written",
+            registry=registry,
+        )
+        self.sena_active_policies = Gauge(
+            "sena_active_policies",
+            "Number of active policy rules loaded",
             registry=registry,
         )
         self.sena_merkle_root_timestamp = Gauge(
@@ -53,8 +53,6 @@ class TractionMetrics:
             "Last Merkle root timestamp",
             registry=registry,
         )
-
-        # Verification metrics.
         self.sena_verification_requests = Counter(
             "sena_verification_requests",
             "Proof verification requests",
@@ -76,8 +74,8 @@ class TractionMetrics:
             status_code=labels.status_code,
         ).inc()
 
-    def observe_decision_outcome(self, *, outcome: str) -> None:
-        self.sena_decisions_total.labels(outcome=outcome).inc()
+    def observe_decision_outcome(self, *, outcome: str, policy: str) -> None:
+        self.sena_decisions_total.labels(outcome=outcome, policy=policy).inc()
 
     @contextmanager
     def evaluation_timer(self) -> Iterator[None]:
@@ -97,6 +95,9 @@ class TractionMetrics:
         self.sena_verification_requests.inc()
         if not valid:
             self.sena_verification_failures.inc()
+
+    def observe_active_policies(self, *, count: int) -> None:
+        self.sena_active_policies.set(max(0, count))
 
 
 def _parse_iso_timestamp_to_epoch(value: str | None) -> float | None:
