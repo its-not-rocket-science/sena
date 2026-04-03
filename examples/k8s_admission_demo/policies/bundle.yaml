@@ -1,0 +1,10 @@
+bundle_name: k8s-admission-demo
+version: 2026.04
+owner: platform-governance
+description: Investor demo bundle for AI-suggested Kubernetes scaling controls.
+lifecycle: candidate
+context_schema:
+  deployment_name: str?
+  namespace: str?
+  proposed_replicas: int?
+  current_replicas: int?

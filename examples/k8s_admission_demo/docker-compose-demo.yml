@@ -1,0 +1,60 @@
+services:
+  kind:
+    image: kindest/node:v1.30.0
+    command: ["sleep", "infinity"]
+
+  sena-api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      SENA_API_HOST: 0.0.0.0
+      SENA_API_PORT: 8000
+      SENA_POLICY_DIR: /demo/policies
+      SENA_BUNDLE_NAME: k8s-admission-demo
+      SENA_BUNDLE_VERSION: "2026.04"
+      SENA_AUDIT_SINK_JSONL: /demo/artifacts/audit/demo_audit.jsonl
+    volumes:
+      - ./policies:/demo/policies:ro
+      - ./artifacts:/demo/artifacts
+    ports:
+      - "8000:8000"
+
+  sena-webhook:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["python", "-m", "uvicorn", "sena_webhook:app", "--app-dir", "/demo/examples/k8s_admission_demo", "--host", "0.0.0.0", "--port", "8080"]
+    environment:
+      SENA_API_URL: http://sena-api:8000
+      SENA_AUDIT_PATH: /demo/artifacts/audit/demo_audit.jsonl
+    depends_on:
+      - sena-api
+    volumes:
+      - ./:/demo
+    ports:
+      - "8080:8080"
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"

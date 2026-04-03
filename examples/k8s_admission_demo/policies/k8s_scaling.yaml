@@ -1,0 +1,32 @@
+[
+  {
+    "id": "k8s_block_ai_scale_above_budget_cap",
+    "description": "Block AI-suggested scaling above budget replica cap",
+    "severity": "critical",
+    "inviolable": true,
+    "applies_to": ["k8s_update_deployment"],
+    "condition": {
+      "and": [
+        {"field": "action_origin", "eq": "ai_suggested"},
+        {"field": "proposed_replicas", "gt": 5}
+      ]
+    },
+    "decision": "BLOCK",
+    "reason": "Replica request exceeds investor-demo cost control threshold (max replicas = 5)."
+  },
+  {
+    "id": "k8s_allow_non_ai_scale_within_cap",
+    "description": "Allow human scaling requests at or below cap",
+    "severity": "medium",
+    "inviolable": false,
+    "applies_to": ["k8s_update_deployment"],
+    "condition": {
+      "and": [
+        {"field": "action_origin", "neq": "ai_suggested"},
+        {"field": "proposed_replicas", "lte": 5}
+      ]
+    },
+    "decision": "ALLOW",
+    "reason": "Human-requested scaling within approved cost envelope."
+  }
+]

@@ -171,3 +171,19 @@ Operational audit durability guidance (local sink + archive/restore drills):
 Experimental endpoints:
 - `POST /v1/integrations/webhook`
 - `POST /v1/integrations/slack/interactions`
+
+## Investor Kubernetes admission demo
+
+Run the end-to-end investor demo (AI suggestion -> SENA block -> Merkle verification):
+
+```bash
+make demo-k8s
+```
+
+Demo assets live in `examples/k8s_admission_demo/`:
+- `ai_agent_simulator.py`
+- `sena_webhook.py`
+- `verify_demo.py`
+- `docker-compose-demo.yml`
+- `DEMO_SCRIPT.md`
+- `INVESTOR_DECK.md`
