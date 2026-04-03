@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack
+.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack demo-k8s
 
 install:
 	pip install -e .
@@ -37,3 +37,20 @@ pilot-evidence:
 
 pilot-integration-pack:
 	PYTHONPATH=src python scripts/generate_integration_pilot_pack.py --output-dir docs/examples/pilot_integration_pack --clean
+
+demo-k8s:
+	@mkdir -p examples/k8s_admission_demo/artifacts/audit
+	@touch examples/k8s_admission_demo/artifacts/audit/demo_audit.jsonl
+	@SENA_POLICY_DIR=examples/k8s_admission_demo/policies \
+	SENA_BUNDLE_NAME=k8s-admission-demo \
+	SENA_BUNDLE_VERSION=2026.04 \
+	SENA_AUDIT_SINK_JSONL=examples/k8s_admission_demo/artifacts/audit/demo_audit.jsonl \
+	python -m uvicorn sena.api.app:app --host 127.0.0.1 --port 8000 >/tmp/sena-k8s-demo-api.log 2>&1 & \
+	API_PID=$$!; \
+	trap 'kill $$API_PID 2>/dev/null || true' EXIT INT TERM; \
+	sleep 2; \
+	PYTHONPATH=src python examples/k8s_admission_demo/verify_demo.py; \
+	STATUS=$$?; \
+	kill $$API_PID 2>/dev/null || true; \
+	wait $$API_PID 2>/dev/null || true; \
+	exit $$STATUS
