@@ -108,16 +108,17 @@ class EvaluationService:
                 on_escalation=self._notify_slack if notify_on_escalation else None,
             ),
         )
-        with self.state.metrics.evaluation_timer(endpoint=endpoint):
+        with self.state.metrics.evaluation_timer():
             trace = evaluator.evaluate(proposal, facts)
-        self.state.metrics.observe_decision_outcome(
-            endpoint=endpoint, outcome=trace.outcome.value
-        )
+        self.state.metrics.observe_decision_outcome(outcome=trace.outcome.value)
         payload = trace.to_dict()
         if append_audit:
             appended = self.audit_service.append_record(payload["audit_record"])
             if appended is not None:
                 payload["audit_record"] = appended
+                self.state.metrics.observe_audit_write(
+                    write_timestamp=appended.get("write_timestamp")
+                )
         return payload
 
     def evaluate_review_package(
@@ -137,11 +138,9 @@ class EvaluationService:
                 require_allow_match=strict_require_allow,
             ),
         )
-        with self.state.metrics.evaluation_timer(endpoint=endpoint):
+        with self.state.metrics.evaluation_timer():
             trace = evaluator.evaluate(proposal, facts)
-        self.state.metrics.observe_decision_outcome(
-            endpoint=endpoint, outcome=trace.outcome.value
-        )
+        self.state.metrics.observe_decision_outcome(outcome=trace.outcome.value)
         return build_decision_review_package(trace)
 
     @staticmethod

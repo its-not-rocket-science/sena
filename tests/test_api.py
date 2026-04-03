@@ -1178,17 +1178,34 @@ def test_metrics_endpoint_exposes_prometheus_metrics() -> None:
     )
     assert evaluate_response.status_code == 200
 
-    metrics_response = client.get("/metrics")
+    metrics_response = client.get("/v1/metrics/prometheus")
     assert metrics_response.status_code == 200
     assert "text/plain" in metrics_response.headers["content-type"]
     metrics_body = metrics_response.text
     assert "request_count_total" in metrics_body
-    assert "decision_outcome_count_total" in metrics_body
+    assert "sena_decisions_total" in metrics_body
     assert (
-        'decision_outcome_count_total{endpoint="/v1/evaluate",outcome="BLOCKED"}'
-        in metrics_body
+        'sena_decisions_total{outcome="BLOCKED"} 1.0' in metrics_body
     )
-    assert 'evaluation_latency_bucket{endpoint="/v1/evaluate",le=' in metrics_body
+    assert "sena_evaluation_seconds_bucket" in metrics_body
+    assert "sena_audit_entries_total" in metrics_body
+    assert "sena_merkle_root_timestamp" in metrics_body
+
+    verify_response = client.post(
+        "/v1/audit/verify/tree",
+        json={
+            "decision_id": evaluate_response.json()["decision_id"],
+            "merkle_proof": ["not-a-real-proof"],
+            "expected_root": "invalid-root",
+        },
+    )
+    assert verify_response.status_code == 200
+    assert verify_response.json()["valid"] is False
+
+    metrics_after_verify = client.get("/v1/metrics/prometheus")
+    assert metrics_after_verify.status_code == 200
+    assert "sena_verification_requests_total 1.0" in metrics_after_verify.text
+    assert "sena_verification_failures_total 1.0" in metrics_after_verify.text
 
 
 def test_request_id_header_is_preserved_across_evaluate_flow() -> None:

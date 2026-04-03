@@ -200,3 +200,15 @@ Demo assets live in `examples/k8s_admission_demo/`:
 - `docker-compose-demo.yml`
 - `DEMO_SCRIPT.md`
 - `INVESTOR_DECK.md`
+
+## Investor monitoring demo (Prometheus + Grafana)
+
+Run the monitoring stack and start continuous demo traffic:
+
+```bash
+make demo-monitoring
+```
+
+This starts SENA, Prometheus, and Grafana via `docker-compose-monitoring.yml`, and
+generates traffic with `scripts/generate_traffic.py` (10 decisions/second with random
+Merkle proof verification attempts).
