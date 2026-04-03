@@ -29,6 +29,9 @@ jobs:
       - name: Run style checks
         run: ruff check src tests
 
+      - name: Ensure artifacts directory exists
+        run: mkdir -p artifacts
+
       - name: Run benchmarks
         run: pytest benchmarks/ --benchmark-only --benchmark-json artifacts/benchmark.json
 
