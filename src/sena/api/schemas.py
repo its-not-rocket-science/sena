@@ -52,6 +52,7 @@ class EvaluateRequest(BaseModel):
         "APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"
     ] = "APPROVED"
     strict_require_allow: bool = False
+    dry_run: bool = False
 
     @model_validator(mode="after")
     def validate_strict_identity_fields(self) -> "EvaluateRequest":
@@ -124,6 +125,12 @@ class ReplayDriftRequest(BaseModel):
     candidate_mapping_config_path: str | None = None
 
 
+class SimulationReplayRequest(BaseModel):
+    proposed_policy_dir: NonEmptyStr
+    window: Literal["last_1_hour", "last_1_day"] = "last_1_hour"
+    max_samples: int = Field(default=10, ge=1, le=100)
+
+
 class BundleInfo(BaseModel):
     bundle_name: str
     version: str
@@ -189,10 +196,19 @@ class BundlePromoteRequest(BaseModel):
 
 class BundleRollbackRequest(BaseModel):
     bundle_name: NonEmptyStr
-    to_bundle_id: int = Field(gt=0)
+    to_bundle_id: int | None = Field(default=None, gt=0)
+    version: str | None = None
     promoted_by: NonEmptyStr
     promotion_reason: NonEmptyStr
     validation_artifact: NonEmptyStr
+
+    @model_validator(mode="after")
+    def validate_target(self) -> "BundleRollbackRequest":
+        if self.to_bundle_id is None and not self.version:
+            raise ValueError("rollback requires either to_bundle_id or version")
+        if self.to_bundle_id is not None and self.version:
+            raise ValueError("rollback target must specify only one of to_bundle_id or version")
+        return self
 
 
 class BundleHistoryQuery(BaseModel):

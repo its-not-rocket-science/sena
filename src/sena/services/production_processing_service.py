@@ -46,8 +46,16 @@ class ProductionProcessingService:
             if req.default_decision == "ESCALATE"
             else DecisionOutcome(req.default_decision),
             strict_require_allow=req.strict_require_allow,
-            notify_on_escalation=True,
-            append_audit=True,
+            notify_on_escalation=not req.dry_run,
+            append_audit=not req.dry_run,
+            replay_input={
+                "action_type": req.action_type,
+                "request_id": req.request_id or request_id,
+                "actor_id": req.actor_id,
+                "actor_role": req.actor_role,
+                "attributes": req.attributes,
+                "facts": req.facts,
+            },
         )
 
     def process_webhook(self, payload: dict[str, Any], *, request_id: str) -> dict[str, Any]:

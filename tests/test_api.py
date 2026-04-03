@@ -114,6 +114,24 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     assert "decision_hash" in body
 
 
+def test_evaluate_dry_run_skips_audit_and_marks_response(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    app = create_app(_settings(audit_sink_jsonl=str(audit_path)))
+    client = TestClient(app)
+    response = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False, "amount": 1000},
+            "dry_run": True,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dry_run"] is True
+    assert not audit_path.exists()
+
+
 def test_audit_verify_tree_endpoint(tmp_path) -> None:
     from sena.audit.merkle import build_merkle_tree, get_proof
 
@@ -389,6 +407,32 @@ def test_simulation_endpoint() -> None:
     assert response.status_code == 200
     assert response.json()["total_scenarios"] == 1
     assert response.json()["grouped_changes"]["source_system"]["jira"]["total"] == 1
+
+
+def test_simulation_replay_endpoint(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    app = create_app(_settings(audit_sink_jsonl=str(audit_path)))
+    client = TestClient(app)
+    evaluate = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False, "amount": 10_000},
+            "facts": {},
+        },
+    )
+    assert evaluate.status_code == 200
+    response = client.post(
+        "/v1/simulation/replay",
+        json={
+            "proposed_policy_dir": "src/sena/examples/policies",
+            "window": "last_1_hour",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "would change outcome" in body["summary"]
+    assert body["total_replayed"] >= 1
 
 
 def test_replay_drift_endpoint() -> None:
@@ -1474,6 +1518,61 @@ def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
     )
     assert active.status_code == 200
     assert active.json()["bundle_id"] == id1
+
+
+def test_bundle_rollback_by_version_endpoint(tmp_path) -> None:
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    db_path = tmp_path / "policy_registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+
+    metadata.lifecycle = "draft"
+    id1 = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(id1, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        id1,
+        "active",
+        promoted_by="ops",
+        promotion_reason="go",
+        validation_artifact="CAB-1",
+        evidence_json='{"simulation":"ok"}',
+    )
+    metadata.version = "2026.99"
+    metadata.lifecycle = "draft"
+    id2 = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(id2, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        id2,
+        "active",
+        promoted_by="ops",
+        promotion_reason="go",
+        validation_artifact="CAB-2",
+        evidence_json='{"simulation":"ok"}',
+    )
+
+    app = create_app(
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
+    )
+    client = TestClient(app)
+    rollback = client.post(
+        "/v1/bundle/rollback",
+        json={
+            "bundle_name": metadata.bundle_name,
+            "version": "2026.03",
+            "promoted_by": "ops",
+            "promotion_reason": "incident",
+            "validation_artifact": "INC-2",
+        },
+    )
+    assert rollback.status_code == 200
+    assert rollback.json()["active_bundle_id"] == id1
 
 
 def test_bundle_promote_invalid_transition_returns_machine_readable_failure(

@@ -62,6 +62,7 @@ from sena.policy.disaster_recovery import (
 )
 from sena.policy.store import SQLitePolicyBundleRepository
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
+from sena.policy.test_runner import PolicyTestRunnerError, run_policy_tests
 
 TEMPLATES_ROOT = (
     Path(__file__).resolve().parent.parent / "examples" / "policy_templates"
@@ -186,9 +187,15 @@ def _run_evaluate(args: argparse.Namespace) -> None:
     trace = evaluator.evaluate(proposal, facts)
 
     if args.review_package:
-        print(json.dumps(build_decision_review_package(trace), indent=2, default=str))
+        payload = build_decision_review_package(trace)
+        if args.dry_run:
+            payload["dry_run"] = True
+        print(json.dumps(payload, indent=2, default=str))
     elif args.json:
-        print(json.dumps(trace.to_dict(), indent=2, default=str))
+        payload = trace.to_dict()
+        if args.dry_run:
+            payload["dry_run"] = True
+        print(json.dumps(payload, indent=2, default=str))
     else:
         print(format_trace(trace))
 
@@ -233,58 +240,73 @@ def _run_policy_validate(args: argparse.Namespace) -> None:
 
 
 def _run_policy_test(args: argparse.Namespace) -> None:
-    try:
-        rules, metadata = load_policy_bundle(args.policy_dir)
-    except PolicyParseError as exc:
-        raise SystemExit(_format_error("Policy test setup failed", exc)) from exc
-
-    test_payload = _load_json_file(args.test_file, "policy test")
-    cases = test_payload.get("cases")
-    if not isinstance(cases, list) or not cases:
-        raise SystemExit("Policy test file requires non-empty 'cases' list")
-
-    evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
-
-    failures: list[dict[str, str]] = []
-    for index, case in enumerate(cases, start=1):
-        if not isinstance(case, dict):
-            raise SystemExit(f"Policy test case at index {index} must be an object")
-
-        name = str(case.get("name") or f"case_{index}")
-        proposal_data = case.get("proposal")
-        expected = case.get("expected_outcome")
-        if not isinstance(proposal_data, dict) or not isinstance(expected, str):
-            raise SystemExit(
-                f"Policy test case '{name}' must include 'proposal' object and 'expected_outcome'"
-            )
-
-        proposal = ActionProposal(
-            action_type=proposal_data["action_type"],
-            request_id=proposal_data.get("request_id"),
-            actor_id=proposal_data.get("actor_id"),
-            actor_role=proposal_data.get("actor_role"),
-            attributes=proposal_data.get("attributes", {}),
+    legacy_mode = bool(args.policy_dir or args.test_file)
+    modern_mode = bool(args.bundle or args.tests)
+    if legacy_mode and modern_mode:
+        raise SystemExit(
+            "Use either legacy --policy-dir/--test-file or --bundle/--tests, not both"
         )
-        facts = case.get("facts", {})
-        trace = evaluator.evaluate(proposal, facts)
-        if trace.outcome.value != expected:
-            failures.append(
-                {
-                    "name": name,
-                    "expected": expected,
-                    "actual": trace.outcome.value,
-                    "summary": trace.summary,
-                }
-            )
+    if legacy_mode and (not args.policy_dir or not args.test_file):
+        raise SystemExit("Legacy policy test mode requires both --policy-dir and --test-file")
+    if modern_mode and (not args.bundle or not args.tests):
+        raise SystemExit("Policy test mode requires both --bundle and --tests")
+    if not legacy_mode and not modern_mode:
+        raise SystemExit("Provide --bundle and --tests")
 
-    report = {
-        "cases": len(cases),
-        "failures": len(failures),
-        "passed": len(cases) - len(failures),
-        "results": failures,
-    }
+    if args.policy_dir and args.test_file:
+        # Backward-compatible legacy JSON test format.
+        test_payload = _load_json_file(args.test_file, "policy test")
+        cases = test_payload.get("cases")
+        if not isinstance(cases, list) or not cases:
+            raise SystemExit("Policy test file requires non-empty 'cases' list")
+        try:
+            rules, metadata = load_policy_bundle(args.policy_dir)
+        except PolicyParseError as exc:
+            raise SystemExit(_format_error("Policy test setup failed", exc)) from exc
+        evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
+        failures: list[dict[str, str]] = []
+        for index, case in enumerate(cases, start=1):
+            if not isinstance(case, dict):
+                raise SystemExit(f"Policy test case at index {index} must be an object")
+            name = str(case.get("name") or f"case_{index}")
+            proposal_data = case.get("proposal")
+            expected = case.get("expected_outcome")
+            if not isinstance(proposal_data, dict) or not isinstance(expected, str):
+                raise SystemExit(
+                    f"Policy test case '{name}' must include 'proposal' object and 'expected_outcome'"
+                )
+            proposal = ActionProposal(
+                action_type=proposal_data["action_type"],
+                request_id=proposal_data.get("request_id"),
+                actor_id=proposal_data.get("actor_id"),
+                actor_role=proposal_data.get("actor_role"),
+                attributes=proposal_data.get("attributes", {}),
+            )
+            facts = case.get("facts", {})
+            trace = evaluator.evaluate(proposal, facts)
+            if trace.outcome.value != expected:
+                failures.append(
+                    {
+                        "name": name,
+                        "expected": expected,
+                        "actual": trace.outcome.value,
+                        "summary": trace.summary,
+                    }
+                )
+        report = {
+            "cases": len(cases),
+            "failures": len(failures),
+            "passed": len(cases) - len(failures),
+            "results": failures,
+        }
+    else:
+        try:
+            report = run_policy_tests(bundle_path=args.bundle, tests_path=args.tests)
+        except PolicyTestRunnerError as exc:
+            raise SystemExit(str(exc)) from exc
+        report["cases"] = report.pop("tests")
     print(json.dumps(report, indent=2))
-    if failures:
+    if int(report.get("failures", 0)) > 0:
         raise SystemExit("Policy tests failed")
 
 
@@ -647,6 +669,31 @@ def _run_registry_rollback(args: argparse.Namespace) -> None:
     print(json.dumps({"status": "ok"}, indent=2))
 
 
+def _run_bundle_rollback(args: argparse.Namespace) -> None:
+    repo = _registry_repo(args.sqlite_path)
+    target = repo.get_bundle_by_version(args.bundle_name, args.version)
+    if target is None:
+        raise SystemExit("Bundle version not found")
+    repo.rollback_bundle(
+        args.bundle_name,
+        target.id,
+        promoted_by=args.promoted_by,
+        promotion_reason=args.promotion_reason,
+        validation_artifact=args.validation_artifact,
+    )
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "bundle_name": args.bundle_name,
+                "active_bundle_id": target.id,
+                "version": args.version,
+            },
+            indent=2,
+        )
+    )
+
+
 def _run_registry_fetch_active(args: argparse.Namespace) -> None:
     repo = _registry_repo(args.sqlite_path)
     bundle = repo.get_active_bundle(args.bundle_name)
@@ -972,6 +1019,11 @@ def _build_evaluate_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Verify tamper-evident audit chain JSONL and exit",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Evaluate without writing side effects (local CLI mode)",
+    )
     return parser
 
 
@@ -1008,12 +1060,10 @@ def _build_policy_parser() -> argparse.ArgumentParser:
     test_parser = sub.add_parser(
         "test", help="Run behavior tests against a policy bundle"
     )
-    test_parser.add_argument(
-        "--policy-dir", type=Path, required=True, help="Policy directory"
-    )
-    test_parser.add_argument(
-        "--test-file", type=Path, required=True, help="JSON file with policy cases"
-    )
+    test_parser.add_argument("--policy-dir", type=Path, help="Legacy policy directory")
+    test_parser.add_argument("--test-file", type=Path, help="Legacy JSON file with policy cases")
+    test_parser.add_argument("--bundle", type=Path, help="Policy bundle directory")
+    test_parser.add_argument("--tests", type=Path, help="YAML/JSON test manifest with 'tests' list")
     test_parser.set_defaults(handler=_run_policy_test)
 
     schema_parser = sub.add_parser(
@@ -1207,6 +1257,20 @@ def _build_release_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_bundle_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="SENA bundle operations")
+    sub = parser.add_subparsers(dest="bundle_command", required=True)
+    rollback = sub.add_parser("rollback")
+    rollback.add_argument("--sqlite-path", type=Path, required=True)
+    rollback.add_argument("--bundle-name", required=True)
+    rollback.add_argument("--version", required=True)
+    rollback.add_argument("--promoted-by", default="system")
+    rollback.add_argument("--promotion-reason", default="manual rollback")
+    rollback.add_argument("--validation-artifact", default="rollback")
+    rollback.set_defaults(handler=_run_bundle_rollback)
+    return parser
+
+
 def _build_audit_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="SENA audit chain operational commands"
@@ -1301,6 +1365,11 @@ def main() -> None:
         return
     if len(sys.argv) > 1 and sys.argv[1] == "bundle-release":
         parser = _build_release_parser()
+        args = parser.parse_args(sys.argv[2:])
+        args.handler(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "bundle":
+        parser = _build_bundle_parser()
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return

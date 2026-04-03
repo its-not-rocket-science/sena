@@ -21,6 +21,7 @@ from sena.policy.lifecycle import (
 )
 from sena.policy.parser import load_policy_bundle
 from sena.policy.store import PolicyStoreError
+from sena.services.audit_service import AuditService
 
 logger = get_logger(__name__)
 
@@ -290,10 +291,20 @@ class BundleService:
         return errors
 
     def rollback_bundle(self, payload: BundleRollbackRequest) -> dict[str, Any]:
+        target_bundle_id = payload.to_bundle_id
+        if target_bundle_id is None and payload.version:
+            by_version = self.policy_repo.get_bundle_by_version(
+                payload.bundle_name, payload.version
+            )
+            if by_version is None:
+                raise ValueError("rollback target bundle not found")
+            target_bundle_id = by_version.id
+        if target_bundle_id is None:
+            raise ValueError("rollback requires rollback target")
         try:
             self.policy_repo.rollback_bundle(
                 payload.bundle_name,
-                payload.to_bundle_id,
+                target_bundle_id,
                 promoted_by=payload.promoted_by,
                 promotion_reason=payload.promotion_reason,
                 validation_artifact=payload.validation_artifact,
@@ -305,10 +316,23 @@ class BundleService:
             self.state.rules = active.rules
             self.state.metadata = active.metadata
             self.state.metrics.observe_active_policies(count=len(active.rules))
+        if active is not None and self.settings.audit_sink_jsonl:
+            AuditService(self.settings.audit_sink_jsonl).append_record(
+                {
+                    "event_type": "policy.rollback",
+                    "bundle_name": payload.bundle_name,
+                    "active_bundle_id": active.id,
+                    "active_version": active.metadata.version,
+                    "promoted_by": payload.promoted_by,
+                    "promotion_reason": payload.promotion_reason,
+                    "validation_artifact": payload.validation_artifact,
+                }
+            )
         return {
             "status": "ok",
             "bundle_name": payload.bundle_name,
-            "active_bundle_id": payload.to_bundle_id,
+            "active_bundle_id": target_bundle_id,
+            "version": active.metadata.version if active is not None else None,
         }
 
     def get_active_bundle(

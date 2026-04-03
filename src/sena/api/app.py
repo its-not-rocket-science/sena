@@ -140,11 +140,15 @@ def build_app(state):
     async def _startup_dlq_worker() -> None:
         if state.dlq_worker is not None:
             state.dlq_worker.start()
+        if state.recovery_service is not None:
+            state.recovery_service.start()
 
     @app.on_event("shutdown")
     async def _shutdown_dlq_worker() -> None:
         if state.dlq_worker is not None:
             state.dlq_worker.stop()
+        if state.recovery_service is not None:
+            state.recovery_service.stop()
 
 
     deprecation_date = "2026-04-01"

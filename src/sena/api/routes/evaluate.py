@@ -10,6 +10,7 @@ from sena.api.schemas import (
     BatchEvaluateRequest,
     EvaluateRequest,
     ReplayDriftRequest,
+    SimulationReplayRequest,
     SimulationRequest,
 )
 from sena.services.audit_service import AuditService
@@ -48,6 +49,8 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
         if idempotent_response is not None:
             return idempotent_response
         result = _evaluate(req, request)
+        if req.dry_run:
+            result["dry_run"] = True
         persist_idempotency_response(request, result)
         return result
 
@@ -102,5 +105,18 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
             candidate_mapping_mode=req.candidate_mapping_mode,
             candidate_mapping_config_path=req.candidate_mapping_config_path,
         )
+
+    @router.post("/simulation/replay")
+    def simulation_replay(req: SimulationReplayRequest) -> dict:
+        window_seconds = 3600 if req.window == "last_1_hour" else 86400
+        try:
+            return evaluation_service.replay_recent_traffic(
+                audit_path=state.settings.audit_sink_jsonl,
+                proposed_policy_dir=req.proposed_policy_dir,
+                window_seconds=window_seconds,
+                max_samples=req.max_samples,
+            )
+        except ValueError as exc:
+            raise_api_error("http_bad_request", details={"reason": str(exc)})
 
     return router
