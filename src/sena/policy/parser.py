@@ -69,7 +69,10 @@ def _load_bundle_manifest(base: Path) -> BundleManifest | None:
 
 def _load_mapping(raw_text: str, source: Path) -> object:
     if yaml is not None:
-        return yaml.safe_load(raw_text)
+        try:
+            return yaml.safe_load(raw_text)
+        except Exception as exc:
+            raise PolicyParseError(f"Cannot parse {source}: {exc}") from exc
     try:
         return json.loads(raw_text)
     except json.JSONDecodeError as exc:
