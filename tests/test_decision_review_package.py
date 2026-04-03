@@ -25,6 +25,9 @@ def _normalize(package: dict) -> dict:
     normalized["decision_summary"]["summary"] = re.sub(
         r"dec_[a-f0-9]+", "<decision_id>", normalized["decision_summary"]["summary"]
     )
+    loaded_from = normalized.get("policy_bundle_metadata", {}).get("loaded_from")
+    if loaded_from is not None:
+        normalized["policy_bundle_metadata"]["loaded_from"] = "<loaded_from>"
     return normalized
 
 
