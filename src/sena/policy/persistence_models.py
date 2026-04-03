@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 @dataclass(frozen=True)
 class BundleRow:
     id: int
@@ -28,7 +27,6 @@ class BundleRow:
     signature_error: str | None
     signature_key_id: str | None
     signature_verified_at: str | None
-
 
 @dataclass(frozen=True)
 class BundleHistoryRow:

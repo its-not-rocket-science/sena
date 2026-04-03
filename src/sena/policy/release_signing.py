@@ -6,16 +6,13 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 
-
 class BundleSignatureError(ValueError):
     pass
-
 
 class BundleFileDigest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -23,7 +20,6 @@ class BundleFileDigest(BaseModel):
     path: str
     sha256: str
     size_bytes: int = Field(ge=0)
-
 
 class BundleSignerMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -33,7 +29,6 @@ class BundleSignerMetadata(BaseModel):
     signed_at: str | None = None
     signature: str | None = None
     signer: str | None = None
-
 
 class BundleReleaseManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -48,16 +43,13 @@ class BundleReleaseManifest(BaseModel):
     compatibility_notes: str | None = None
     migration_notes: str | None = None
 
-
 @dataclass(frozen=True)
 class ManifestVerificationResult:
     valid: bool
     errors: list[str]
 
-
-def _canonical_json(payload: dict[str, Any]) -> str:
+def _canonical_json(payload: dict[str, object]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
 
 def _read_key(path: Path) -> bytes:
     try:
@@ -68,13 +60,11 @@ def _read_key(path: Path) -> bytes:
         raise BundleSignatureError(f"key file '{path}' is empty")
     return raw.encode("utf-8")
 
-
-def _manifest_signing_payload(manifest: BundleReleaseManifest) -> dict[str, Any]:
+def _manifest_signing_payload(manifest: BundleReleaseManifest) -> dict[str, object]:
     payload = manifest.model_dump()
     payload["signer"]["signature"] = None
     payload["signer"]["signed_at"] = None
     return payload
-
 
 def _policy_files(policy_dir: Path) -> list[Path]:
     policy_files: list[Path] = []
@@ -90,10 +80,8 @@ def _policy_files(policy_dir: Path) -> list[Path]:
             policy_files.append(path)
     return policy_files
 
-
 def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
 
 def generate_release_manifest(
     policy_dir: Path,
@@ -139,7 +127,6 @@ def generate_release_manifest(
         migration_notes=migration_notes,
     )
 
-
 def sign_release_manifest(
     manifest: BundleReleaseManifest, *, key_path: Path
 ) -> BundleReleaseManifest:
@@ -152,7 +139,6 @@ def sign_release_manifest(
     signed.signer.signature = signature
     signed.signer.signed_at = datetime.now(timezone.utc).isoformat()
     return signed
-
 
 def verify_release_manifest(
     policy_dir: Path,
@@ -187,7 +173,7 @@ def verify_release_manifest(
             f"version mismatch: manifest={manifest.version} bundle={metadata.version}"
         )
 
-    digest_rows: list[dict[str, Any]] = []
+    digest_rows: list[dict[str, object]] = []
     for entry in manifest.file_digests:
         path = policy_dir / entry.path
         if not path.exists():
@@ -226,7 +212,6 @@ def verify_release_manifest(
                     errors.append("signature mismatch")
 
     return ManifestVerificationResult(valid=not errors, errors=errors)
-
 
 def write_release_manifest(manifest: BundleReleaseManifest, path: Path) -> None:
     path.write_text(json.dumps(manifest.model_dump(), indent=2) + "\n")

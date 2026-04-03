@@ -2,65 +2,50 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from typing import Any, Callable
+from typing import Callable
 
-
-def op_eq(left: Any, right: Any) -> bool:
+def op_eq(left: object, right: object) -> bool:
     return left == right
 
-
-def op_neq(left: Any, right: Any) -> bool:
+def op_neq(left: object, right: object) -> bool:
     return left != right
 
-
-def op_gt(left: Any, right: Any) -> bool:
+def op_gt(left: object, right: object) -> bool:
     return left > right
 
-
-def op_gte(left: Any, right: Any) -> bool:
+def op_gte(left: object, right: object) -> bool:
     return left >= right
 
-
-def op_lt(left: Any, right: Any) -> bool:
+def op_lt(left: object, right: object) -> bool:
     return left < right
 
-
-def op_lte(left: Any, right: Any) -> bool:
+def op_lte(left: object, right: object) -> bool:
     return left <= right
 
-
-def op_in(left: Any, right: Iterable[Any]) -> bool:
+def op_in(left: object, right: Iterable[object]) -> bool:
     return left in right
 
-
-def op_not_in(left: Any, right: Iterable[Any]) -> bool:
+def op_not_in(left: object, right: Iterable[object]) -> bool:
     return left not in right
 
-
-def op_contains(left: Iterable[Any], right: Any) -> bool:
+def op_contains(left: Iterable[object], right: object) -> bool:
     return right in left
 
-
-def op_starts_with(left: Any, right: str) -> bool:
+def op_starts_with(left: object, right: str) -> bool:
     return isinstance(left, str) and left.startswith(right)
 
-
-def op_ends_with(left: Any, right: str) -> bool:
+def op_ends_with(left: object, right: str) -> bool:
     return isinstance(left, str) and left.endswith(right)
 
-
-def op_matches_regex(left: Any, right: str) -> bool:
+def op_matches_regex(left: object, right: str) -> bool:
     return isinstance(left, str) and re.fullmatch(right, left) is not None
 
-
-def op_exists(left: Any, right: bool) -> bool:
+def op_exists(left: object, right: bool) -> bool:
     return bool(left is not None) is bool(right)
 
-
-def op_between(left: Any, right: tuple[Any, Any] | list[Any]) -> bool:
+def op_between(left: object, right: tuple[object, object] | list[object]) -> bool:
     lower, upper = right
     return lower <= left <= upper
-
 
 ALLOWED_OPERATORS: dict[str, Callable[..., bool]] = {
     "eq": op_eq,

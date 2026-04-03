@@ -1,21 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from sena.policy.builtins import ALLOWED_OPERATORS
 
 MISSING = object()
-
 
 @dataclass
 class ConditionEvaluation:
     matched: bool
     missing_fields: set[str] = field(default_factory=set)
 
-
-def resolve_field(field: str, context: dict[str, Any]) -> Any:
-    value: Any = context
+def resolve_field(field: str, context: dict[str, object]) -> object:
+    value: object = context
     for part in field.split("."):
         if isinstance(value, dict) and part in value:
             value = value[part]
@@ -23,13 +20,11 @@ def resolve_field(field: str, context: dict[str, Any]) -> Any:
             return MISSING
     return value
 
-
-def evaluate_condition(condition: dict[str, Any], context: dict[str, Any]) -> bool:
+def evaluate_condition(condition: dict[str, object], context: dict[str, object]) -> bool:
     return evaluate_condition_with_trace(condition, context).matched
 
-
 def evaluate_condition_with_trace(
-    condition: dict[str, Any], context: dict[str, Any]
+    condition: dict[str, object], context: dict[str, object]
 ) -> ConditionEvaluation:
     if "and" in condition:
         child_results = [

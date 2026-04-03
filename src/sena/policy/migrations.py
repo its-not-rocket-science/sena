@@ -6,18 +6,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 class MigrationError(Exception):
     """Base class for schema migration failures."""
-
 
 class MigrationChecksumMismatchError(MigrationError):
     """Raised when an applied migration checksum differs from on-disk migration content."""
 
-
 class MigrationHistoryError(MigrationError):
     """Raised when migration history is inconsistent with discovered migration files."""
-
 
 @dataclass(frozen=True)
 class SqlMigration:
@@ -29,14 +25,12 @@ class SqlMigration:
     def checksum(self) -> str:
         return hashlib.sha256(self.sql.encode("utf-8")).hexdigest()
 
-
 @dataclass(frozen=True)
 class MigrationRecord:
     version: int
     name: str
     checksum: str
     applied_at: str
-
 
 @dataclass(frozen=True)
 class MigrationRunResult:
@@ -45,7 +39,6 @@ class MigrationRunResult:
     target_version: int
     applied_versions: list[int]
     pending_versions: list[int]
-
 
 class SQLiteMigrationManager:
     def __init__(self, migrations_dir: Path):

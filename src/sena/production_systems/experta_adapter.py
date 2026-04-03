@@ -1,28 +1,8 @@
-"""Deprecated legacy adapter shim.
-
-The supported enterprise-compliance path does not use this module.
-Use sena.engine.evaluator with structured policy rules instead.
-"""
+"""Compatibility stub for removed legacy production-system adapter."""
 
 from __future__ import annotations
 
-import warnings
-from typing import TYPE_CHECKING
 
-__all__ = ["ExpertaAdapter"]
-
-if TYPE_CHECKING:
-    from sena.legacy.production_systems.experta_adapter import ExpertaAdapter
-
-
-def __getattr__(name: str):
-    if name == "ExpertaAdapter":
-        warnings.warn(
-            "sena.production_systems.experta_adapter is deprecated and kept for legacy compatibility.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        from sena.legacy.production_systems.experta_adapter import ExpertaAdapter
-
-        return ExpertaAdapter
-    raise AttributeError(name)
+class ExpertaAdapter:  # pragma: no cover - compatibility stub
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        raise ImportError("sena.production_systems.experta_adapter is no longer available.")

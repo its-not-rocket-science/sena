@@ -1,26 +1,21 @@
 # Contributing to SENA
 
-Thanks for helping improve SENA. This repository keeps a strict separation between:
-
-- **Supported path:** `src/sena/*` (active product surface)
-- **Legacy path:** `src/sena/legacy/*` (compatibility only; avoid drive-by edits)
-
-When in doubt, prefer incremental changes in supported-path modules and matching tests.
+Thanks for helping improve SENA.
 
 ## Local quality checks
 
 Run these checks before opening a PR:
 
 ```bash
-ruff format --check src/sena tests --exclude src/sena/legacy
-ruff check src/sena tests
+ruff format --check src/sena tests
+ruff check src tests
 pytest
 ```
 
 Optional auto-format before committing:
 
 ```bash
-ruff format src/sena tests --exclude src/sena/legacy
+ruff format src/sena tests
 ```
 
 You can also run the combined helper target:
