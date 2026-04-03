@@ -1,0 +1,42 @@
+# SENA Production Deployment Guide
+
+## Quick start matrix
+- **Kubernetes (Helm):** use `examples/k8s_admission_demo` as base values and wire secrets via your vault.
+- **Terraform:** create a module that provisions container runtime + managed PostgreSQL + secrets backend.
+- **Docker Compose (production variant):** run API, Postgres, Prometheus, and backup sidecar with auth enabled.
+
+## Environment variables
+- `SENA_ENABLE_API_KEY_AUTH=true`
+- `SENA_API_KEYS=<comma-separated keys>`
+- `SENA_API_KEY_ROLES=<json mapping>`
+- `SENA_POLICY_DIR=<mounted policy bundle>`
+- `SENA_BUNDLE_NAME`, `SENA_BUNDLE_VERSION`
+- `SENA_AUDIT_SINK_JSONL=<persistent volume path>`
+- `SENA_RATE_LIMIT_REQUESTS`, `SENA_RATE_LIMIT_WINDOW_SECONDS`
+- `SENA_REQUEST_TIMEOUT_SECONDS`, `SENA_REQUEST_MAX_BYTES`
+
+## Kubernetes Helm chart pattern (examples)
+Use the `examples/k8s_admission_demo` assets as a reference and expose `/v1/health` and `/v1/ready` probes.
+
+## Terraform module guidance (AWS/GCP/Azure)
+Provision:
+1. Container platform (EKS/GKE/AKS or ECS/Cloud Run/App Service).
+2. Managed PostgreSQL.
+3. Secret store (Secrets Manager/Secret Manager/Key Vault).
+4. Observability stack (Prometheus-compatible scrape + logs).
+
+## Docker Compose production variant
+Recommended services:
+- `sena-api` (read-only rootfs, auth enabled)
+- `postgres` (primary data store)
+- `prometheus` + `grafana`
+- `backup` cron sidecar (`pg_dump` + audit artifact snapshots)
+
+## Scaling guidance
+SQLite is acceptable for local/dev and single-instance pilots. For production horizontal scaling, migrate policy and idempotency state to PostgreSQL and run multiple API replicas behind a load balancer.
+
+## Backup / restore runbook
+1. Back up policy registry (`scripts/backup_policy_registry.py`).
+2. Archive audit sink artifacts (`scripts/backup.py`).
+3. Verify backups with checksum + restore drill in staging.
+4. Restore with `scripts/restore_policy_registry.py` and `scripts/restore.py`.

@@ -66,7 +66,18 @@ def build_app(state):
             "FastAPI is not installed. Install optional API dependencies first."
         )
 
-    app = FastAPI(title="SENA Compliance Engine API", version=SENA_VERSION)
+    app = FastAPI(
+        title="SENA Compliance Engine API",
+        version=SENA_VERSION,
+        openapi_url="/openapi.json",
+        docs_url="/docs",
+        description=(
+            "Policy enforcement API for deterministic governance decisions.\n\n"
+            "Authentication: pass `X-API-Key: <key>` on every protected request. "
+            "Set keys via `SENA_API_KEYS` (comma-separated) and role mappings via "
+            "`SENA_API_KEY_ROLES`."
+        ),
+    )
     app.state.engine_state = state
 
     api_key_roles = build_api_key_roles(state.settings)

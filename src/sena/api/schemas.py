@@ -1,88 +1,33 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
-from sena.core.enums import ActionOrigin
-from sena.policy.validation import validate_identity_fields
-
-
-NonEmptyStr = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
+from sena.api.errors import SenaErrorResponse
+from sena.schemas import EvaluatePayload, NonEmptyStr
 
 
-class EvaluateRequest(BaseModel):
-    class RiskClassificationRequest(BaseModel):
-        category: NonEmptyStr
-        level: NonEmptyStr
-        tags: list[str] = Field(default_factory=list)
-        rationale: str | None = None
-
-    class AIActionMetadataRequest(BaseModel):
-        originating_system: NonEmptyStr
-        originating_model: str | None = None
-        prompt_context_ref: NonEmptyStr
-        confidence: float | None = None
-        uncertainty: str | None = None
-        requested_tool: str | None = None
-        requested_action: NonEmptyStr
-        evidence_references: list[NonEmptyStr] = Field(min_length=1)
-        citation_references: list[str] = Field(default_factory=list)
-        human_requester: NonEmptyStr
-        human_owner: NonEmptyStr
-        human_approver: str | None = None
-        risk_classification: "EvaluateRequest.RiskClassificationRequest"
-
-    class AutonomousMetadataRequest(BaseModel):
-        tool_name: NonEmptyStr
-        trigger_type: NonEmptyStr
-        trigger_reference: str | None = None
-        supervising_owner: str | None = None
-
-    action_type: NonEmptyStr
-    request_id: str | None = None
-    actor_id: str | None = None
-    actor_role: str | None = None
-    attributes: dict[str, Any] = Field(default_factory=dict)
-    action_origin: ActionOrigin = ActionOrigin.HUMAN
-    ai_metadata: AIActionMetadataRequest | None = None
-    autonomous_metadata: AutonomousMetadataRequest | None = None
-    facts: dict[str, Any] = Field(default_factory=dict)
-    default_decision: Literal[
-        "APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"
-    ] = "APPROVED"
-    strict_require_allow: bool = False
-    dry_run: bool = False
-
-    @model_validator(mode="after")
-    def validate_strict_identity_fields(self) -> "EvaluateRequest":
-        if self.strict_require_allow:
-            missing = validate_identity_fields(self.actor_id, self.actor_role)
-            if missing:
-                missing_label = ", ".join(missing)
-                raise ValueError(
-                    f"strict_require_allow=true requires identity fields: {missing_label}"
-                )
-        if self.action_origin == ActionOrigin.AI_SUGGESTED and self.ai_metadata is None:
-            raise ValueError(
-                "action_origin=ai_suggested requires ai_metadata with deterministic governance fields"
-            )
-        if (
-            self.action_origin != ActionOrigin.AI_SUGGESTED
-            and self.ai_metadata is not None
-        ):
-            raise ValueError("ai_metadata is only valid for action_origin=ai_suggested")
-        if (
-            self.action_origin == ActionOrigin.AUTONOMOUS_TOOL
-            and self.autonomous_metadata is None
-        ):
-            raise ValueError(
-                "action_origin=autonomous_tool requires autonomous_metadata"
-            )
-        return self
+class EvaluateRequest(EvaluatePayload):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "action_type": "approve_vendor_payment",
+                "request_id": "req-123",
+                "actor_id": "user-42",
+                "actor_role": "finance_analyst",
+                "attributes": {"amount": 12000, "vendor_verified": False},
+                "facts": {"risk_score": 91},
+                "default_decision": "APPROVED",
+                "strict_require_allow": False,
+                "dry_run": False,
+            }
+        }
+    )
 
 
 class WebhookEvaluateRequest(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"example": {"provider": "jira", "event_type": "issue_updated", "payload": {"id": "ISSUE-101"}, "facts": {}, "default_decision": "APPROVED", "strict_require_allow": False}})
     provider: NonEmptyStr
     event_type: NonEmptyStr
     payload: dict[str, Any] = Field(default_factory=dict)
@@ -94,6 +39,7 @@ class WebhookEvaluateRequest(BaseModel):
 
 
 class BatchEvaluateRequest(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"example": {"items": [{"action_type": "approve_vendor_payment", "attributes": {"amount": 500, "vendor_verified": True}}]}})
     items: list[EvaluateRequest] = Field(min_length=1, max_length=500)
 
 
@@ -157,7 +103,7 @@ class ReadinessResponse(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    error: dict[str, Any]
+    error: SenaErrorResponse
 
 
 class BundleRegisterRequest(BaseModel):

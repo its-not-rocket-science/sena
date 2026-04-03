@@ -16,7 +16,7 @@ from sena.services.bundle_service import BundleService
 
 
 def create_bundles_router(state: EngineState) -> APIRouter:
-    router = APIRouter()
+    router = APIRouter(tags=["bundles"], responses={400:{"description":"Bad request"},401:{"description":"Unauthorized"},403:{"description":"Forbidden"},429:{"description":"Rate limited"},500:{"description":"Server error"}})
     service = BundleService(
         policy_repo=state.policy_repo,
         settings=state.settings,
@@ -24,7 +24,7 @@ def create_bundles_router(state: EngineState) -> APIRouter:
         verify_signature=verify_bundle_signature,
     )
 
-    @router.post("/bundle/register")
+    @router.post("/bundle/register", summary="Register policy bundle")
     def register_bundle(payload: BundleRegisterRequest) -> dict[str, Any]:
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
@@ -40,7 +40,7 @@ def create_bundles_router(state: EngineState) -> APIRouter:
         except ValueError as exc:
             raise_api_error("http_bad_request", details={"reason": str(exc)})
 
-    @router.post("/bundle/promote")
+    @router.post("/bundle/promote", summary="Promote policy bundle lifecycle")
     def promote_bundle(payload: BundlePromoteRequest) -> dict[str, Any]:
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
@@ -72,7 +72,7 @@ def create_bundles_router(state: EngineState) -> APIRouter:
                 "promotion_validation_failed", details={"errors": [str(exc)]}
             )
 
-    @router.post("/bundle/rollback")
+    @router.post("/bundle/rollback", summary="Rollback bundle to known version")
     def rollback_bundle(payload: BundleRollbackRequest) -> dict[str, Any]:
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
@@ -83,7 +83,7 @@ def create_bundles_router(state: EngineState) -> APIRouter:
                 "promotion_validation_failed", details={"errors": [str(exc)]}
             )
 
-    @router.get("/bundles/active")
+    @router.get("/bundles/active", summary="Get active bundle")
     def get_active_bundle(bundle_name: str | None = None) -> dict[str, Any]:
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
@@ -95,7 +95,7 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             )
         return active
 
-    @router.get("/bundles/{bundle_id}")
+    @router.get("/bundles/{bundle_id}", summary="Get bundle by id")
     def get_bundle_by_id(bundle_id: int) -> dict[str, Any]:
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
@@ -104,7 +104,7 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             raise_api_error("bundle_not_found", details={"bundle_id": bundle_id})
         return bundle
 
-    @router.get("/bundles/by-version")
+    @router.get("/bundles/by-version", summary="Get bundle by name and version")
     def get_bundle_by_version(bundle_name: str, version: str) -> dict[str, Any]:
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
@@ -116,20 +116,20 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             )
         return bundle
 
-    @router.get("/bundles/history")
+    @router.get("/bundles/history", summary="Get lifecycle history")
     def bundle_history(bundle_name: str) -> dict[str, Any]:
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
         return service.history(bundle_name)
 
-    @router.post("/bundle/diff")
+    @router.post("/bundle/diff", summary="Diff two bundle revisions")
     def bundle_diff(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             return service.diff(payload)
         except ValueError:
             raise_api_error("bundle_not_found")
 
-    @router.post("/bundle/promotion/validate")
+    @router.post("/bundle/promotion/validate", summary="Validate promotion gates")
     def bundle_promotion_validate(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             return service.validate_promotion(payload)

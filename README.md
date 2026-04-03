@@ -153,7 +153,9 @@ python -m sena.cli.main \
 python -m uvicorn sena.api.app:app --reload
 ```
 
-Versioned endpoints are under `/v1/*`.
+Versioned endpoints are under `/v1/*`. OpenAPI is available at `/openapi.json` and Swagger UI at `/docs`.
+
+If API key auth is enabled, send `X-API-Key: <key>` on every request.
 
 Key endpoints:
 - `POST /v1/evaluate`
@@ -172,6 +174,8 @@ Key endpoints:
 Operational audit durability guidance (local sink + archive/restore drills):
 - `docs/AUDIT_DURABILITY.md`
 - `docs/BACKUP.md`
+- `docs/DEPLOYMENT.md` (production deployment patterns)
+- `docs/COOKBOOK.md` (copy/paste integration examples)
 
 Experimental endpoints:
 - `POST /v1/integrations/webhook`
