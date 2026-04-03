@@ -198,6 +198,30 @@ def test_audit_verify_tree_endpoint_returns_invalid_for_wrong_root(tmp_path) -> 
     assert response.json()["valid"] is False
 
 
+def test_audit_hold_endpoints(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    app = create_app(_settings(audit_sink_jsonl=str(audit_path)))
+    client = TestClient(app)
+
+    evaluate = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
+    )
+    assert evaluate.status_code == 200
+    decision_id = evaluate.json()["decision_id"]
+
+    hold = client.post(f"/v1/audit/hold/{decision_id}")
+    assert hold.status_code == 200
+    assert hold.json()["hold"]["decision_id"] == decision_id
+
+    listed = client.get("/v1/audit/hold")
+    assert listed.status_code == 200
+    assert any(item["decision_id"] == decision_id for item in listed.json()["holds"])
+
+
 def test_evaluate_review_package_endpoint_returns_durable_artifact() -> None:
     app = create_app(_settings())
     client = TestClient(app)

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
+from sena.audit.legal_hold import hold_store_from_audit_path
 
 
 class AuditSinkError(RuntimeError):
@@ -117,6 +118,20 @@ class JsonlFileAuditSink:
                 if line.strip():
                     count += 1
         return count
+
+    def _file_contains_held_records(self, file: Path) -> bool:
+        store = hold_store_from_audit_path(self.path)
+        if store is None:
+            return False
+        held = {str(item.get("decision_id")) for item in store.list_holds()}
+        if not held:
+            return False
+        records, _ = self._read_lines(file)
+        for record in records:
+            decision_id = str(record.get("decision_id", ""))
+            if decision_id in held:
+                return True
+        return False
 
     def load_records_detailed(self) -> dict[str, Any]:
         sink = self._sink_path()
@@ -290,6 +305,10 @@ class JsonlFileAuditSink:
             lock_handle.close()
 
     def _rotate_file(self, sink: Path) -> None:
+        if self._file_contains_held_records(sink):
+            raise AuditSinkError(
+                "rotation blocked because active segment contains legally held entries"
+            )
         manifest = self._read_manifest()
         seq = len(manifest.get("segments", [])) + 1
         rotated = sink.with_name(self._segment_name(seq))
@@ -340,6 +359,10 @@ class JsonlFileAuditSink:
             for file in list(candidates):
                 modified = datetime.fromtimestamp(file.stat().st_mtime, tz=timezone.utc)
                 if now - modified > max_age:
+                    if self._file_contains_held_records(file):
+                        raise AuditSinkError(
+                            f"retention deletion blocked by legal hold: {file.name}"
+                        )
                     file.unlink(missing_ok=True)
                     candidates.remove(file)
 
@@ -349,6 +372,10 @@ class JsonlFileAuditSink:
         ):
             excess = len(candidates) - self.retention.max_records
             for file in candidates[:excess]:
+                if self._file_contains_held_records(file):
+                    raise AuditSinkError(
+                        f"retention deletion blocked by legal hold: {file.name}"
+                    )
                 file.unlink(missing_ok=True)
 
 

@@ -65,6 +65,11 @@ class TractionMetrics:
             "Failed verifications",
             registry=registry,
         )
+        self.sena_audit_verification_passed = Gauge(
+            "sena_audit_verification_passed",
+            "Daily full audit verification status (1=passed,0=failed)",
+            registry=registry,
+        )
 
     def observe_request(self, *, method: str, path: str, status_code: int) -> None:
         labels = _RequestMetricLabels(
@@ -97,6 +102,9 @@ class TractionMetrics:
         self.sena_verification_requests.inc()
         if not valid:
             self.sena_verification_failures.inc()
+
+    def observe_audit_verification_passed(self, *, passed: bool) -> None:
+        self.sena_audit_verification_passed.set(1 if passed else 0)
 
 
 def _parse_iso_timestamp_to_epoch(value: str | None) -> float | None:

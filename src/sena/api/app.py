@@ -4,6 +4,7 @@ from typing import Any, Callable
 
 from sena import __version__ as SENA_VERSION
 from sena.audit.chain import verify_audit_chain
+from sena.audit.verification_service import DailyAuditVerificationService
 from sena.api.config import ApiSettings, load_settings_from_env
 from sena.api.error_handlers import error_payload, register_error_handlers
 from sena.api.logging import configure_logging
@@ -111,6 +112,16 @@ def build_app(state):
         state.metrics.observe_verification_result(valid=result.get("valid", False))
         return result
 
+    @api_v1.post("/audit/hold/{decision_id}")
+    def audit_place_hold(decision_id: str) -> dict:
+        audit_service = AuditService(state.settings.audit_sink_jsonl)
+        return {"hold": audit_service.place_legal_hold(decision_id)}
+
+    @api_v1.get("/audit/hold")
+    def audit_list_holds() -> dict:
+        audit_service = AuditService(state.settings.audit_sink_jsonl)
+        return {"holds": audit_service.list_legal_holds()}
+
     @api_v1.get("/metrics/prometheus")
     def metrics_prometheus() -> Response:
         return Response(
@@ -160,6 +171,12 @@ def build_app(state):
     @app.post("/evaluate")
     def evaluate_unversioned_deprecated() -> JSONResponse:
         return _deprecated_unversioned_response("/v1/evaluate")
+
+    if state.settings.audit_verify_daily_enabled and state.settings.audit_sink_jsonl:
+        verifier = DailyAuditVerificationService(
+            audit_path=state.settings.audit_sink_jsonl, metrics=state.metrics
+        )
+        verifier.start_daily_thread()
 
     return app
 

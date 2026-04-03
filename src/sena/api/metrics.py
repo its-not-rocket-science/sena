@@ -39,6 +39,9 @@ class ApiMetrics:
     def observe_verification_result(self, *, valid: bool) -> None:
         self.traction.observe_verification_result(valid=valid)
 
+    def observe_audit_verification_passed(self, *, passed: bool) -> None:
+        self.traction.observe_audit_verification_passed(passed=passed)
+
     def exposition(self) -> bytes:
         return generate_latest(self.registry)
 

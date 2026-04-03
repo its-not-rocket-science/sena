@@ -23,6 +23,8 @@ class ApiSettings:
     api_key: str | None = None
     api_keys: tuple[tuple[str, str], ...] = ()
     audit_sink_jsonl: str | None = None
+    audit_storage_backend: str = "local_file"
+    audit_ship_destination: str | None = None
     policy_store_backend: str = "filesystem"
     policy_store_sqlite_path: str | None = None
     webhook_mapping_config_path: str | None = None
@@ -39,6 +41,7 @@ class ApiSettings:
     bundle_signature_strict: bool = False
     bundle_signature_keyring_dir: str | None = None
     audit_verify_on_startup_strict: bool = False
+    audit_verify_daily_enabled: bool = False
     promotion_gate_require_validation_artifact: bool = True
     promotion_gate_require_simulation: bool = True
     promotion_gate_required_scenario_ids: tuple[str, ...] = ()
@@ -122,6 +125,8 @@ def load_settings_from_env() -> ApiSettings:
         api_key=os.getenv("SENA_API_KEY"),
         api_keys=_parse_api_keys(os.getenv("SENA_API_KEYS")),
         audit_sink_jsonl=os.getenv("SENA_AUDIT_SINK_JSONL"),
+        audit_storage_backend=os.getenv("SENA_AUDIT_STORAGE_BACKEND", "local_file"),
+        audit_ship_destination=os.getenv("SENA_AUDIT_SHIP_DESTINATION"),
         policy_store_backend=os.getenv("SENA_POLICY_STORE_BACKEND", "filesystem"),
         policy_store_sqlite_path=os.getenv("SENA_POLICY_STORE_SQLITE_PATH"),
         webhook_mapping_config_path=os.getenv("SENA_WEBHOOK_MAPPING_CONFIG"),
@@ -151,6 +156,9 @@ def load_settings_from_env() -> ApiSettings:
         bundle_signature_keyring_dir=os.getenv("SENA_BUNDLE_SIGNATURE_KEYRING_DIR"),
         audit_verify_on_startup_strict=_parse_bool(
             os.getenv("SENA_AUDIT_VERIFY_ON_STARTUP_STRICT"), default=False
+        ),
+        audit_verify_daily_enabled=_parse_bool(
+            os.getenv("SENA_AUDIT_VERIFY_DAILY_ENABLED"), default=False
         ),
         promotion_gate_require_validation_artifact=_parse_bool(
             os.getenv("SENA_PROMOTION_GATE_REQUIRE_VALIDATION_ARTIFACT"), default=True

@@ -4,16 +4,38 @@ from dataclasses import dataclass
 from typing import Any
 
 from sena.audit.chain import append_audit_record, verify_audit_chain
+from sena.audit.legal_hold import LegalHoldStore, hold_store_from_audit_path
 from sena.audit.merkle import build_merkle_tree, get_proof, verify_proof
+from sena.audit.storage import AuditStorage, storage_from_env
 
 
-@dataclass(frozen=True)
+@dataclass
 class AuditService:
     """Application-facing audit helpers and startup hooks."""
 
     sink_path: str | None = None
+    storage: AuditStorage | None = None
+    hold_store: LegalHoldStore | None = None
+
+    def __post_init__(self) -> None:
+        if self.storage is None:
+            self.storage = storage_from_env(self.sink_path)
+        if self.hold_store is None:
+            self.hold_store = hold_store_from_audit_path(self.sink_path)
 
     def append_record(self, record: dict[str, Any]) -> dict[str, Any] | None:
+        if self.sink_path is None and self.storage is None:
+            return None
+
+        if self.storage is not None:
+            payload = dict(record)
+            entry_id = self.storage.append(payload)
+            try:
+                return self.storage.read(entry_id)
+            except Exception:
+                payload["storage_entry_id"] = entry_id
+                return payload
+
         if self.sink_path is None:
             return None
         return append_audit_record(self.sink_path, record)
@@ -23,6 +45,21 @@ class AuditService:
         if target is None:
             return {"valid": False, "error": "audit sink not configured", "records": 0}
         return verify_audit_chain(target)
+
+    def verify_storage_immutable(self) -> bool:
+        if self.storage is None:
+            return False
+        return self.storage.verify_immutable()
+
+    def place_legal_hold(self, decision_id: str, reason: str | None = None) -> dict[str, Any]:
+        if self.hold_store is None:
+            raise RuntimeError("audit hold store not configured")
+        return self.hold_store.create_hold(decision_id=decision_id, reason=reason)
+
+    def list_legal_holds(self) -> list[dict[str, Any]]:
+        if self.hold_store is None:
+            return []
+        return self.hold_store.list_holds()
 
     def verify_decision_merkle_proof(
         self, decision_id: str, merkle_proof: list[str], expected_root: str
