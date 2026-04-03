@@ -6,6 +6,7 @@ from sena.audit.archive import (
     restore_audit_archive,
     verify_audit_archive,
 )
+from sena.audit.merkle import MerkleTree, build_merkle_tree, get_proof, verify_proof
 from sena.audit.sinks import (
     AuditSink,
     AuditSinkError,
@@ -28,4 +29,8 @@ __all__ = [
     "restore_audit_archive",
     "verify_audit_archive",
     "verify_audit_chain",
+    "MerkleTree",
+    "build_merkle_tree",
+    "get_proof",
+    "verify_proof",
 ]

@@ -114,6 +114,90 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     assert "decision_hash" in body
 
 
+def test_audit_verify_tree_endpoint(tmp_path) -> None:
+    from sena.audit.merkle import build_merkle_tree, get_proof
+
+    audit_path = tmp_path / "audit.jsonl"
+    app = create_app(_settings(audit_sink_jsonl=str(audit_path)))
+    client = TestClient(app)
+
+    first = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
+    )
+    second = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": True},
+        },
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    entries = [json.loads(line) for line in audit_path.read_text().splitlines() if line]
+    tree = build_merkle_tree(entries)
+    target_decision_id = second.json()["decision_id"]
+    target_index = next(
+        idx
+        for idx, entry in enumerate(entries)
+        if entry.get("decision_id") == target_decision_id
+    )
+    proof = get_proof(tree, target_index)
+
+    response = client.post(
+        "/v1/audit/verify/tree",
+        json={
+            "decision_id": target_decision_id,
+            "merkle_proof": proof,
+            "expected_root": tree.root,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["valid"] is True
+    assert payload["proof_matches_canonical"] is True
+    assert payload["computed_root"] == tree.root
+
+
+def test_audit_verify_tree_endpoint_returns_invalid_for_wrong_root(tmp_path) -> None:
+    from sena.audit.merkle import build_merkle_tree, get_proof
+
+    audit_path = tmp_path / "audit.jsonl"
+    app = create_app(_settings(audit_sink_jsonl=str(audit_path)))
+    client = TestClient(app)
+
+    evaluate = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
+    )
+    assert evaluate.status_code == 200
+
+    entries = [json.loads(line) for line in audit_path.read_text().splitlines() if line]
+    tree = build_merkle_tree(entries)
+    decision_id = evaluate.json()["decision_id"]
+    proof = get_proof(tree, 0)
+
+    response = client.post(
+        "/v1/audit/verify/tree",
+        json={
+            "decision_id": decision_id,
+            "merkle_proof": proof,
+            "expected_root": "00" * 32,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["valid"] is False
+
+
 def test_evaluate_review_package_endpoint_returns_durable_artifact() -> None:
     app = create_app(_settings())
     client = TestClient(app)
