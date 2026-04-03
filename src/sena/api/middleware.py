@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 import uuid
 from collections import defaultdict, deque
@@ -11,9 +10,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from sena.api.error_handlers import error_payload
+from sena.api.logging import bind_request_context, clear_request_context, get_logger
 from sena.api.runtime import EngineState, is_role_allowed
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class FixedWindowRateLimiter:
@@ -50,6 +50,9 @@ def register_request_middleware(
             request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex[:12]}"
         )
         request.state.request_id = request_id
+        bind_request_context(request_id=request_id)
+
+        started = time.perf_counter()
         client_key = request.headers.get("x-api-key", "")
         if not client_key:
             client_host = request.client.host if request.client else "unknown"
@@ -60,11 +63,21 @@ def register_request_middleware(
                 status_code=status_code,
                 content=error_payload(code, message, request_id),
             )
+            error_response.headers["x-request-id"] = request_id
+            duration_ms = round((time.perf_counter() - started) * 1000, 3)
             state.metrics.observe_request(
                 method=request.method,
                 path=request.url.path,
                 status_code=status_code,
             )
+            logger.info(
+                "request_processed",
+                method=request.method,
+                path=request.url.path,
+                status_code=status_code,
+                duration_ms=duration_ms,
+            )
+            clear_request_context()
             return error_response
 
         content_length = request.headers.get("content-length")
@@ -112,7 +125,12 @@ def register_request_middleware(
             )
         except asyncio.TimeoutError:
             return _json_error(504, "timeout", "Request processing timed out")
+        except Exception:
+            clear_request_context()
+            raise
+
         response.headers["x-request-id"] = request_id
+        duration_ms = round((time.perf_counter() - started) * 1000, 3)
         state.metrics.observe_request(
             method=request.method,
             path=request.url.path,
@@ -120,11 +138,10 @@ def register_request_middleware(
         )
         logger.info(
             "request_processed",
-            extra={
-                "request_id": request_id,
-                "path": request.url.path,
-                "method": request.method,
-                "status_code": response.status_code,
-            },
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_ms=duration_ms,
         )
+        clear_request_context()
         return response
