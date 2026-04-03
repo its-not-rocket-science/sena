@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
 
 from sena.core.enums import RuleDecision
 from sena.core.models import PolicyRule
-
 
 ALLOWED_LIFECYCLE_TRANSITIONS = {
     ("draft", "candidate"),
@@ -14,26 +12,22 @@ ALLOWED_LIFECYCLE_TRANSITIONS = {
     ("active", "deprecated"),
 }
 
-
 @dataclass(frozen=True)
 class BundleDiff:
     added_rule_ids: list[str]
     removed_rule_ids: list[str]
     changed_rule_ids: list[str]
 
-
 @dataclass(frozen=True)
 class PromotionValidation:
     valid: bool
     errors: list[str]
 
-
 @dataclass(frozen=True)
 class PromotionFailure:
     code: str
     message: str
-    details: dict[str, Any] = field(default_factory=dict)
-
+    details: dict[str, object] = field(default_factory=dict)
 
 @dataclass(frozen=True)
 class PromotionGatePolicy:
@@ -44,8 +38,7 @@ class PromotionGatePolicy:
     max_regressions_by_outcome_type: dict[str, int] = field(default_factory=dict)
     break_glass_enabled: bool = True
 
-
-def _parse_non_negative_int(value: Any) -> int | None:
+def _parse_non_negative_int(value: object) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool):
@@ -56,8 +49,7 @@ def _parse_non_negative_int(value: Any) -> int | None:
         return None
     return value
 
-
-def validate_simulation_report(simulation_report: dict[str, Any]) -> list[PromotionFailure]:
+def validate_simulation_report(simulation_report: dict[str, object]) -> list[PromotionFailure]:
     failures: list[PromotionFailure] = []
     total_scenarios = _parse_non_negative_int(simulation_report.get("total_scenarios"))
     changed_scenarios = _parse_non_negative_int(
@@ -165,7 +157,6 @@ def validate_simulation_report(simulation_report: dict[str, Any]) -> list[Promot
         )
     return failures
 
-
 def validate_lifecycle_transition(
     source_lifecycle: str, target_lifecycle: str
 ) -> PromotionValidation:
@@ -178,7 +169,6 @@ def validate_lifecycle_transition(
         ],
     )
 
-
 def _rule_fingerprint(rule: PolicyRule) -> tuple:
     return (
         rule.description,
@@ -189,7 +179,6 @@ def _rule_fingerprint(rule: PolicyRule) -> tuple:
         rule.decision.value,
         rule.reason,
     )
-
 
 def diff_rule_sets(current: list[PolicyRule], target: list[PolicyRule]) -> BundleDiff:
     current_map = {rule.id: rule for rule in current}
@@ -206,7 +195,6 @@ def diff_rule_sets(current: list[PolicyRule], target: list[PolicyRule]) -> Bundl
     return BundleDiff(
         added_rule_ids=added, removed_rule_ids=removed, changed_rule_ids=changed
     )
-
 
 def validate_promotion(
     source_lifecycle: str,
@@ -250,12 +238,11 @@ def validate_promotion(
 
     return PromotionValidation(valid=not errors, errors=errors)
 
-
 def evaluate_promotion_gate(
     *,
     target_lifecycle: str,
     validation_artifact: str | None,
-    simulation_report: dict[str, Any] | None,
+    simulation_report: dict[str, object] | None,
     break_glass: bool,
     break_glass_reason: str | None,
     policy: PromotionGatePolicy,

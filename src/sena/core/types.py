@@ -1,30 +1,20 @@
-"""Deprecated legacy types compatibility shim.
-
-This module is retained only for backward compatibility with historical SENA
-research-prototype imports. It is not part of the supported compliance-engine
-path and may be removed in a future release.
-"""
+"""Compatibility stubs for removed legacy research types."""
 
 from __future__ import annotations
 
-import warnings
-from typing import TYPE_CHECKING
 
-__all__ = ["Rule", "Trace", "Genome", "WorkingMemory"]
-
-if TYPE_CHECKING:
-    from sena.legacy.core.types import Genome, Rule, Trace, WorkingMemory
+class Rule:  # pragma: no cover - compatibility stub
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        raise ImportError("sena.core.types legacy symbols were removed.")
 
 
-def __getattr__(name: str):
-    if name in __all__:
-        warnings.warn(
-            "sena.core.types is deprecated and part of the legacy research prototype. "
-            "Use sena.core.models + sena.engine.evaluator for the supported compliance engine.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        from sena.legacy.core import types as legacy_types
+class Trace(Rule):
+    pass
 
-        return getattr(legacy_types, name)
-    raise AttributeError(name)
+
+class Genome(Rule):
+    pass
+
+
+class WorkingMemory(Rule):
+    pass

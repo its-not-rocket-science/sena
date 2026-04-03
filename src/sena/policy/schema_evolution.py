@@ -5,12 +5,11 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from sena import __version__ as SENA_VERSION
 
 try:
-    import yaml  # type: ignore
+    from sena.policy.yaml_support import yaml
 except ModuleNotFoundError:  # pragma: no cover
     yaml = None
 
@@ -19,16 +18,13 @@ SCHEMA_VERSION_V2 = "2"
 CURRENT_BUNDLE_SCHEMA_VERSION = SCHEMA_VERSION_V2
 MIN_SUPPORTED_BUNDLE_SCHEMA_VERSION = SCHEMA_VERSION_V1
 
-
 class PolicySchemaError(ValueError):
     pass
-
 
 @dataclass(frozen=True)
 class VersionRange:
     min_inclusive: str | None = None
     max_inclusive: str | None = None
-
 
 @dataclass(frozen=True)
 class CompatibilityReport:
@@ -36,14 +32,12 @@ class CompatibilityReport:
     errors: list[str]
     warnings: list[str]
 
-
 @dataclass(frozen=True)
 class MigrationChange:
     file: str
     description: str
     before: str
     after: str
-
 
 @dataclass(frozen=True)
 class MigrationReport:
@@ -53,12 +47,10 @@ class MigrationReport:
     changes: list[MigrationChange]
     warnings: list[str] = field(default_factory=list)
 
-
 @dataclass(frozen=True)
 class BundleMigrationResult:
     report: MigrationReport
     applied: bool
-
 
 def normalize_schema_version(value: str | int | float | None) -> str:
     if value is None:
@@ -70,36 +62,30 @@ def normalize_schema_version(value: str | int | float | None) -> str:
         raise PolicySchemaError(f"unsupported bundle schema version '{normalized}'")
     return normalized
 
-
 def _parse_version(version: str) -> tuple[int, ...]:
     numbers = re.findall(r"\d+", version)
     if not numbers:
         return (0,)
     return tuple(int(n) for n in numbers)
 
-
 def _is_version_less(a: str, b: str) -> bool:
     return _parse_version(a) < _parse_version(b)
-
 
 def _is_version_greater(a: str, b: str) -> bool:
     return _parse_version(a) > _parse_version(b)
 
-
-def _render_payload(path: Path, payload: Any) -> str:
+def _render_payload(path: Path, payload: object) -> str:
     if path.suffix.lower() == ".json":
         return json.dumps(payload, indent=2, sort_keys=True) + "\n"
     if yaml is None:
         return json.dumps(payload, indent=2, sort_keys=True) + "\n"
     return yaml.safe_dump(payload, sort_keys=False)
 
-
-def _read_mapping(path: Path) -> Any:
+def _read_mapping(path: Path) -> object:
     raw_text = path.read_text()
     if yaml is not None:
         return yaml.safe_load(raw_text)
     return json.loads(raw_text)
-
 
 def _diff(before: str, after: str, file: str) -> str:
     lines = difflib.unified_diff(
@@ -110,7 +96,6 @@ def _diff(before: str, after: str, file: str) -> str:
         lineterm="",
     )
     return "\n".join(lines)
-
 
 def evaluate_bundle_compatibility(
     *,
@@ -156,7 +141,6 @@ def evaluate_bundle_compatibility(
             )
 
     return CompatibilityReport(compatible=not errors, errors=errors, warnings=warnings)
-
 
 def migrate_bundle(
     policy_dir: Path,
@@ -277,8 +261,7 @@ def migrate_bundle(
         report=report, applied=(not dry_run and bool(changed_files))
     )
 
-
-def format_migration_report(result: BundleMigrationResult) -> dict[str, Any]:
+def format_migration_report(result: BundleMigrationResult) -> dict[str, object]:
     report = result.report
     return {
         "source_schema_version": report.source_schema_version,

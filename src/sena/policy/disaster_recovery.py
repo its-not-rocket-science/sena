@@ -8,22 +8,18 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from sena.audit.chain import verify_audit_chain
 from sena.policy.release_signing import verify_release_manifest
 
-
 class DisasterRecoveryError(Exception):
     """Raised when backup/restore verification fails."""
-
 
 @dataclass(frozen=True)
 class RestoreVerificationResult:
     valid: bool
-    checks: dict[str, Any]
+    checks: dict[str, object]
     errors: list[str]
-
 
 @dataclass(frozen=True)
 class BackupArtifacts:
@@ -31,12 +27,10 @@ class BackupArtifacts:
     backup_manifest_path: Path
     backup_audit_path: Path | None
 
-
 def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
-
-def _sqlite_integrity_check(db_path: Path) -> dict[str, Any]:
+def _sqlite_integrity_check(db_path: Path) -> dict[str, object]:
     try:
         conn = sqlite3.connect(str(db_path))
         try:
@@ -48,8 +42,7 @@ def _sqlite_integrity_check(db_path: Path) -> dict[str, Any]:
     ok = row is not None and row[0] == "ok"
     return {"ok": ok, "result": row[0] if row else None}
 
-
-def _sqlite_quick_check(db_path: Path) -> dict[str, Any]:
+def _sqlite_quick_check(db_path: Path) -> dict[str, object]:
     try:
         conn = sqlite3.connect(str(db_path))
         try:
@@ -61,8 +54,7 @@ def _sqlite_quick_check(db_path: Path) -> dict[str, Any]:
     ok = row is not None and row[0] == "ok"
     return {"ok": ok, "result": row[0] if row else None}
 
-
-def _sqlite_foreign_key_check(db_path: Path) -> dict[str, Any]:
+def _sqlite_foreign_key_check(db_path: Path) -> dict[str, object]:
     try:
         conn = sqlite3.connect(str(db_path))
         try:
@@ -74,21 +66,18 @@ def _sqlite_foreign_key_check(db_path: Path) -> dict[str, Any]:
     violations = [tuple(row) for row in rows]
     return {"ok": not violations, "violations": violations}
 
-
 def _bundle_digest_from_rule_hashes(rule_hashes: list[str]) -> str:
     canonical = json.dumps(sorted(rule_hashes), separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
 
 def _rule_hash_from_content(content: str) -> str:
     payload = json.loads(content)
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-
 def _verify_single_active_bundle_invariant(
     db_path: Path,
-) -> tuple[dict[str, Any], list[str]]:
+) -> tuple[dict[str, object], list[str]]:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
@@ -114,10 +103,9 @@ def _verify_single_active_bundle_invariant(
     ]
     return {"ok": not violations, "violations": violations}, errors
 
-
 def _verify_bundle_integrity(
     db_path: Path, *, active_only: bool = True
-) -> tuple[dict[str, Any], list[str]]:
+) -> tuple[dict[str, object], list[str]]:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
@@ -125,7 +113,7 @@ def _verify_bundle_integrity(
         bundles = conn.execute(
             f"SELECT id, name, version, lifecycle, integrity_digest, signature_verification_strict, signature_verified FROM bundles {predicate}"
         ).fetchall()
-        checks: list[dict[str, Any]] = []
+        checks: list[dict[str, object]] = []
         errors: list[str] = []
         for bundle in bundles:
             rule_rows = conn.execute(
@@ -187,7 +175,6 @@ def _verify_bundle_integrity(
     finally:
         conn.close()
 
-
 def create_policy_registry_backup(
     *,
     sqlite_path: Path,
@@ -238,7 +225,6 @@ def create_policy_registry_backup(
         backup_audit_path=backup_audit_path,
     )
 
-
 def verify_restored_registry(
     *,
     sqlite_path: Path,
@@ -247,7 +233,7 @@ def verify_restored_registry(
     policy_dir: Path | None,
     active_only: bool = True,
 ) -> RestoreVerificationResult:
-    checks: dict[str, Any] = {}
+    checks: dict[str, object] = {}
     errors: list[str] = []
 
     checks["db_integrity"] = _sqlite_integrity_check(sqlite_path)
@@ -303,7 +289,6 @@ def verify_restored_registry(
 
     return RestoreVerificationResult(valid=not errors, checks=checks, errors=errors)
 
-
 def restore_policy_registry_backup(
     *,
     backup_db_path: Path,
@@ -351,7 +336,6 @@ def restore_policy_registry_backup(
         )
     return result
 
-
 def build_backup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Backup policy registry sqlite DB and audit chain"
@@ -361,7 +345,6 @@ def build_backup_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--audit-chain", type=Path)
     parser.add_argument("--output-manifest", type=Path)
     return parser
-
 
 def build_restore_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -375,7 +358,6 @@ def build_restore_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy-dir", type=Path)
     parser.add_argument("--keyring-dir", type=Path)
     return parser
-
 
 def verify_policy_registry_snapshot(
     *,
@@ -398,7 +380,6 @@ def verify_policy_registry_snapshot(
         policy_dir=policy_dir,
         active_only=active_only,
     )
-
 
 def build_verify_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(

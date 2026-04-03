@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from sena.core.enums import RuleDecision, Severity
 from sena.core.models import PolicyBundleMetadata, PolicyRule
@@ -21,26 +21,20 @@ ALLOWED_TRANSITIONS: set[tuple[str, str]] = {
     ("active", "deprecated"),
 }
 
-
 class PolicyStoreError(Exception):
     """Base class for policy store persistence failures."""
-
 
 class PolicyBundleConflictError(PolicyStoreError):
     """Raised when a write conflicts with uniqueness or concurrent operations."""
 
-
 class PolicyBundleNotFoundError(PolicyStoreError):
     """Raised when a requested bundle does not exist."""
-
 
 class PolicyBundleInvalidTransitionError(PolicyStoreError):
     """Raised when lifecycle transition business rules are violated."""
 
-
 class PolicyStoreIntegrityError(PolicyStoreError):
     """Raised when startup checks or invariants detect a corrupt state."""
-
 
 @dataclass(frozen=True)
 class StoredBundle:
@@ -67,16 +61,15 @@ class StoredBundle:
     signature_key_id: str | None
     signature_verified_at: str | None
 
-
 class PolicyBundleRepository(Protocol):
     def initialize(self) -> None: ...
 
     def register_bundle(
-        self, metadata: PolicyBundleMetadata, rules: list[PolicyRule], **kwargs: Any
+        self, metadata: PolicyBundleMetadata, rules: list[PolicyRule], **kwargs: object
     ) -> int: ...
 
     def transition_bundle(
-        self, bundle_id: int, target_lifecycle: str, **kwargs: Any
+        self, bundle_id: int, target_lifecycle: str, **kwargs: object
     ) -> None: ...
 
     def rollback_bundle(
@@ -97,8 +90,7 @@ class PolicyBundleRepository(Protocol):
         self, bundle_name: str, version: str
     ) -> StoredBundle | None: ...
 
-    def get_history(self, bundle_name: str) -> list[dict[str, Any]]: ...
-
+    def get_history(self, bundle_name: str) -> list[dict[str, object]]: ...
 
 class SQLitePolicyBundleRepository:
     """SQLite-backed policy repository.
@@ -157,12 +149,12 @@ class SQLitePolicyBundleRepository:
                 conn, dry_run=dry_run, target_version=target_version
             )
 
-    def inspect_schema(self) -> dict[str, Any]:
+    def inspect_schema(self) -> dict[str, object]:
         with self._connect() as conn:
             return self._migration_manager.inspect_schema(conn)
 
     @contextmanager
-    def _write_transaction(self) -> Any:
+    def _write_transaction(self) -> object:
         conn = self._connect()
         attempt = 0
         while True:
@@ -534,7 +526,7 @@ class SQLitePolicyBundleRepository:
             ).fetchone()
             return self._hydrate_bundle(conn, row)
 
-    def get_history(self, bundle_name: str) -> list[dict[str, Any]]:
+    def get_history(self, bundle_name: str) -> list[dict[str, object]]:
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -648,7 +640,7 @@ class SQLitePolicyBundleRepository:
         detail = str(exc).lower()
         return "locked" in detail or "busy" in detail
 
-    def verify_integrity(self) -> dict[str, Any]:
+    def verify_integrity(self) -> dict[str, object]:
         with self._connect() as conn:
             check_row = conn.execute("PRAGMA integrity_check").fetchone()
             bad_rows = conn.execute(
@@ -743,7 +735,6 @@ class SQLitePolicyBundleRepository:
         hashes = sorted(cls._rule_hash(rule) for rule in rules)
         canonical = json.dumps(hashes, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
 
 class PostgresPolicyBundleRepository:
     """Architecture placeholder for enterprise relational persistence.

@@ -3,30 +3,26 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from sena.core.models import ActionProposal
 from sena.engine.evaluator import PolicyEvaluator
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 
 try:
-    import yaml  # type: ignore
+    from sena.policy.yaml_support import yaml
 except ModuleNotFoundError:  # pragma: no cover
     yaml = None
-
 
 class PolicyTestRunnerError(ValueError):
     """Raised when policy test manifests are malformed."""
 
-
 @dataclass(frozen=True)
 class PolicyTestCase:
     name: str
-    input: dict[str, Any]
+    input: dict[str, object]
     expected: str
 
-
-def _load_manifest(path: Path) -> dict[str, Any]:
+def _load_manifest(path: Path) -> dict[str, object]:
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -45,8 +41,7 @@ def _load_manifest(path: Path) -> dict[str, Any]:
         raise PolicyTestRunnerError("Test manifest root must be an object")
     return payload
 
-
-def _parse_cases(payload: dict[str, Any]) -> list[PolicyTestCase]:
+def _parse_cases(payload: dict[str, object]) -> list[PolicyTestCase]:
     tests = payload.get("tests")
     if not isinstance(tests, list) or not tests:
         raise PolicyTestRunnerError("Test manifest requires non-empty 'tests' list")
@@ -67,8 +62,7 @@ def _parse_cases(payload: dict[str, Any]) -> list[PolicyTestCase]:
         )
     return cases
 
-
-def run_policy_tests(*, bundle_path: str | Path, tests_path: str | Path) -> dict[str, Any]:
+def run_policy_tests(*, bundle_path: str | Path, tests_path: str | Path) -> dict[str, object]:
     try:
         rules, metadata = load_policy_bundle(bundle_path)
     except PolicyParseError as exc:
@@ -78,7 +72,7 @@ def run_policy_tests(*, bundle_path: str | Path, tests_path: str | Path) -> dict
     cases = _parse_cases(manifest)
     evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
 
-    failures: list[dict[str, Any]] = []
+    failures: list[dict[str, object]] = []
     for case in cases:
         action_type = case.input.get("action") or case.input.get("action_type")
         if not isinstance(action_type, str) or not action_type.strip():

@@ -18,8 +18,25 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install package
-        run: pip install -e .
+      - name: Install package and CI tools
+        run: |
+          pip install -e .[dev]
+          pip install bandit safety
+
+      - name: Run tests
+        run: pytest
+
+      - name: Run style checks
+        run: ruff check src tests
+
+      - name: Run benchmarks
+        run: pytest benchmarks/ --benchmark-only --benchmark-json artifacts/benchmark.json
+
+      - name: Run bandit
+        run: bandit -r src/sena -f json -o bandit-report.json
+
+      - name: Run safety
+        run: safety check --full-report
 
       - name: Compute maturity scorecard
         run: python scripts/maturity_scorecard.py --output-json artifacts/maturity_scorecard.json
@@ -41,4 +58,18 @@ jobs:
         with:
           name: maturity-scorecard-history-${{ github.run_id }}
           path: artifacts/history/maturity_scorecard_${{ github.run_id }}.json
+          if-no-files-found: error
+
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ github.run_id }}
+          path: artifacts/benchmark.json
+          if-no-files-found: error
+
+      - name: Upload bandit report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-${{ github.run_id }}
+          path: bandit-report.json
           if-no-files-found: error

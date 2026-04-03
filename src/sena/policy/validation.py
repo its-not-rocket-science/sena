@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
 
 from sena.core.enums import ActionOrigin, RuleDecision
 from sena.core.models import ActionProposal
@@ -16,12 +15,10 @@ SUPPORTED_EVIDENCE_CLASSES = {
     "model_provenance",
 }
 
-
 class PolicyValidationError(ValueError):
     pass
 
-
-def validate_condition(node: Any) -> None:
+def validate_condition(node: object) -> None:
     if not isinstance(node, dict):
         raise PolicyValidationError("condition nodes must be dictionaries")
 
@@ -75,8 +72,7 @@ def validate_condition(node: Any) -> None:
     if op == "exists" and not isinstance(value, bool):
         raise PolicyValidationError("'exists' operator expects true/false")
 
-
-def validate_rule_payload(rule: dict[str, Any]) -> None:
+def validate_rule_payload(rule: dict[str, object]) -> None:
     required = {
         "id",
         "description",
@@ -133,8 +129,7 @@ def validate_rule_payload(rule: dict[str, Any]) -> None:
             "'missing_evidence_decision' must be BLOCK or ESCALATE when provided"
         )
 
-
-def validate_invariant_payload(invariant: dict[str, Any]) -> None:
+def validate_invariant_payload(invariant: dict[str, object]) -> None:
     required = {
         "id",
         "description",
@@ -150,7 +145,6 @@ def validate_invariant_payload(invariant: dict[str, Any]) -> None:
     if not isinstance(invariant["applies_to"], list) or not invariant["applies_to"]:
         raise PolicyValidationError("invariant 'applies_to' must be a non-empty list")
     validate_condition(invariant["condition"])
-
 
 def validate_policy_coverage(
     rules: list[PolicyRule],
@@ -173,9 +167,8 @@ def validate_policy_coverage(
         )
     return missing
 
-
-def _resolve_field(field: str, context: dict[str, Any]) -> Any:
-    value: Any = context
+def _resolve_field(field: str, context: dict[str, object]) -> object:
+    value: object = context
     for part in field.split("."):
         if isinstance(value, dict) and part in value:
             value = value[part]
@@ -183,9 +176,8 @@ def _resolve_field(field: str, context: dict[str, Any]) -> Any:
             return None
     return value
 
-
 def validate_context_schema(
-    context: dict[str, Any], schema: dict[str, str]
+    context: dict[str, object], schema: dict[str, str]
 ) -> list[str]:
     errors: list[str] = []
     expected = {
@@ -214,7 +206,6 @@ def validate_context_schema(
             )
     return errors
 
-
 def validate_identity_fields(actor_id: str | None, actor_role: str | None) -> list[str]:
     missing: list[str] = []
     if not actor_id:
@@ -222,7 +213,6 @@ def validate_identity_fields(actor_id: str | None, actor_role: str | None) -> li
     if not actor_role:
         missing.append("actor_role")
     return missing
-
 
 def validate_ai_originated_action_fields(proposal: ActionProposal) -> list[str]:
     if proposal.action_origin != ActionOrigin.AI_SUGGESTED:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -21,14 +20,12 @@ from sena.policy.validation import (
 )
 
 try:
-    import yaml  # type: ignore
+    from sena.policy.yaml_support import yaml
 except ModuleNotFoundError:  # pragma: no cover
     yaml = None
 
-
 class PolicyParseError(ValueError):
     pass
-
 
 class BundleManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -41,7 +38,7 @@ class BundleManifest(BaseModel):
     lifecycle: str = "draft"
     context_schema: dict[str, str] = Field(default_factory=dict)
     runtime_compatibility: dict[str, str] = Field(default_factory=dict)
-    invariants: list[dict[str, Any]] = Field(default_factory=list)
+    invariants: list[dict[str, object]] = Field(default_factory=list)
 
     @field_validator("version")
     @classmethod
@@ -52,7 +49,6 @@ class BundleManifest(BaseModel):
     @classmethod
     def normalize_schema(cls, value: str | int | float) -> str:
         return normalize_schema_version(value)
-
 
 def _load_bundle_manifest(base: Path) -> BundleManifest | None:
     for filename in ("bundle.yaml", "bundle.yml", "bundle.json"):
@@ -71,8 +67,7 @@ def _load_bundle_manifest(base: Path) -> BundleManifest | None:
                 ) from exc
     return None
 
-
-def _load_mapping(raw_text: str, source: Path) -> Any:
+def _load_mapping(raw_text: str, source: Path) -> object:
     if yaml is not None:
         return yaml.safe_load(raw_text)
     try:
@@ -81,7 +76,6 @@ def _load_mapping(raw_text: str, source: Path) -> Any:
         raise PolicyParseError(
             f"Cannot parse {source}. Install PyYAML or provide JSON-compatible YAML."
         ) from exc
-
 
 def parse_policy_file(path: str | Path) -> list[PolicyRule]:
     file_path = Path(path)
@@ -124,7 +118,6 @@ def parse_policy_file(path: str | Path) -> list[PolicyRule]:
             raise PolicyParseError(f"invalid rule in {file_path}: {exc}") from exc
     return rules
 
-
 def _bundle_integrity_digest(files: list[Path]) -> str:
     digest = hashlib.sha256()
     for policy_file in files:
@@ -132,10 +125,8 @@ def _bundle_integrity_digest(files: list[Path]) -> str:
         digest.update(policy_file.read_bytes())
     return digest.hexdigest()
 
-
 def load_policies_from_dir(path: str | Path) -> list[PolicyRule]:
     return load_policy_bundle(path)[0]
-
 
 def load_policy_bundle(
     path: str | Path,
@@ -201,8 +192,7 @@ def load_policy_bundle(
 
     return all_rules, metadata
 
-
-def _parse_invariant_payload(payload: dict[str, Any]) -> PolicyInvariant:
+def _parse_invariant_payload(payload: dict[str, object]) -> PolicyInvariant:
     validate_invariant_payload(payload)
     return PolicyInvariant(
         id=payload["id"],
