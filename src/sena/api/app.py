@@ -103,10 +103,18 @@ def build_app(state):
             raise_api_error("audit_sink_not_configured")
 
         audit_service = AuditService(state.settings.audit_sink_jsonl)
-        return audit_service.verify_decision_merkle_proof(
+        result = audit_service.verify_decision_merkle_proof(
             decision_id=req.decision_id,
             merkle_proof=req.merkle_proof,
             expected_root=req.expected_root,
+        )
+        state.metrics.observe_verification_result(valid=result.get("valid", False))
+        return result
+
+    @api_v1.get("/metrics/prometheus")
+    def metrics_prometheus() -> Response:
+        return Response(
+            content=state.metrics.exposition(), media_type=state.metrics.content_type
         )
 
     @app.get("/metrics")

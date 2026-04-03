@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack demo-k8s
+.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack demo-k8s demo-monitoring
 
 install:
 	pip install -e .
@@ -54,3 +54,9 @@ demo-k8s:
 	kill $$API_PID 2>/dev/null || true; \
 	wait $$API_PID 2>/dev/null || true; \
 	exit $$STATUS
+
+demo-monitoring:
+	@mkdir -p monitoring/artifacts
+	@touch monitoring/artifacts/demo_audit.jsonl
+	docker compose -f docker-compose-monitoring.yml up --build -d
+	PYTHONPATH=src python scripts/generate_traffic.py --base-url http://127.0.0.1:8000
