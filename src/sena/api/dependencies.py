@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 
-from fastapi import Depends, HTTPException, Request, Security
+from fastapi import Depends, Header, HTTPException, Request, Security
+from fastapi.responses import Response
 from fastapi.security import APIKeyHeader
 
 from sena.api.runtime import EngineState
@@ -24,6 +26,28 @@ async def verify_api_key(api_key: str = Security(api_key_header)) -> str:
     if api_key not in valid_keys:
         raise HTTPException(status_code=403)
     return api_key
+
+
+async def check_idempotency_key(
+    request: Request, key: str | None = Header(None, alias="Idempotency-Key")
+) -> Response | None:
+    if not key:
+        return None
+    existing = request.app.state.engine_state.processing_store.get_idempotency_response(key)
+    if existing is None:
+        return None
+    return Response(content=existing, media_type="application/json", status_code=200)
+
+
+def persist_idempotency_response(request: Request, response_payload: dict) -> None:
+    key = request.headers.get("Idempotency-Key")
+    if not key:
+        return
+    request.app.state.engine_state.processing_store.store_idempotency_response(
+        key,
+        json.dumps(response_payload, sort_keys=True),
+        ttl_hours=request.app.state.engine_state.settings.idempotency_ttl_hours,
+    )
 
 
 ApiKeyDependency = Depends(verify_api_key)

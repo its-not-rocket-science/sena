@@ -60,6 +60,25 @@ class SharedSecretJiraWebhookVerifier:
             raise JiraIntegrationError("invalid webhook signature")
 
 
+
+
+class RotatingSharedSecretJiraWebhookVerifier:
+    def __init__(
+        self, secrets: tuple[str, ...], signature_header: str = "x-sena-signature"
+    ) -> None:
+        self._secrets = tuple(secret.encode("utf-8") for secret in secrets if secret)
+        self._signature_header = signature_header.lower()
+
+    def verify(self, *, headers: dict[str, str], raw_body: bytes) -> None:
+        provided = headers.get(self._signature_header, "")
+        if not provided:
+            raise JiraIntegrationError("missing webhook signature")
+        for secret in self._secrets:
+            expected = hmac.new(secret, raw_body, hashlib.sha256).hexdigest()
+            if hmac.compare_digest(provided, expected):
+                return
+        raise JiraIntegrationError("invalid webhook signature")
+
 class JiraIdempotencyStore(Protocol):
     def mark_if_new(self, delivery_id: str) -> bool: ...
 
@@ -183,7 +202,7 @@ class JiraConnector(Connector):
 
     def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:
         issue_key = payload.request_id or "unknown"
-        message = f"SENA decision={payload.summary} decision_id={payload.decision_id} rules={','.join(payload.matched_rule_ids)}"
+        message = f"SENA decision={payload.summary} decision_id={payload.decision_id} merkle_proof={payload.merkle_proof or 'na'} rules={','.join(payload.matched_rule_ids)}"
         mode = self._config.outbound.mode
         results: list[dict[str, Any]] = []
         errors: list[str] = []

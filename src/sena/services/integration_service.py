@@ -99,6 +99,7 @@ class IntegrationService:
                     item["rule_id"] for item in decision["matched_rules"]
                 ],
                 summary=decision["summary"],
+                merkle_proof=decision.get("decision_hash"),
             )
         )
         return {
@@ -158,6 +159,7 @@ class IntegrationService:
                     item["rule_id"] for item in decision["matched_rules"]
                 ],
                 summary=decision["summary"],
+                merkle_proof=decision.get("decision_hash"),
             )
         )
         return {

@@ -136,6 +136,17 @@ def build_app(state):
 
     app.include_router(api_v1)
 
+    @app.on_event("startup")
+    async def _startup_dlq_worker() -> None:
+        if state.dlq_worker is not None:
+            state.dlq_worker.start()
+
+    @app.on_event("shutdown")
+    async def _shutdown_dlq_worker() -> None:
+        if state.dlq_worker is not None:
+            state.dlq_worker.stop()
+
+
     deprecation_date = "2026-04-01"
     deprecation_message = (
         "Unversioned API routes are deprecated and removed. Use versioned /v1 routes."
