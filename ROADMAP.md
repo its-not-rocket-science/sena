@@ -1,42 +1,165 @@
-# SENA Roadmap (Alpha → Pilot-Ready)
+# SENA Roadmap: Deterministic Audit Trail for AI Agent Approvals
 
-## Product narrative anchor
+## Strategic pivot (April 3, 2026)
 
-SENA’s primary wedge is **deterministic policy decisioning for AI-assisted approval workflows, with Jira + ServiceNow as the supported integration pair**.
+SENA is pivoting from a broad "policy engine for enterprise workflows" to a focused wedge:
 
-## Current state (April 2, 2026)
+> **Deterministic audit trail for AI agent approvals with cryptographically verifiable, replayable decision traces.**
 
-- Stage: **Alpha**
-- Supported integrations: Jira + ServiceNow
-- Experimental integrations: generic webhook + Slack interactions
-- Focus: deterministic evaluation, release evidence, and normalized cross-system policy portability
+The near-term product is **not** a generic policy platform and **not** a broad integration marketplace. It is one complete, high-trust approval workflow that proves AI-generated actions can be approved (or blocked) with evidence that can be independently verified.
 
-## Top 3 roadmap priorities
+## Why this is different (VC narrative)
 
-### 1) Productize Jira + ServiceNow depth
-- Expand fixture packs and mapping validation for realistic partner workflows.
-- Improve failure-mode coverage for unsupported events, missing required fields, and duplicate deliveries.
-- Publish tighter design-partner runbooks for onboarding and operations.
+Most governance tools answer: **"what decision did the engine return?"**
+SENA answers: **"can any third party verify exactly how and why that decision happened, and prove it has not been tampered with?"**
 
-### 2) Make policy promotion governance enforceable
-- Require simulation-backed gates for candidate→active promotion.
-- Standardize promotion evidence artifacts (diff, simulation deltas, provenance).
-- Add explicit break-glass behavior with auditable annotations.
+### Competitive differentiation
 
-### 3) Reach pilot-ready operational baseline
-- Harden persistence and migration reliability for bundle lifecycle state.
-- Add repeatable audit-chain recovery and verification drills.
-- Improve deployment/observability guidance for controlled pilot environments.
+- **OPA and similar policy evaluators** provide policy decisions but do not provide a cryptographically linked approval evidence chain designed for external verification and replay.
+- **AI guardrails platforms** focus on model behavior constraints and content/runtime safety, not deterministic approval workflows with audit-chain verification.
+- **SENA’s wedge** is the combination of:
+  1. deterministic approval evaluation,
+  2. hash-linked decision traces,
+  3. replayable evidence artifacts,
+  4. API-level proof verification for any decision.
 
-## Explicit non-goals (this phase)
+If we execute this wedge, SENA becomes the trust layer for AI agents proposing real infrastructure changes.
 
-- Building a broad connector marketplace before Jira + ServiceNow depth goals are met.
-- Positioning SENA as a generalized AI safety platform.
-- Claiming formal verification guarantees.
-- Shipping a full enterprise control plane (multi-tenant OIDC/RBAC admin UX) in this alpha cycle.
+## Product focus for next 30 days
 
-## Exit criteria to call SENA “pilot-ready”
+### One complete MVP workflow (investor demo)
 
-- 2–3 design-partner workflows on Jira/ServiceNow are repeatable with documented runbooks.
-- Promotions to active policy bundles are gated by deterministic evidence.
-- Operational recovery drills (audit verification + persistence restore) pass in CI and docs runbooks.
+**Target workflow:** AI change request approval for Kubernetes.
+
+1. An LLM agent proposes a Kubernetes change request.
+2. SENA receives the request via one production-quality connector.
+3. SENA evaluates deterministic policy and returns `APPROVED` / `BLOCKED` / `ESCALATE_FOR_HUMAN_REVIEW`.
+4. SENA records a hash-linked decision trace.
+5. Verifier endpoint returns Merkle proof for the decision so a third party can validate chain integrity and lineage.
+
+Success criterion for demo: an investor can watch a change request move from AI proposal to verifiable approval artifact in minutes, then independently validate proof data.
+
+## 30-day execution plan (week-by-week)
+
+## Week 1 (Days 1-7): Foundation integrity hardening
+
+### Priority 1 (must-have)
+
+- Enforce robust idempotency-key contracts on approval ingestion paths.
+- Add/standardize webhook signature verification where applicable on supported approval entrypoints.
+- Fail closed on missing/invalid signature when signature is configured as required.
+- Normalize deterministic duplicate-delivery behavior in evidence output.
+
+### Deliverables
+
+- Idempotency + signature verification acceptance tests.
+- Deterministic error contracts for signature and duplicate-delivery paths.
+- Updated runbook for secure webhook onboarding.
+
+### Milestone 1 (alpha, day 7)
+
+**Verifiable decision trace for ANY approval** with deterministic ingestion guarantees.
+
+### Week 1 success metrics
+
+- 100% of supported approval ingestion endpoints enforce idempotency-key handling.
+- 100% of signed webhook paths verify signatures and reject invalid requests.
+- Replay of identical payload + policy bundle yields bit-for-bit stable decision evidence.
+
+## Week 2 (Days 8-14): Verifier proof API + K8s path integration
+
+### Priority 2 (must-have)
+
+- Implement `GET/POST /v1/audit/verify/tree` (exact method to finalize in API review) returning:
+  - decision hash,
+  - Merkle inclusion proof,
+  - chain head/anchor metadata,
+  - verification status and failure reasons.
+- Add deterministic proof schema and CLI verification helper.
+- Start single production-quality Kubernetes workflow connector path.
+
+### Deliverables
+
+- `/v1/audit/verify/tree` endpoint with stable schema and tests.
+- End-to-end proof verification example for one decision ID.
+- K8s connector skeleton integrated with evaluation + audit pipeline.
+
+### Milestone 2 (demo, day 14)
+
+**Kubernetes admission-controller flow + audit verification proof available end-to-end.**
+
+### Week 2 success metrics
+
+- Verifier endpoint produces proofs for 100% of new decisions.
+- External verifier script can validate proof without internal DB access.
+- Kubernetes demo path runs deterministically in local/staging replay.
+
+## Week 3 (Days 15-21): Production-quality single connector
+
+### Priority 3 (must-have)
+
+- Build **one** connector to production quality (recommended: Kubernetes admission webhook).
+- Harden connector for retries, duplicate delivery, timeout budgets, and clear operator errors.
+- Ship deterministic fixture pack for the connector’s key failure modes.
+
+### Explicit de-prioritization during this window
+
+- No second first-class connector.
+- ServiceNow/Jira remain example integrations, not the GTM centerpiece.
+
+### Week 3 success metrics
+
+- Connector SLA and retry behavior documented and tested.
+- p95 decision latency within demo target budget (define and enforce in CI smoke checks).
+- Zero nondeterministic test failures across repeated replay runs.
+
+## Week 4 (Days 22-30): Investor demo packaging + partner traction
+
+### Packaging objectives
+
+- Build investor-ready demo script: AI-proposed K8s change → SENA decision → cryptographic proof verification.
+- Publish "trust demo" artifacts bundle (request, decision, trace, proof, replay output).
+- Prepare design-partner onboarding kit focused on verification endpoint adoption.
+
+### Milestone 3 (traction, day 30)
+
+**Three design partners actively using audit verification endpoint (`/v1/audit/verify` + tree proof endpoint) in pilot workflows.**
+
+### Week 4 success metrics
+
+- 3 design partners complete at least one verified approval flow.
+- 1-click demo script executes successfully in staging environment.
+- Investor deck includes proof-of-verifiability claims backed by reproducible artifacts.
+
+## Priority stack (in order)
+
+1. **Priority 1 (Week 1-2):** Idempotency keys + webhook signature verification.
+2. **Priority 2 (Week 2-3):** `/v1/audit/verify/tree` Merkle proof endpoint.
+3. **Priority 3 (Week 3-4):** One production-quality connector (Kubernetes webhook preferred).
+
+## Explicit deferrals (post-traction)
+
+These are important but intentionally deferred until wedge validation:
+
+- Multi-tenancy control plane expansion.
+- OIDC/RBAC enterprise identity integration.
+- Horizontal scaling and distributed control-plane optimization.
+- Policy authoring UI (CLI-first delivery remains the execution path).
+
+## Messaging and positioning updates
+
+Use this language consistently:
+
+- **Primary phrase:** deterministic audit for AI agents.
+- **Do not lead with:** "AI-assisted policy engine".
+- **Do not position as:** general guardrails platform.
+- **Integrations framing:** Kubernetes approval flow is the flagship; Jira/ServiceNow are example integrations.
+
+## Investor-facing proof points to track weekly
+
+- Count of decisions with valid cryptographic proof.
+- Mean time to independently verify a decision trace.
+- Deterministic replay match rate.
+- Number of partner workflows using verification APIs.
+
+If these trend up while failure rates stay flat, SENA demonstrates a defensible trust moat instead of just another policy evaluator.
