@@ -36,6 +36,9 @@ class ApiMetrics:
     def observe_verification_result(self, *, valid: bool) -> None:
         self.traction.observe_verification_result(valid=valid)
 
+    def observe_audit_verification_passed(self, *, passed: bool) -> None:
+        self.traction.observe_audit_verification_passed(passed=passed)
+
     def observe_active_policies(self, *, count: int) -> None:
         self.traction.observe_active_policies(count=count)
 

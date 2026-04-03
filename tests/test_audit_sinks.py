@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from sena.audit.chain import append_audit_record, verify_audit_chain
+from sena.audit.legal_hold import hold_store_from_audit_path
 from sena.audit.archive import (
     create_audit_archive,
     restore_audit_archive,
@@ -269,8 +270,20 @@ def test_restore_archive_reverifies_cleanly(tmp_path) -> None:
     )
     assert restored["verify"]["valid"] is True
 
-    restored_verify = verify_audit_chain(str(tmp_path / "restore" / "audit.jsonl"))
-    assert restored_verify["valid"] is True
+
+def test_rotation_blocked_when_legal_hold_is_present(tmp_path) -> None:
+    sink_path = tmp_path / "audit.jsonl"
+    sink = JsonlFileAuditSink(
+        path=str(sink_path), rotation=RotationPolicy(max_file_bytes=250)
+    )
+    append_audit_record(sink, {"decision_id": "held-1", "outcome": "APPROVED"})
+    hold_store = hold_store_from_audit_path(str(sink_path))
+    assert hold_store is not None
+    hold_store.create_hold("held-1")
+
+    with pytest.raises(AuditSinkError, match="legal"):
+        for i in range(6):
+            append_audit_record(sink, {"decision_id": f"d{i}", "outcome": "APPROVED"})
 
 
 def test_archived_chain_detects_missing_segment(tmp_path) -> None:
