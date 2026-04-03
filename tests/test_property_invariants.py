@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 hypothesis = pytest.importorskip("hypothesis")
-from hypothesis import given, settings  # noqa: E402
+from hypothesis import HealthCheck, given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
 from sena.audit.chain import compute_chain_hash  # noqa: E402
@@ -51,7 +51,10 @@ def test_audit_chain_hash_is_stable(record: dict[str, object]) -> None:
     assert first == second
 
 
-@settings(max_examples=50)
+@settings(
+    max_examples=50,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 @given(raw=st.text(min_size=1, max_size=80))
 def test_parser_stability_for_malformed_payloads(raw: str, tmp_path) -> None:
     policy_file = tmp_path / "fuzz.yaml"

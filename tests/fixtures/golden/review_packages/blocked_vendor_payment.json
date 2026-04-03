@@ -202,7 +202,7 @@
     "lifecycle": "candidate",
     "schema_version": "1",
     "integrity_sha256": "b19d962c26b4c723bf4a118e5bf891cf16fe085f4b25e67b1272afedd1e50770",
-    "loaded_from": "/workspace/sena/src/sena/examples/policies"
+    "loaded_from": "<loaded_from>"
   },
   "audit_identifiers": {
     "request_id": "req-review-block",
