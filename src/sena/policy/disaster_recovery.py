@@ -49,6 +49,32 @@ def _sqlite_integrity_check(db_path: Path) -> dict[str, Any]:
     return {"ok": ok, "result": row[0] if row else None}
 
 
+def _sqlite_quick_check(db_path: Path) -> dict[str, Any]:
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute("PRAGMA quick_check").fetchone()
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as exc:
+        return {"ok": False, "result": str(exc)}
+    ok = row is not None and row[0] == "ok"
+    return {"ok": ok, "result": row[0] if row else None}
+
+
+def _sqlite_foreign_key_check(db_path: Path) -> dict[str, Any]:
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            rows = conn.execute("PRAGMA foreign_key_check").fetchall()
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as exc:
+        return {"ok": False, "violations": [str(exc)]}
+    violations = [tuple(row) for row in rows]
+    return {"ok": not violations, "violations": violations}
+
+
 def _bundle_digest_from_rule_hashes(rule_hashes: list[str]) -> str:
     canonical = json.dumps(sorted(rule_hashes), separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -189,6 +215,8 @@ def create_policy_registry_backup(
         output_db_path.suffix + ".manifest.json"
     )
     integrity = _sqlite_integrity_check(output_db_path)
+    quick_check = _sqlite_quick_check(output_db_path)
+    fk_check = _sqlite_foreign_key_check(output_db_path)
     manifest = {
         "schema_version": "1",
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -196,6 +224,8 @@ def create_policy_registry_backup(
         "backup_db_path": str(output_db_path),
         "backup_db_sha256": _sha256_file(output_db_path),
         "backup_db_integrity": integrity,
+        "backup_db_quick_check": quick_check,
+        "backup_db_foreign_keys": fk_check,
         "backup_audit_path": str(backup_audit_path) if backup_audit_path else None,
         "backup_audit_sha256": _sha256_file(backup_audit_path)
         if backup_audit_path
@@ -223,6 +253,12 @@ def verify_restored_registry(
     checks["db_integrity"] = _sqlite_integrity_check(sqlite_path)
     if not checks["db_integrity"]["ok"]:
         errors.append("sqlite integrity check failed")
+    checks["db_quick_check"] = _sqlite_quick_check(sqlite_path)
+    if not checks["db_quick_check"]["ok"]:
+        errors.append("sqlite quick_check failed")
+    checks["foreign_key_check"] = _sqlite_foreign_key_check(sqlite_path)
+    if not checks["foreign_key_check"]["ok"]:
+        errors.append("sqlite foreign key check failed")
 
     bundle_checks, bundle_errors = _verify_bundle_integrity(
         sqlite_path, active_only=active_only

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sena.audit.chain import compute_chain_hash
+from sena.audit.chain import compute_chain_hash, verify_audit_chain
 from sena.audit.sinks import JsonlFileAuditSink
 
 
@@ -266,8 +266,16 @@ def restore_audit_archive(
     (restore_sink.parent / f"{restore_sink.name}.manifest.json").write_text(
         json.dumps(restored_manifest, indent=2, sort_keys=True), encoding="utf-8"
     )
+    verify_result = verify_audit_chain(str(restore_sink))
+    if not verify_result.get("valid", False):
+        raise ValueError("Restored audit chain failed verification")
     return {
         "restored_audit_path": str(restore_sink),
         "records": records,
         "head": archive.get("head_hash"),
+        "verify": {
+            "valid": verify_result.get("valid", False),
+            "records": verify_result.get("records"),
+            "head": verify_result.get("head"),
+        },
     }

@@ -3,7 +3,9 @@ import json
 from sena.core.models import PolicyBundleMetadata
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.policy.lifecycle import (
+    PromotionGatePolicy,
     diff_rule_sets,
+    evaluate_promotion_gate,
     validate_lifecycle_transition,
     validate_promotion,
 )
@@ -113,3 +115,20 @@ def test_simulation_impact_changes_are_reported() -> None:
     assert report["grouped_changes"]["source_system"]["jira"]["total"] == 1
     assert report["grouped_changes"]["source_system"]["servicenow"]["total"] == 1
     assert json.dumps(report)
+
+
+def test_promotion_gate_rejects_malformed_simulation_report() -> None:
+    failures = evaluate_promotion_gate(
+        target_lifecycle="active",
+        validation_artifact="CAB-1",
+        simulation_report={
+            "total_scenarios": 2,
+            "changed_scenarios": 1,
+            "changes": [{"scenario_id": "s-1", "before_outcome": "APPROVED"}],
+        },
+        break_glass=False,
+        break_glass_reason=None,
+        policy=PromotionGatePolicy(),
+    )
+    assert failures
+    assert any(item.code == "invalid_simulation_report" for item in failures)

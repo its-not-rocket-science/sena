@@ -1,6 +1,6 @@
 # SENA
 
-SENA is an **alpha deterministic policy control plane for AI-assisted enterprise approval workflows**.
+SENA is an **alpha deterministic policy-enforcement engine for AI-assisted enterprise approval workflows**.
 
 ## Primary wedge (what to remember)
 
@@ -67,8 +67,8 @@ Not yet pilot-ready by default:
 ## Top 3 roadmap priorities
 
 1. Harden Jira + ServiceNow production runbooks and fixture coverage.
-2. Enforce promotion gates with simulation-backed release evidence.
-3. Raise operational maturity for pilot readiness (persistence durability, audit recovery drills, deployment hardening).
+2. Enforce fail-closed active promotion gates with required simulation and evidence artifacts.
+3. Raise operational maturity for pilot readiness (SQLite durability, restore drills, audit archive recovery verification).
 
 ## Supported product path
 
@@ -112,6 +112,7 @@ Define and verify "good enough for pilot" using:
 
 - Criteria + checklist: `docs/PILOT_ACCEPTANCE.md`
 - Reproducible evidence command: `make pilot-evidence`
+- End-to-end integration pack command: `make pilot-integration-pack`
 - Sample committed bundle: `docs/examples/pilot_evidence_sample/`
 
 ## Failure-mode coverage matrix

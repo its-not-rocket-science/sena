@@ -77,6 +77,7 @@ def test_repository_contract_register_promote_and_history(tmp_path) -> None:
         promoted_by="contract-user",
         promotion_reason="approved",
         validation_artifact="CAB-42",
+        evidence_json='{"simulation":"ok"}',
     )
 
     active = repo.get_active_bundle(metadata.bundle_name)

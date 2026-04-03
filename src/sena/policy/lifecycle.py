@@ -45,6 +45,127 @@ class PromotionGatePolicy:
     break_glass_enabled: bool = True
 
 
+def _parse_non_negative_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if not isinstance(value, int):
+        return None
+    if value < 0:
+        return None
+    return value
+
+
+def validate_simulation_report(simulation_report: dict[str, Any]) -> list[PromotionFailure]:
+    failures: list[PromotionFailure] = []
+    total_scenarios = _parse_non_negative_int(simulation_report.get("total_scenarios"))
+    changed_scenarios = _parse_non_negative_int(
+        simulation_report.get("changed_scenarios")
+    )
+    changes = simulation_report.get("changes")
+
+    if total_scenarios is None:
+        failures.append(
+            PromotionFailure(
+                code="invalid_simulation_report",
+                message="simulation report must include non-negative integer total_scenarios",
+            )
+        )
+    if changed_scenarios is None:
+        failures.append(
+            PromotionFailure(
+                code="invalid_simulation_report",
+                message="simulation report must include non-negative integer changed_scenarios",
+            )
+        )
+    if not isinstance(changes, list):
+        failures.append(
+            PromotionFailure(
+                code="invalid_simulation_report",
+                message="simulation report must include changes as a list",
+            )
+        )
+        return failures
+    if not changes:
+        failures.append(
+            PromotionFailure(
+                code="invalid_simulation_report",
+                message="simulation report must include at least one scenario change entry",
+            )
+        )
+        return failures
+
+    scenario_ids: set[str] = set()
+    for index, item in enumerate(changes, start=1):
+        if not isinstance(item, dict):
+            failures.append(
+                PromotionFailure(
+                    code="invalid_simulation_report",
+                    message=f"simulation changes[{index}] must be an object",
+                )
+            )
+            continue
+        scenario_id = str(item.get("scenario_id") or "").strip()
+        before_outcome = str(item.get("before_outcome") or "").strip()
+        after_outcome = str(item.get("after_outcome") or "").strip()
+        if not scenario_id:
+            failures.append(
+                PromotionFailure(
+                    code="invalid_simulation_report",
+                    message=f"simulation changes[{index}] is missing scenario_id",
+                )
+            )
+            continue
+        if scenario_id in scenario_ids:
+            failures.append(
+                PromotionFailure(
+                    code="invalid_simulation_report",
+                    message=f"simulation report contains duplicate scenario_id '{scenario_id}'",
+                )
+            )
+        scenario_ids.add(scenario_id)
+        if not before_outcome or not after_outcome:
+            failures.append(
+                PromotionFailure(
+                    code="invalid_simulation_report",
+                    message=f"simulation changes[{index}] must include before_outcome and after_outcome",
+                )
+            )
+
+    if (
+        total_scenarios is not None
+        and total_scenarios > 0
+        and len(scenario_ids) != total_scenarios
+    ):
+        failures.append(
+            PromotionFailure(
+                code="invalid_simulation_report",
+                message="simulation report total_scenarios does not match unique scenario entries",
+                details={
+                    "total_scenarios": total_scenarios,
+                    "unique_scenarios": len(scenario_ids),
+                },
+            )
+        )
+    if (
+        total_scenarios is not None
+        and changed_scenarios is not None
+        and changed_scenarios > total_scenarios
+    ):
+        failures.append(
+            PromotionFailure(
+                code="invalid_simulation_report",
+                message="simulation report changed_scenarios exceeds total_scenarios",
+                details={
+                    "total_scenarios": total_scenarios,
+                    "changed_scenarios": changed_scenarios,
+                },
+            )
+        )
+    return failures
+
+
 def validate_lifecycle_transition(
     source_lifecycle: str, target_lifecycle: str
 ) -> PromotionValidation:
@@ -176,6 +297,9 @@ def evaluate_promotion_gate(
         )
         return failures
     if simulation_report is None:
+        return failures
+    failures.extend(validate_simulation_report(simulation_report))
+    if failures:
         return failures
 
     observed_ids = {

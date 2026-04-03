@@ -441,6 +441,7 @@ def test_active_promotion_passes_with_validation_and_simulation_evidence(
         promoted_by="ops",
         promotion_reason="go",
         validation_artifact="CAB-1",
+        evidence_json='{"simulation":"ok"}',
     )
 
     metadata.version = "2026.99"
@@ -501,6 +502,7 @@ def test_active_promotion_threshold_failure_and_break_glass_history(tmp_path) ->
         promoted_by="ops",
         promotion_reason="go",
         validation_artifact="CAB-1",
+        evidence_json='{"simulation":"ok"}',
     )
 
     metadata.version = "2026.05"
@@ -1292,6 +1294,7 @@ def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
         promoted_by="ops",
         promotion_reason="go",
         validation_artifact="CAB-1",
+        evidence_json='{"simulation":"ok"}',
     )
 
     metadata.version = "2026.04"
@@ -1306,6 +1309,7 @@ def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
         promoted_by="ops",
         promotion_reason="go",
         validation_artifact="CAB-2",
+        evidence_json='{"simulation":"ok"}',
     )
 
     app = create_app(
