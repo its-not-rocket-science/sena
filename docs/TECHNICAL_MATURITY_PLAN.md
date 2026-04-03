@@ -32,13 +32,13 @@ Not yet pilot-ready by default:
 - Publish design-partner runbooks that avoid source-code archaeology.
 
 ### 2) Promotion governance gates
-- Enforce simulation-backed promotion checks for candidate→active.
-- Require promotion evidence artifacts (diff + scenario deltas + provenance).
+- Enforce fail-closed simulation-backed promotion checks for candidate→active.
+- Require promotion evidence artifacts (diff + scenario deltas + provenance digest).
 - Support explicit break-glass promotion with auditable reason capture.
 
 ### 3) Operational trust baseline
-- Improve persistence durability and migration safety.
-- Add backup/restore + audit verification drills as repeatable runbooks.
+- Improve SQLite persistence durability and migration safety.
+- Add backup/restore + audit archive verification drills as repeatable runbooks.
 - Tighten deployment hardening and observability guidance.
 
 ## Explicit non-goals (this phase)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import json
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -165,6 +166,19 @@ class BundleService:
             )
 
         try:
+            evidence_payload = {
+                "simulation_report": simulation_report,
+                "thresholds": payload.thresholds.model_dump()
+                if payload.thresholds
+                else {},
+                "threshold_errors": threshold_errors,
+                "promotion_gate_failures": [item.__dict__ for item in gate_failures],
+                "break_glass_reason": payload.break_glass_reason,
+            }
+            evidence_canonical = json.dumps(evidence_payload, sort_keys=True)
+            evidence_payload["evidence_sha256"] = hashlib.sha256(
+                evidence_canonical.encode("utf-8")
+            ).hexdigest()
             self.policy_repo.transition_bundle(
                 payload.bundle_id,
                 payload.target_lifecycle,
@@ -174,20 +188,7 @@ class BundleService:
                 else f"[BREAK_GLASS] {payload.promotion_reason}",
                 validation_artifact=payload.validation_artifact,
                 policy_diff_summary=json.dumps(policy_diff, sort_keys=True),
-                evidence_json=json.dumps(
-                    {
-                        "simulation_report": simulation_report,
-                        "thresholds": payload.thresholds.model_dump()
-                        if payload.thresholds
-                        else {},
-                        "threshold_errors": threshold_errors,
-                        "promotion_gate_failures": [
-                            item.__dict__ for item in gate_failures
-                        ],
-                        "break_glass_reason": payload.break_glass_reason,
-                    },
-                    sort_keys=True,
-                ),
+                evidence_json=json.dumps(evidence_payload, sort_keys=True),
                 break_glass=payload.break_glass,
                 audit_marker="break_glass_promotion"
                 if payload.break_glass

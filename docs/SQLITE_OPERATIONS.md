@@ -80,6 +80,8 @@ python -m sena.cli.main registry --sqlite-path /tmp/drill/restored.db \
 - Lock contention surfaces policy-domain conflict errors (`PolicyBundleConflictError`) rather than raw sqlite exceptions.
 - Restore verification fails if:
   - `PRAGMA integrity_check` fails,
+  - `PRAGMA quick_check` fails,
+  - `PRAGMA foreign_key_check` reports violations,
   - any active bundle is missing rules,
   - bundle digest/hash validation fails,
   - single-active-bundle invariant is violated,

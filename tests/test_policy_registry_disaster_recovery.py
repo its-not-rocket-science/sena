@@ -36,6 +36,7 @@ def _create_active_registry(db_path, *, version: str = "2026.04.1") -> tuple[str
         promoted_by="dr-test",
         promotion_reason="activate",
         validation_artifact="CAB-DR-1",
+        evidence_json='{"simulation":"ok"}',
     )
     return metadata.bundle_name, bundle_id
 
@@ -66,6 +67,8 @@ def test_restore_valid_backup(tmp_path) -> None:
 
     assert result.valid is True
     assert result.checks["db_integrity"]["ok"] is True
+    assert result.checks["db_quick_check"]["ok"] is True
+    assert result.checks["foreign_key_check"]["ok"] is True
     assert result.checks["audit_chain"]["valid"] is True
     assert (
         result.checks["active_bundle_validation"]["bundles_checked"][0]["rules_present"]

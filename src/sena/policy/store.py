@@ -324,10 +324,14 @@ class SQLitePolicyBundleRepository:
                         f"invalid lifecycle transition '{source}' -> '{target_lifecycle}'"
                     )
                 if target_lifecycle == "active" and not (
-                    validation_artifact or evidence_json or break_glass
+                    validation_artifact or break_glass
                 ):
                     raise PolicyBundleInvalidTransitionError(
-                        "promotion to active requires validation_artifact or evidence_json unless break_glass is set"
+                        "promotion to active requires validation_artifact unless break_glass is set"
+                    )
+                if target_lifecycle == "active" and not (evidence_json or break_glass):
+                    raise PolicyBundleInvalidTransitionError(
+                        "promotion to active requires evidence_json unless break_glass is set"
                     )
 
                 replaced_bundle_id: int | None = None

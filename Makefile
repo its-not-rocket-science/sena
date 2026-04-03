@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence
+.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack
 
 install:
 	pip install -e .
@@ -34,3 +34,6 @@ bump-version:
 
 pilot-evidence:
 	PYTHONPATH=src python scripts/generate_pilot_evidence.py --output-dir docs/examples/pilot_evidence_sample --clean
+
+pilot-integration-pack:
+	PYTHONPATH=src python scripts/generate_integration_pilot_pack.py --output-dir docs/examples/pilot_integration_pack --clean

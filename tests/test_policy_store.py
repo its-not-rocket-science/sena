@@ -39,6 +39,7 @@ def test_sqlite_repository_register_activate_history_and_fetch(tmp_path) -> None
         promoted_by="bob",
         promotion_reason="cab approved",
         validation_artifact="CAB-1",
+        evidence_json='{"simulation":"ok"}',
     )
 
     active = repo.get_active_bundle(metadata.bundle_name)
@@ -83,6 +84,14 @@ def test_invalid_transition_and_active_validation_artifact_required(tmp_path) ->
         repo.transition_bundle(
             bundle_id, "active", promoted_by="x", promotion_reason="no artifact"
         )
+    with pytest.raises(PolicyBundleInvalidTransitionError, match="evidence_json"):
+        repo.transition_bundle(
+            bundle_id,
+            "active",
+            promoted_by="x",
+            promotion_reason="no evidence",
+            validation_artifact="CAB-1",
+        )
 
 
 def test_rollback_to_previous_active(tmp_path) -> None:
@@ -114,6 +123,7 @@ def test_rollback_to_previous_active(tmp_path) -> None:
         promoted_by="ops",
         promotion_reason="go",
         validation_artifact="CAB-1",
+        evidence_json='{"simulation":"ok"}',
     )
 
     id2 = repo.register_bundle(second, rules)
@@ -126,6 +136,7 @@ def test_rollback_to_previous_active(tmp_path) -> None:
         promoted_by="ops",
         promotion_reason="go",
         validation_artifact="CAB-2",
+        evidence_json='{"simulation":"ok"}',
     )
 
     repo.rollback_bundle(
@@ -219,6 +230,7 @@ def test_concurrent_promotions_preserve_single_active_invariant(tmp_path) -> Non
                 promoted_by="ops",
                 promotion_reason="promote",
                 validation_artifact=ticket,
+                evidence_json='{"simulation":"ok"}',
             )
         except Exception as exc:  # pragma: no cover - defensive for diagnostics
             errors.append(str(exc))

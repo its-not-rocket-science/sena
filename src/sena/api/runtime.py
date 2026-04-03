@@ -1,23 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from sena.api.config import ApiSettings
 from sena.api.metrics import ApiMetrics
 from sena.core.enums import DecisionOutcome
 from sena.core.models import PolicyBundleMetadata
-from sena.integrations.jira import (
-    AllowAllJiraWebhookVerifier,
-    JiraConnector,
-    SharedSecretJiraWebhookVerifier,
-    load_jira_mapping_config,
-)
-from sena.integrations.registry import build_connector_registry
-from sena.integrations.servicenow import (
-    ServiceNowConnector,
-    load_servicenow_mapping_config,
-)
-from sena.integrations.slack import SlackClient
-from sena.integrations.webhook import WebhookPayloadMapper, load_webhook_mapping_config
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.release_signing import verify_release_manifest
 from sena.policy.store import SQLitePolicyBundleRepository
@@ -62,11 +50,17 @@ class EngineState:
         self.metadata = metadata
         self.policy_repo = policy_repo
         self.metrics = ApiMetrics()
-        self.webhook_mapper: WebhookPayloadMapper | None = None
-        self.slack_client: SlackClient | None = None
-        self.connector_registry = build_connector_registry()
-        self.jira_connector: JiraConnector | None = None
-        self.servicenow_connector: ServiceNowConnector | None = None
+        self.webhook_mapper: Any | None = None
+        self.slack_client: Any | None = None
+        self.connector_registry = _build_connector_registry()
+        self.jira_connector: Any | None = None
+        self.servicenow_connector: Any | None = None
+
+
+def _build_connector_registry(**kwargs: Any) -> Any:
+    from sena.integrations.registry import build_connector_registry
+
+    return build_connector_registry(**kwargs)
 
 
 def verify_bundle_signature(
@@ -255,16 +249,30 @@ def build_runtime_state(
 ) -> EngineState:
     state = EngineState(runtime_settings, rules, metadata, policy_repo)
     if runtime_settings.webhook_mapping_config_path:
+        from sena.integrations.webhook import (
+            WebhookPayloadMapper,
+            load_webhook_mapping_config,
+        )
+
         mapping_config = load_webhook_mapping_config(
             runtime_settings.webhook_mapping_config_path
         )
         state.webhook_mapper = WebhookPayloadMapper(mapping_config)
     if runtime_settings.slack_bot_token and runtime_settings.slack_channel:
+        from sena.integrations.slack import SlackClient
+
         state.slack_client = SlackClient(
             bot_token=runtime_settings.slack_bot_token,
             default_channel=runtime_settings.slack_channel,
         )
     if runtime_settings.jira_mapping_config_path:
+        from sena.integrations.jira import (
+            AllowAllJiraWebhookVerifier,
+            JiraConnector,
+            SharedSecretJiraWebhookVerifier,
+            load_jira_mapping_config,
+        )
+
         verifier = (
             SharedSecretJiraWebhookVerifier(runtime_settings.jira_webhook_secret)
             if runtime_settings.jira_webhook_secret
@@ -276,13 +284,18 @@ def build_runtime_state(
         )
 
     if runtime_settings.servicenow_mapping_config_path:
+        from sena.integrations.servicenow import (
+            ServiceNowConnector,
+            load_servicenow_mapping_config,
+        )
+
         state.servicenow_connector = ServiceNowConnector(
             config=load_servicenow_mapping_config(
                 runtime_settings.servicenow_mapping_config_path
             )
         )
 
-    state.connector_registry = build_connector_registry(
+    state.connector_registry = _build_connector_registry(
         webhook=state.webhook_mapper,
         slack=state.slack_client,
         jira=state.jira_connector,

@@ -37,6 +37,12 @@ From repo root:
 make pilot-evidence
 ```
 
+For the combined design-partner reference + pilot benchmark integration pack:
+
+```bash
+make pilot-integration-pack
+```
+
 Equivalent direct script invocation:
 
 ```bash
@@ -52,6 +58,13 @@ PYTHONPATH=src python scripts/generate_pilot_evidence.py --output-dir docs/examp
 - `benchmark/*` (replay, audit, promotion, portability and change-impact artifacts),
 - `checks/*` (command-level evidence for API shape stability and restore drills),
 - `evidence_pack/*` (deterministic evidence-pack artifacts from reference inputs).
+
+`docs/examples/pilot_integration_pack/` contains:
+
+- `integration_pack_summary.json` (single pass/fail summary),
+- `artifacts/design_partner_reference/*` (Jira + ServiceNow reference workflow artifacts),
+- `artifacts/pilot_evidence/*` (pilot benchmark and acceptance artifacts),
+- `checks/*` (command logs and return codes).
 
 ## Pilot release decision rule
 

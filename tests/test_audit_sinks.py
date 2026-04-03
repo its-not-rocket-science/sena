@@ -264,9 +264,10 @@ def test_restore_archive_reverifies_cleanly(tmp_path) -> None:
     archive_result = create_audit_archive(
         str(tmp_path / "audit.jsonl"), str(tmp_path / "archive")
     )
-    restore_audit_archive(
+    restored = restore_audit_archive(
         archive_result["manifest_path"], str(tmp_path / "restore" / "audit.jsonl")
     )
+    assert restored["verify"]["valid"] is True
 
     restored_verify = verify_audit_chain(str(tmp_path / "restore" / "audit.jsonl"))
     assert restored_verify["valid"] is True
