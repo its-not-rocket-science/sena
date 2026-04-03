@@ -12,6 +12,8 @@ from sena.api.routes.bundles import create_bundles_router
 from sena.api.routes.evaluate import create_evaluate_router
 from sena.api.routes.health import create_health_router
 from sena.api.routes.integrations import create_integrations_router
+from sena.api.schemas import AuditTreeVerifyRequest
+from sena.services.audit_service import AuditService
 from sena.api.runtime import (
     build_api_key_roles,
     build_runtime_state,
@@ -92,6 +94,20 @@ def build_app(state):
 
             raise_api_error("audit_sink_not_configured")
         return verify_audit_chain(state.settings.audit_sink_jsonl)
+
+    @api_v1.post("/audit/verify/tree")
+    def audit_verify_tree(req: AuditTreeVerifyRequest) -> dict:
+        if not state.settings.audit_sink_jsonl:
+            from sena.api.errors import raise_api_error
+
+            raise_api_error("audit_sink_not_configured")
+
+        audit_service = AuditService(state.settings.audit_sink_jsonl)
+        return audit_service.verify_decision_merkle_proof(
+            decision_id=req.decision_id,
+            merkle_proof=req.merkle_proof,
+            expected_root=req.expected_root,
+        )
 
     @app.get("/metrics")
     def metrics() -> Response:

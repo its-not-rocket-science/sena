@@ -197,3 +197,9 @@ class BundleRollbackRequest(BaseModel):
 
 class BundleHistoryQuery(BaseModel):
     bundle_name: NonEmptyStr
+
+
+class AuditTreeVerifyRequest(BaseModel):
+    decision_id: NonEmptyStr
+    merkle_proof: list[NonEmptyStr]
+    expected_root: NonEmptyStr

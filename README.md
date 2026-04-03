@@ -163,6 +163,7 @@ Key endpoints:
 - `POST /v1/integrations/jira/webhook`
 - `POST /v1/integrations/servicenow/webhook`
 - `GET /v1/audit/verify`
+- `POST /v1/audit/verify/tree` (Merkle proof verification for a single decision)
 
 Operational audit durability guidance (local sink + archive/restore drills):
 - `docs/AUDIT_DURABILITY.md`
