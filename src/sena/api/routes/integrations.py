@@ -18,12 +18,12 @@ from sena.services.integration_service import IntegrationService
 
 
 def create_integrations_router(state: EngineState) -> APIRouter:
-    router = APIRouter()
+    router = APIRouter(tags=["integrations"], responses={400:{"description":"Bad request"},401:{"description":"Unauthorized"},403:{"description":"Forbidden"},429:{"description":"Rate limited"},500:{"description":"Server error"}})
     integration_service = IntegrationService(
         state=state, evaluation_service=state.processing_service._evaluation
     )
 
-    @router.post("/integrations/webhook")
+    @router.post("/integrations/webhook", summary="Generic webhook policy evaluation")
     def integrations_webhook(
         req: WebhookEvaluateRequest,
         request: Request,
@@ -63,7 +63,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             )
             raise_api_error("webhook_evaluation_error", details={"reason": str(exc)})
 
-    @router.post("/integrations/jira/webhook")
+    @router.post("/integrations/jira/webhook", summary="Jira webhook policy evaluation")
     async def integrations_jira_webhook(
         request: Request,
         idempotent_response: Response | None = Depends(check_idempotency_key),
@@ -142,7 +142,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             )
             raise_api_error("jira_evaluation_error", details={"reason": str(exc)})
 
-    @router.post("/integrations/servicenow/webhook")
+    @router.post("/integrations/servicenow/webhook", summary="ServiceNow webhook policy evaluation")
     async def integrations_servicenow_webhook(
         request: Request,
         strict_require_allow: bool = False,
@@ -227,18 +227,18 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             )
             raise_api_error("servicenow_evaluation_error", details={"reason": str(exc)})
 
-    @router.get("/admin/dlq")
+    @router.get("/admin/dlq", summary="List dead-letter queue items")
     def admin_dlq(limit: int = 100) -> dict:
         return {"items": state.processing_store.list_dead_letters(limit=limit)}
 
-    @router.post("/admin/dlq/retry")
+    @router.post("/admin/dlq/retry", summary="Retry dead-letter queue items")
     def admin_dlq_retry(ids: list[int] | None = None) -> dict:
         retry_count = state.processing_store.force_retry(ids)
         if state.dlq_worker is not None:
             state.dlq_worker.run_once()
         return {"retried": retry_count}
 
-    @router.post("/integrations/slack/interactions")
+    @router.post("/integrations/slack/interactions", summary="Handle Slack interactive callbacks")
     async def slack_interactions(request: Request, response: Response) -> dict:
         response.headers["x-sena-surface-stage"] = "experimental"
         try:

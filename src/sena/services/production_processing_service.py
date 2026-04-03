@@ -26,36 +26,16 @@ class ProductionProcessingService:
 
     def process_evaluate(self, payload: dict[str, Any], *, request_id: str) -> dict[str, Any]:
         req = EvaluateRequest.model_validate(payload)
-        proposal = self._evaluation.build_action_proposal(
-            action_type=req.action_type,
-            request_id=req.request_id or request_id,
-            actor_id=req.actor_id,
-            actor_role=req.actor_role,
-            attributes=req.attributes,
-            action_origin=req.action_origin,
-            ai_metadata=req.ai_metadata.model_dump() if req.ai_metadata else None,
-            autonomous_metadata=(
-                req.autonomous_metadata.model_dump() if req.autonomous_metadata else None
-            ),
-        )
+        proposal = req.to_action_proposal(request_id)
         return self._evaluation.evaluate(
             proposal=proposal,
             facts=req.facts,
             endpoint="/v1/evaluate",
-            default_decision=DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
-            if req.default_decision == "ESCALATE"
-            else DecisionOutcome(req.default_decision),
+            default_decision=req.to_default_decision(),
             strict_require_allow=req.strict_require_allow,
             notify_on_escalation=not req.dry_run,
             append_audit=not req.dry_run,
-            replay_input={
-                "action_type": req.action_type,
-                "request_id": req.request_id or request_id,
-                "actor_id": req.actor_id,
-                "actor_role": req.actor_role,
-                "attributes": req.attributes,
-                "facts": req.facts,
-            },
+            replay_input=req.to_replay_input(request_id),
         )
 
     def process_webhook(self, payload: dict[str, Any], *, request_id: str) -> dict[str, Any]:
@@ -65,9 +45,7 @@ class ProductionProcessingService:
             event_type=req.event_type,
             payload=req.payload,
             facts=req.facts,
-            default_decision=DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
-            if req.default_decision == "ESCALATE"
-            else DecisionOutcome(req.default_decision),
+            default_decision=req.to_default_decision(),
             strict_require_allow=req.strict_require_allow,
             default_request_id=request_id,
         )

@@ -62,6 +62,7 @@ from sena.policy.disaster_recovery import (
 )
 from sena.policy.store import SQLitePolicyBundleRepository
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
+from sena.schemas import EvaluatePayload
 from sena.policy.test_runner import PolicyTestRunnerError, run_policy_tests
 
 TEMPLATES_ROOT = (
@@ -167,24 +168,27 @@ def _run_evaluate(args: argparse.Namespace) -> None:
                 file=sys.stderr,
             )
 
-    proposal = ActionProposal(
-        action_type=payload["action_type"],
-        request_id=payload.get("request_id"),
-        actor_id=payload.get("actor_id"),
-        actor_role=payload.get("actor_role"),
-        attributes=payload.get("attributes", {}),
+    cli_request = EvaluatePayload.model_validate(
+        {
+            **payload,
+            "default_decision": args.default_decision,
+            "strict_require_allow": args.strict_require_allow,
+            "dry_run": bool(args.dry_run),
+        }
     )
-    facts = payload.get("facts", {})
 
+    proposal = cli_request.to_action_proposal(
+        cli_request.request_id or payload.get("request_id") or "req-cli"
+    )
     evaluator = PolicyEvaluator(
         rules,
         policy_bundle=metadata,
         config=EvaluatorConfig(
-            default_decision=parse_default_decision(args.default_decision),
-            require_allow_match=args.strict_require_allow,
+            default_decision=cli_request.to_default_decision(),
+            require_allow_match=cli_request.strict_require_allow,
         ),
     )
-    trace = evaluator.evaluate(proposal, facts)
+    trace = evaluator.evaluate(proposal, cli_request.facts)
 
     if args.review_package:
         payload = build_decision_review_package(trace)

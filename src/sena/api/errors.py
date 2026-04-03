@@ -1,9 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import HTTPException
+from pydantic import BaseModel, Field
+
+
+class SenaErrorResponse(BaseModel):
+    error_code: str = Field(description="Stable machine-readable error code.")
+    message: str = Field(description="Human-readable explanation of the failure.")
+    request_id: str = Field(description="Request identifier from middleware tracing.")
+    timestamp: datetime = Field(
+        description="UTC timestamp for when the API generated this error."
+    )
+    details: dict[str, Any] | None = Field(
+        default=None, description="Optional structured context for debugging."
+    )
 
 
 @dataclass(frozen=True)
@@ -39,6 +52,8 @@ ERROR_CODE_CATALOG: dict[str, ErrorCatalogEntry] = {
         400, "Bundle signature verification failed."
     ),
     "evaluation_error": ErrorCatalogEntry(400, "Evaluation failed."),
+    "audit_write_failed": ErrorCatalogEntry(500, "Audit write failed."),
+    "invalid_policy": ErrorCatalogEntry(400, "Policy is invalid."),
     "webhook_mapping_not_configured": ErrorCatalogEntry(
         400, "Webhook mapping config is not set."
     ),
@@ -93,6 +108,25 @@ ERROR_CODE_CATALOG: dict[str, ErrorCatalogEntry] = {
 }
 
 
+def build_error_response(
+    *,
+    code: str,
+    message: str,
+    request_id: str,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = SenaErrorResponse(
+        error_code=code.upper(),
+        message=message,
+        request_id=request_id,
+        timestamp=datetime.now(timezone.utc),
+        details=details,
+    )
+    body = payload.model_dump(mode="json", exclude_none=True)
+    body["code"] = code
+    return {"error": body}
+
+
 def raise_api_error(
     code: str,
     *,
@@ -114,4 +148,8 @@ def raise_api_error(
     detail: dict[str, Any] = {"code": code, "message": resolved_message}
     if details is not None:
         detail["details"] = details
+    try:
+        from fastapi import HTTPException  # type: ignore
+    except ModuleNotFoundError as exc:  # pragma: no cover
+        raise RuntimeError("FastAPI is required to raise API HTTP errors") from exc
     raise HTTPException(status_code=resolved_status, detail=detail)

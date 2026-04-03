@@ -16,9 +16,17 @@ from sena.api.schemas import (
 from sena.services.audit_service import AuditService
 from sena.services.evaluation_service import EvaluationService
 
+ERROR_RESPONSES = {
+    400: {"description": "Invalid request or evaluation failure."},
+    401: {"description": "Missing or invalid API key."},
+    403: {"description": "API key is not authorized."},
+    429: {"description": "Rate limit exceeded."},
+    500: {"description": "Unexpected server error."},
+}
+
 
 def create_evaluate_router(state: EngineState) -> APIRouter:
-    router = APIRouter()
+    router = APIRouter(tags=["evaluation"], responses=ERROR_RESPONSES)
     evaluation_service = EvaluationService(
         state=state, audit_service=AuditService(state.settings.audit_sink_jsonl)
     )
@@ -40,7 +48,11 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
             )
             raise_api_error("evaluation_error", details={"reason": str(exc)})
 
-    @router.post("/evaluate")
+    @router.post(
+        "/evaluate",
+        summary="Evaluate one action proposal",
+        description="Returns the policy decision trace for one action proposal.",
+    )
     def evaluate(
         req: EvaluateRequest,
         request: Request,
@@ -54,7 +66,11 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
         persist_idempotency_response(request, result)
         return result
 
-    @router.post("/evaluate/review-package")
+    @router.post(
+        "/evaluate/review-package",
+        summary="Evaluate and generate review package",
+        description="Runs evaluation and returns a deterministic decision-review package.",
+    )
     def evaluate_review_package(req: EvaluateRequest, request: Request) -> dict:
         try:
             proposal = evaluation_service.build_action_proposal(
@@ -79,14 +95,18 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
         except Exception as exc:  # pragma: no cover
             raise_api_error("evaluation_error", details={"reason": str(exc)})
 
-    @router.post("/evaluate/batch")
+    @router.post(
+        "/evaluate/batch",
+        summary="Evaluate a batch",
+        description="Evaluates up to 500 requests and returns ordered results.",
+    )
     def evaluate_batch(req: BatchEvaluateRequest, request: Request) -> dict:
         return {
             "count": len(req.items),
             "results": [_evaluate(item, request) for item in req.items],
         }
 
-    @router.post("/simulation")
+    @router.post("/simulation", summary="Simulate bundle impact")
     def simulation(req: SimulationRequest) -> dict:
         return evaluation_service.simulate_policy_change(
             baseline_policy_dir=req.baseline_policy_dir,
@@ -94,7 +114,7 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
             scenarios=[item.model_dump() for item in req.scenarios],
         )
 
-    @router.post("/replay/drift")
+    @router.post("/replay/drift", summary="Replay historical payloads for drift")
     def replay_drift(req: ReplayDriftRequest) -> dict:
         return evaluation_service.replay_policy_drift(
             replay_payload=req.replay_payload,
@@ -106,7 +126,7 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
             candidate_mapping_config_path=req.candidate_mapping_config_path,
         )
 
-    @router.post("/simulation/replay")
+    @router.post("/simulation/replay", summary="Replay recent audit traffic")
     def simulation_replay(req: SimulationReplayRequest) -> dict:
         window_seconds = 3600 if req.window == "last_1_hour" else 86400
         try:
