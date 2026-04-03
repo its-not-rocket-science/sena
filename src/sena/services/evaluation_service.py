@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
+from sena.api.logging import get_logger
 from sena.core.enums import ActionOrigin
 from sena.core.models import (
     AIActionMetadata,
@@ -22,6 +24,8 @@ from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.integrations.base import DecisionPayload
 from sena.policy.parser import load_policy_bundle
 from sena.services.audit_service import AuditService
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -108,9 +112,23 @@ class EvaluationService:
                 on_escalation=self._notify_slack if notify_on_escalation else None,
             ),
         )
+        started = perf_counter()
         with self.state.metrics.evaluation_timer():
             trace = evaluator.evaluate(proposal, facts)
-        self.state.metrics.observe_decision_outcome(outcome=trace.outcome.value)
+        evaluation_ms = round((perf_counter() - started) * 1000, 3)
+        policy_bundle = f"{self.state.metadata.bundle_name}:{self.state.metadata.version}"
+        self.state.metrics.observe_decision_outcome(
+            outcome=trace.outcome.value,
+            policy=policy_bundle,
+        )
+        logger.info(
+            "decision_evaluated",
+            decision_id=trace.decision_id,
+            outcome=trace.outcome.value,
+            policy_bundle=policy_bundle,
+            evaluation_ms=evaluation_ms,
+            endpoint=endpoint,
+        )
         payload = trace.to_dict()
         if append_audit:
             appended = self.audit_service.append_record(payload["audit_record"])
@@ -138,9 +156,23 @@ class EvaluationService:
                 require_allow_match=strict_require_allow,
             ),
         )
+        started = perf_counter()
         with self.state.metrics.evaluation_timer():
             trace = evaluator.evaluate(proposal, facts)
-        self.state.metrics.observe_decision_outcome(outcome=trace.outcome.value)
+        evaluation_ms = round((perf_counter() - started) * 1000, 3)
+        policy_bundle = f"{self.state.metadata.bundle_name}:{self.state.metadata.version}"
+        self.state.metrics.observe_decision_outcome(
+            outcome=trace.outcome.value,
+            policy=policy_bundle,
+        )
+        logger.info(
+            "decision_evaluated",
+            decision_id=trace.decision_id,
+            outcome=trace.outcome.value,
+            policy_bundle=policy_bundle,
+            evaluation_ms=evaluation_ms,
+            endpoint=endpoint,
+        )
         return build_decision_review_package(trace)
 
     @staticmethod

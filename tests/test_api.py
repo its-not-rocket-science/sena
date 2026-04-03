@@ -1208,9 +1208,7 @@ def test_metrics_endpoint_exposes_prometheus_metrics() -> None:
     metrics_body = metrics_response.text
     assert "request_count_total" in metrics_body
     assert "sena_decisions_total" in metrics_body
-    assert (
-        'sena_decisions_total{outcome="BLOCKED"} 1.0' in metrics_body
-    )
+    assert 'sena_decisions_total{outcome="BLOCKED",policy="enterprise-demo:2026.03"} 1.0' in metrics_body
     assert "sena_evaluation_seconds_bucket" in metrics_body
     assert "sena_audit_entries_total" in metrics_body
     assert "sena_merkle_root_timestamp" in metrics_body

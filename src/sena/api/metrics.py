@@ -3,11 +3,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
-from prometheus_client import (
-    CONTENT_TYPE_LATEST,
-    CollectorRegistry,
-    generate_latest,
-)
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
+
 from sena.monitoring.dashboard import TractionMetrics
 
 
@@ -25,8 +22,8 @@ class ApiMetrics:
             status_code=status_code,
         )
 
-    def observe_decision_outcome(self, *, outcome: str) -> None:
-        self.traction.observe_decision_outcome(outcome=outcome)
+    def observe_decision_outcome(self, *, outcome: str, policy: str) -> None:
+        self.traction.observe_decision_outcome(outcome=outcome, policy=policy)
 
     @contextmanager
     def evaluation_timer(self) -> Iterator[None]:
@@ -41,6 +38,9 @@ class ApiMetrics:
 
     def observe_audit_verification_passed(self, *, passed: bool) -> None:
         self.traction.observe_audit_verification_passed(passed=passed)
+
+    def observe_active_policies(self, *, count: int) -> None:
+        self.traction.observe_active_policies(count=count)
 
     def exposition(self) -> bytes:
         return generate_latest(self.registry)

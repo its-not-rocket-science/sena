@@ -50,6 +50,7 @@ class EngineState:
         self.metadata = metadata
         self.policy_repo = policy_repo
         self.metrics = ApiMetrics()
+        self.metrics.observe_active_policies(count=len(rules))
         self.webhook_mapper: Any | None = None
         self.slack_client: Any | None = None
         self.connector_registry = _build_connector_registry()

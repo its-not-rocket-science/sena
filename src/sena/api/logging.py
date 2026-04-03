@@ -1,25 +1,42 @@
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
+import sys
 from datetime import datetime, timezone
 from typing import Any
+
+try:  # pragma: no cover - optional dependency path
+    import structlog as _structlog
+except ModuleNotFoundError:  # pragma: no cover - default in minimal installs
+    _structlog = None
+
+_request_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "request_id", default=None
+)
 
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
+            "level": record.levelname.lower(),
+            "module": record.module,
             "message": record.getMessage(),
+            "request_id": _request_id_ctx.get(),
         }
         for field_name in (
-            "request_id",
-            "path",
             "method",
+            "path",
             "status_code",
+            "duration_ms",
             "decision_id",
+            "outcome",
+            "policy_bundle",
+            "evaluation_ms",
+            "endpoint",
+            "errors",
         ):
             if hasattr(record, field_name):
                 payload[field_name] = getattr(record, field_name)
@@ -31,7 +48,74 @@ def configure_logging(level: str = "INFO") -> None:
     if root.handlers:
         return
 
-    handler = logging.StreamHandler()
+    if _structlog is not None:
+        timestamper = _structlog.processors.TimeStamper(
+            fmt="iso", utc=True, key="timestamp"
+        )
+        shared_processors = [
+            _structlog.contextvars.merge_contextvars,
+            _structlog.stdlib.add_log_level,
+            _structlog.processors.CallsiteParameterAdder(
+                [_structlog.processors.CallsiteParameter.MODULE]
+            ),
+            timestamper,
+            _structlog.processors.EventRenamer("message"),
+        ]
+        formatter = _structlog.stdlib.ProcessorFormatter(
+            processor=_structlog.processors.JSONRenderer(),
+            foreign_pre_chain=shared_processors,
+        )
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+        root.setLevel(level)
+        _structlog.configure(
+            processors=[
+                _structlog.contextvars.merge_contextvars,
+                _structlog.stdlib.add_log_level,
+                _structlog.processors.CallsiteParameterAdder(
+                    [_structlog.processors.CallsiteParameter.MODULE]
+                ),
+                timestamper,
+                _structlog.processors.EventRenamer("message"),
+                _structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+            ],
+            logger_factory=_structlog.stdlib.LoggerFactory(),
+            cache_logger_on_first_use=True,
+        )
+        return
+
+    handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     root.addHandler(handler)
     root.setLevel(level)
+
+
+class _StdlibJsonLogger:
+    def __init__(self, name: str):
+        self._logger = logging.getLogger(name)
+
+    def info(self, event: str, **fields: Any) -> None:
+        self._logger.info(event, extra=fields)
+
+    def warning(self, event: str, **fields: Any) -> None:
+        self._logger.warning(event, extra=fields)
+
+
+def get_logger(name: str):
+    if _structlog is not None:
+        return _structlog.get_logger(name)
+    return _StdlibJsonLogger(name)
+
+
+def bind_request_context(*, request_id: str) -> None:
+    _request_id_ctx.set(request_id)
+    if _structlog is not None:
+        _structlog.contextvars.clear_contextvars()
+        _structlog.contextvars.bind_contextvars(request_id=request_id)
+
+
+def clear_request_context() -> None:
+    _request_id_ctx.set(None)
+    if _structlog is not None:
+        _structlog.contextvars.clear_contextvars()
