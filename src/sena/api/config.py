@@ -30,7 +30,10 @@ class ApiSettings:
     webhook_mapping_config_path: str | None = None
     jira_mapping_config_path: str | None = None
     jira_webhook_secret: str | None = None
+    jira_webhook_secret_previous: str | None = None
     servicenow_mapping_config_path: str | None = None
+    servicenow_webhook_secret: str | None = None
+    servicenow_webhook_secret_previous: str | None = None
     slack_bot_token: str | None = None
     slack_channel: str | None = None
     rate_limit_requests: int = 120
@@ -48,6 +51,20 @@ class ApiSettings:
     promotion_gate_max_changed_outcomes: int | None = None
     promotion_gate_max_regressions_by_outcome_type: tuple[tuple[str, int], ...] = ()
     promotion_gate_break_glass_enabled: bool = True
+    processing_sqlite_path: str = "./.sena_runtime.db"
+    idempotency_ttl_hours: int = 24
+    jira_write_back: bool = False
+    servicenow_write_back: bool = False
+    jira_base_url: str | None = None
+    jira_username: str | None = None
+    jira_api_token: str | None = None
+    jira_oauth_token: str | None = None
+    jira_transition_approved_id: str | None = None
+    jira_transition_blocked_id: str | None = None
+    servicenow_base_url: str | None = None
+    servicenow_username: str | None = None
+    servicenow_password: str | None = None
+    servicenow_oauth_token: str | None = None
 
 
 def _parse_api_keys(raw: str | None) -> tuple[tuple[str, str], ...]:
@@ -132,7 +149,10 @@ def load_settings_from_env() -> ApiSettings:
         webhook_mapping_config_path=os.getenv("SENA_WEBHOOK_MAPPING_CONFIG"),
         jira_mapping_config_path=os.getenv("SENA_JIRA_MAPPING_CONFIG"),
         jira_webhook_secret=os.getenv("SENA_JIRA_WEBHOOK_SECRET"),
+        jira_webhook_secret_previous=os.getenv("SENA_JIRA_WEBHOOK_SECRET_PREVIOUS"),
         servicenow_mapping_config_path=os.getenv("SENA_SERVICENOW_MAPPING_CONFIG"),
+        servicenow_webhook_secret=os.getenv("SENA_SERVICENOW_WEBHOOK_SECRET"),
+        servicenow_webhook_secret_previous=os.getenv("SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS"),
         slack_bot_token=os.getenv("SENA_SLACK_BOT_TOKEN"),
         slack_channel=os.getenv("SENA_SLACK_CHANNEL"),
         rate_limit_requests=_parse_int(
@@ -180,4 +200,18 @@ def load_settings_from_env() -> ApiSettings:
         promotion_gate_break_glass_enabled=_parse_bool(
             os.getenv("SENA_PROMOTION_GATE_BREAK_GLASS_ENABLED"), default=True
         ),
+        processing_sqlite_path=os.getenv("SENA_PROCESSING_SQLITE_PATH", "./.sena_runtime.db"),
+        idempotency_ttl_hours=_parse_int(os.getenv("SENA_IDEMPOTENCY_TTL_HOURS"), default=24),
+        jira_write_back=_parse_bool(os.getenv("SENA_JIRA_WRITE_BACK"), default=False),
+        servicenow_write_back=_parse_bool(os.getenv("SENA_SERVICENOW_WRITE_BACK"), default=False),
+        jira_base_url=os.getenv("SENA_JIRA_BASE_URL"),
+        jira_username=os.getenv("SENA_JIRA_USERNAME"),
+        jira_api_token=os.getenv("SENA_JIRA_API_TOKEN"),
+        jira_oauth_token=os.getenv("SENA_JIRA_OAUTH_TOKEN"),
+        jira_transition_approved_id=os.getenv("SENA_JIRA_TRANSITION_APPROVED_ID"),
+        jira_transition_blocked_id=os.getenv("SENA_JIRA_TRANSITION_BLOCKED_ID"),
+        servicenow_base_url=os.getenv("SENA_SERVICENOW_BASE_URL"),
+        servicenow_username=os.getenv("SENA_SERVICENOW_USERNAME"),
+        servicenow_password=os.getenv("SENA_SERVICENOW_PASSWORD"),
+        servicenow_oauth_token=os.getenv("SENA_SERVICENOW_OAUTH_TOKEN"),
     )

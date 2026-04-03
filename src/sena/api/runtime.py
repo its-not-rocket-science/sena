@@ -9,6 +9,8 @@ from sena.core.models import PolicyBundleMetadata
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.release_signing import verify_release_manifest
 from sena.policy.store import SQLitePolicyBundleRepository
+from sena.api.processing_store import DeadLetterWorker, ProcessingStore
+from sena.services.production_processing_service import ProductionProcessingService
 
 VALID_API_ROLES = {"admin", "policy_author", "evaluator"}
 VALID_RUNTIME_MODES = {"development", "pilot", "production"}
@@ -56,6 +58,9 @@ class EngineState:
         self.connector_registry = _build_connector_registry()
         self.jira_connector: Any | None = None
         self.servicenow_connector: Any | None = None
+        self.processing_store: ProcessingStore = ProcessingStore(settings.processing_sqlite_path)
+        self.processing_service: ProductionProcessingService | None = None
+        self.dlq_worker: DeadLetterWorker | None = None
 
 
 def _build_connector_registry(**kwargs: Any) -> Any:
@@ -226,12 +231,19 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
                 "SENA_BUNDLE_SIGNATURE_KEYRING_DIR must point to an existing directory: "
                 f"{runtime_settings.bundle_signature_keyring_dir}"
             )
-        if (
-            runtime_settings.jira_mapping_config_path
-            and not runtime_settings.jira_webhook_secret
+        if runtime_settings.jira_mapping_config_path and not (
+            runtime_settings.jira_webhook_secret
+            or runtime_settings.jira_webhook_secret_previous
         ):
             raise RuntimeError(
-                "SENA_RUNTIME_MODE=production requires SENA_JIRA_WEBHOOK_SECRET when Jira integration is enabled"
+                "SENA_RUNTIME_MODE=production requires SENA_JIRA_WEBHOOK_SECRET (or SENA_JIRA_WEBHOOK_SECRET_PREVIOUS) when Jira integration is enabled"
+            )
+        if runtime_settings.servicenow_mapping_config_path and not (
+            runtime_settings.servicenow_webhook_secret
+            or runtime_settings.servicenow_webhook_secret_previous
+        ):
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production requires SENA_SERVICENOW_WEBHOOK_SECRET (or SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS) when ServiceNow integration is enabled"
             )
     if (
         runtime_settings.audit_verify_on_startup_strict
@@ -270,32 +282,89 @@ def build_runtime_state(
         from sena.integrations.jira import (
             AllowAllJiraWebhookVerifier,
             JiraConnector,
-            SharedSecretJiraWebhookVerifier,
+            RotatingSharedSecretJiraWebhookVerifier,
             load_jira_mapping_config,
         )
 
+        jira_secrets = tuple(
+            item
+            for item in (
+                runtime_settings.jira_webhook_secret,
+                runtime_settings.jira_webhook_secret_previous,
+            )
+            if item
+        )
         verifier = (
-            SharedSecretJiraWebhookVerifier(runtime_settings.jira_webhook_secret)
-            if runtime_settings.jira_webhook_secret
+            RotatingSharedSecretJiraWebhookVerifier(jira_secrets)
+            if jira_secrets
             else AllowAllJiraWebhookVerifier()
         )
+        delivery_client = None
+        if runtime_settings.jira_write_back:
+            from sena.integrations.jira_client import JiraRestClient
+
+            delivery_client = JiraRestClient(
+                base_url=runtime_settings.jira_base_url,
+                username=runtime_settings.jira_username,
+                api_token=runtime_settings.jira_api_token,
+                oauth_token=runtime_settings.jira_oauth_token,
+                approved_transition_id=runtime_settings.jira_transition_approved_id,
+                blocked_transition_id=runtime_settings.jira_transition_blocked_id,
+            )
+
         state.jira_connector = JiraConnector(
             config=load_jira_mapping_config(runtime_settings.jira_mapping_config_path),
             verifier=verifier,
+            delivery_client=delivery_client,
         )
 
     if runtime_settings.servicenow_mapping_config_path:
         from sena.integrations.servicenow import (
+            AllowAllServiceNowWebhookVerifier,
+            RotatingSharedSecretServiceNowWebhookVerifier,
             ServiceNowConnector,
             load_servicenow_mapping_config,
         )
 
+        servicenow_secrets = tuple(
+            item
+            for item in (
+                runtime_settings.servicenow_webhook_secret,
+                runtime_settings.servicenow_webhook_secret_previous,
+            )
+            if item
+        )
+        verifier = (
+            RotatingSharedSecretServiceNowWebhookVerifier(servicenow_secrets)
+            if servicenow_secrets
+            else AllowAllServiceNowWebhookVerifier()
+        )
+        delivery_client = None
+        if runtime_settings.servicenow_write_back:
+            from sena.integrations.servicenow_client import ServiceNowRestClient
+
+            delivery_client = ServiceNowRestClient(
+                base_url=runtime_settings.servicenow_base_url,
+                username=runtime_settings.servicenow_username,
+                password=runtime_settings.servicenow_password,
+                oauth_token=runtime_settings.servicenow_oauth_token,
+            )
+
         state.servicenow_connector = ServiceNowConnector(
             config=load_servicenow_mapping_config(
                 runtime_settings.servicenow_mapping_config_path
-            )
+            ),
+            verifier=verifier,
+            delivery_client=delivery_client,
         )
 
+
+    state.processing_service = ProductionProcessingService(state)
+    state.dlq_worker = DeadLetterWorker(
+        store=state.processing_store,
+        processor=state.processing_service.process_event,
+        alert_callback=lambda message: print(message),
+    )
     state.connector_registry = _build_connector_registry(
         webhook=state.webhook_mapper,
         slack=state.slack_client,

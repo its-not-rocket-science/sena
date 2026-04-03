@@ -16,6 +16,7 @@ class DecisionPayload:
     action_type: str
     matched_rule_ids: list[str]
     summary: str
+    merkle_proof: str | None = None
 
 
 class Connector(ABC):

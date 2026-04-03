@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -31,6 +33,33 @@ class ServiceNowOutboundConfig:
 class ServiceNowMappingConfig:
     routes: dict[str, ServiceNowEventRoute]
     outbound: ServiceNowOutboundConfig = ServiceNowOutboundConfig()
+
+
+class ServiceNowWebhookVerifier(Protocol):
+    def verify(self, *, headers: dict[str, str], raw_body: bytes) -> None: ...
+
+
+class AllowAllServiceNowWebhookVerifier:
+    def verify(self, *, headers: dict[str, str], raw_body: bytes) -> None:
+        return None
+
+
+class RotatingSharedSecretServiceNowWebhookVerifier:
+    def __init__(
+        self, secrets: tuple[str, ...], signature_header: str = "x-sena-signature"
+    ) -> None:
+        self._secrets = tuple(secret.encode("utf-8") for secret in secrets if secret)
+        self._signature_header = signature_header.lower()
+
+    def verify(self, *, headers: dict[str, str], raw_body: bytes) -> None:
+        provided = headers.get(self._signature_header, "")
+        if not provided:
+            raise ServiceNowIntegrationError("missing webhook signature")
+        for secret in self._secrets:
+            expected = hmac.new(secret, raw_body, hashlib.sha256).hexdigest()
+            if hmac.compare_digest(provided, expected):
+                return
+        raise ServiceNowIntegrationError("invalid webhook signature")
 
 
 class ServiceNowIdempotencyStore(Protocol):
@@ -132,10 +161,12 @@ class ServiceNowConnector(Connector):
         config: ServiceNowMappingConfig,
         idempotency_store: ServiceNowIdempotencyStore | None = None,
         delivery_client: ServiceNowDeliveryClient | None = None,
+        verifier: ServiceNowWebhookVerifier | None = None,
     ) -> None:
         self._config = config
         self._idempotency = idempotency_store or InMemoryServiceNowIdempotencyStore()
         self._delivery_client = delivery_client or NullServiceNowDeliveryClient()
+        self._verifier = verifier or AllowAllServiceNowWebhookVerifier()
 
     def handle_event(self, event: dict[str, Any]) -> dict[str, Any]:
         headers = event.get("headers") or {}
@@ -147,7 +178,7 @@ class ServiceNowConnector(Connector):
             or not isinstance(raw_body, bytes)
         ):
             raise ServiceNowIntegrationError("invalid servicenow event envelope")
-        normalized = self.normalize_event(headers=headers, payload=payload)
+        normalized = self.normalize_event(headers=headers, payload=payload, raw_body=raw_body)
         proposal = self.map_to_proposal(normalized)
         return {
             "normalized_event": normalized.model_dump(),
@@ -159,8 +190,10 @@ class ServiceNowConnector(Connector):
         *,
         headers: dict[str, str],
         payload: dict[str, Any],
+        raw_body: bytes,
     ) -> NormalizedServiceNowEvent:
         lowered_headers = {str(k).lower(): str(v) for k, v in headers.items()}
+        self._verifier.verify(headers=lowered_headers, raw_body=raw_body)
         event_type = str(payload.get("event_type") or payload.get("type") or "").strip()
         if not event_type:
             raise ServiceNowIntegrationError("missing event_type")
