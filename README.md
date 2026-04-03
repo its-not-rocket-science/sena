@@ -1,6 +1,6 @@
 # SENA
 
-SENA is an **alpha deterministic policy-enforcement engine for AI-assisted enterprise approval workflows**.
+SENA is the first deterministic audit trail for AI agent decisions. When an AI approves a refund, modifies infrastructure, or grants access, SENA provides a cryptographically verifiable, replayable record of WHY. No other tool offers Merkle tree proofs for AI actions.
 
 ## Primary wedge (what to remember)
 
