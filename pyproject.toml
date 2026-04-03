@@ -26,6 +26,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+langchain = [
+  "langchain>=0.2",
+]
 api = [
   "fastapi>=0.111",
   "prometheus-client>=0.20",

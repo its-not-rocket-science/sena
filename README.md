@@ -45,6 +45,7 @@ When docs drift, treat these as canonical in this order:
 **Experimental integrations (evaluation only, subject to change):**
 - Generic webhook mapping (`POST /v1/integrations/webhook`)
 - Slack interactions (`POST /v1/integrations/slack/interactions`)
+- LangChain callback interception (`sena.integrations.langchain.SenaApprovalCallback`)
 
 ## Maturity snapshot (April 2026)
 
@@ -88,6 +89,7 @@ Current package/API version: `0.3.0` (single source: `src/sena/__init__.py`).
 ```bash
 pip install -e .
 pip install -e .[api,dev]
+pip install -e .[langchain]  # optional callback integration
 ```
 
 ## Run tests
@@ -171,6 +173,17 @@ Operational audit durability guidance (local sink + archive/restore drills):
 Experimental endpoints:
 - `POST /v1/integrations/webhook`
 - `POST /v1/integrations/slack/interactions`
+
+
+## LangChain callback quickstart (experimental)
+
+```python
+from sena.integrations.langchain import SenaApprovalCallback
+
+callbacks = [SenaApprovalCallback("http://localhost:8000", "enterprise-demo:active")]
+```
+
+See `examples/langchain_demo/refund_agent.py` and `examples/langchain_demo/verify_refund_audit.py` for an end-to-end audit-proof workflow.
 
 ## Investor Kubernetes admission demo
 
