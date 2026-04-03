@@ -70,6 +70,10 @@ def register_request_middleware(
                 path=request.url.path,
                 status_code=status_code,
             )
+            if state.recovery_service is not None:
+                state.recovery_service.record(
+                    path=request.url.path, status_code=status_code
+                )
             logger.info(
                 "request_processed",
                 method=request.method,
@@ -136,6 +140,10 @@ def register_request_middleware(
             path=request.url.path,
             status_code=response.status_code,
         )
+        if state.recovery_service is not None:
+            state.recovery_service.record(
+                path=request.url.path, status_code=response.status_code
+            )
         logger.info(
             "request_processed",
             method=request.method,

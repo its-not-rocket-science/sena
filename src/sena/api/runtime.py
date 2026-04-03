@@ -11,6 +11,7 @@ from sena.policy.release_signing import verify_release_manifest
 from sena.policy.store import SQLitePolicyBundleRepository
 from sena.api.processing_store import DeadLetterWorker, ProcessingStore
 from sena.services.production_processing_service import ProductionProcessingService
+from sena.services.automatic_recovery_service import AutomaticRecoveryService
 
 VALID_API_ROLES = {"admin", "policy_author", "evaluator"}
 VALID_RUNTIME_MODES = {"development", "pilot", "production"}
@@ -35,6 +36,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("POST", "/v1/integrations/servicenow/webhook"),
         ("POST", "/v1/integrations/slack/interactions"),
         ("POST", "/v1/simulation"),
+        ("POST", "/v1/simulation/replay"),
     },
 }
 
@@ -61,6 +63,7 @@ class EngineState:
         self.processing_store: ProcessingStore = ProcessingStore(settings.processing_sqlite_path)
         self.processing_service: ProductionProcessingService | None = None
         self.dlq_worker: DeadLetterWorker | None = None
+        self.recovery_service: Any | None = None
 
 
 def _build_connector_registry(**kwargs: Any) -> Any:
@@ -252,6 +255,12 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
         raise RuntimeError(
             "SENA_AUDIT_VERIFY_ON_STARTUP_STRICT=true requires SENA_AUDIT_SINK_JSONL"
         )
+    if not (0 < runtime_settings.auto_recovery_error_threshold <= 1):
+        raise RuntimeError(
+            "SENA_AUTO_RECOVERY_ERROR_THRESHOLD must be within (0, 1]"
+        )
+    if runtime_settings.auto_recovery_window_seconds <= 0:
+        raise RuntimeError("SENA_AUTO_RECOVERY_WINDOW_SECONDS must be > 0")
 
 
 def build_runtime_state(
@@ -360,6 +369,12 @@ def build_runtime_state(
 
 
     state.processing_service = ProductionProcessingService(state)
+    if runtime_settings.auto_recovery_enabled:
+        state.recovery_service = AutomaticRecoveryService(
+            state=state,
+            error_threshold=runtime_settings.auto_recovery_error_threshold,
+            error_window_seconds=runtime_settings.auto_recovery_window_seconds,
+        )
     state.dlq_worker = DeadLetterWorker(
         store=state.processing_store,
         processor=state.processing_service.process_event,

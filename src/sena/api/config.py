@@ -65,6 +65,10 @@ class ApiSettings:
     servicenow_username: str | None = None
     servicenow_password: str | None = None
     servicenow_oauth_token: str | None = None
+    auto_recovery_enabled: bool = False
+    auto_recovery_error_threshold: float = 0.10
+    auto_recovery_window_seconds: int = 300
+    auto_recovery_alert_webhook: str | None = None
 
 
 def _parse_api_keys(raw: str | None) -> tuple[tuple[str, str], ...]:
@@ -214,4 +218,14 @@ def load_settings_from_env() -> ApiSettings:
         servicenow_username=os.getenv("SENA_SERVICENOW_USERNAME"),
         servicenow_password=os.getenv("SENA_SERVICENOW_PASSWORD"),
         servicenow_oauth_token=os.getenv("SENA_SERVICENOW_OAUTH_TOKEN"),
+        auto_recovery_enabled=_parse_bool(
+            os.getenv("SENA_AUTO_RECOVERY_ENABLED"), default=False
+        ),
+        auto_recovery_error_threshold=_parse_float(
+            os.getenv("SENA_AUTO_RECOVERY_ERROR_THRESHOLD"), default=0.10
+        ),
+        auto_recovery_window_seconds=_parse_int(
+            os.getenv("SENA_AUTO_RECOVERY_WINDOW_SECONDS"), default=300
+        ),
+        auto_recovery_alert_webhook=os.getenv("SENA_AUTO_RECOVERY_ALERT_WEBHOOK"),
     )

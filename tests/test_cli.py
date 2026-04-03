@@ -80,6 +80,36 @@ def test_policy_init_validate_and_test_commands(tmp_path) -> None:
     assert test_payload["failures"] == 0
 
 
+def test_policy_test_manifest_yaml_format(tmp_path) -> None:
+    bundle_dir = tmp_path / "bundle"
+    _run_cli(["policy", "init", str(bundle_dir)]).check_returncode()
+    tests_yaml = tmp_path / "tests.yaml"
+    tests_yaml.write_text(
+        """
+tests:
+  - name: Block unverified vendor payment
+    input:
+      action: approve_vendor_payment
+      vendor_verified: false
+      amount: 10000
+    expected: BLOCKED
+""".strip()
+    )
+    result = _run_cli(
+        [
+            "policy",
+            "test",
+            "--bundle",
+            str(bundle_dir),
+            "--tests",
+            str(tests_yaml),
+        ]
+    )
+    result.check_returncode()
+    payload = json.loads(result.stdout)
+    assert payload["failures"] == 0
+
+
 def test_policy_validate_returns_human_readable_error(tmp_path) -> None:
     bundle_dir = tmp_path / "broken"
     bundle_dir.mkdir()
@@ -179,6 +209,134 @@ def test_registry_lifecycle_commands(tmp_path) -> None:
     )
     history.check_returncode()
     assert json.loads(history.stdout)["history"]
+
+
+def test_bundle_rollback_by_version_command(tmp_path) -> None:
+    db_path = tmp_path / "registry.db"
+    base = ["registry", "--sqlite-path", str(db_path)]
+    bundle_v1 = tmp_path / "bundle_v1"
+    bundle_v2 = tmp_path / "bundle_v2"
+    bundle_v1.mkdir()
+    bundle_v2.mkdir()
+    for filename in ["bundle.yaml", "payments.yaml", "refunds.yaml", "account_access.yaml", "data_access.yaml"]:
+        source = Path("src/sena/examples/policies") / filename
+        bundle_v1.joinpath(filename).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        bundle_v2.joinpath(filename).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    bundle_v1.joinpath("bundle.yaml").write_text(
+        bundle_v1.joinpath("bundle.yaml").read_text(encoding="utf-8").replace('version: 2026.03', 'version: "2026.10"'),
+        encoding="utf-8",
+    )
+    bundle_v2.joinpath("bundle.yaml").write_text(
+        bundle_v2.joinpath("bundle.yaml").read_text(encoding="utf-8").replace('version: 2026.03', 'version: "2026.11"'),
+        encoding="utf-8",
+    )
+    r1 = _run_cli(
+        base
+        + [
+            "register",
+            "--policy-dir",
+            str(bundle_v1),
+            "--bundle-name",
+            "enterprise-compliance-controls",
+            "--bundle-version",
+            "2026.10",
+        ]
+    )
+    r1.check_returncode()
+    id1 = json.loads(r1.stdout)["bundle_id"]
+    _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(id1),
+            "--target-lifecycle",
+            "candidate",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "ready",
+        ]
+    ).check_returncode()
+    _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(id1),
+            "--target-lifecycle",
+            "active",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "go",
+            "--validation-artifact",
+            "CAB-1",
+            "--simulation-scenarios",
+            "examples/simulation_scenarios.json",
+        ]
+    ).check_returncode()
+    r2 = _run_cli(
+        base
+        + [
+            "register",
+            "--policy-dir",
+            str(bundle_v2),
+            "--bundle-name",
+            "enterprise-compliance-controls",
+            "--bundle-version",
+            "2026.11",
+        ]
+    )
+    r2.check_returncode()
+    id2 = json.loads(r2.stdout)["bundle_id"]
+    _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(id2),
+            "--target-lifecycle",
+            "candidate",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "ready",
+        ]
+    ).check_returncode()
+    _run_cli(
+        base
+        + [
+            "promote",
+            "--bundle-id",
+            str(id2),
+            "--target-lifecycle",
+            "active",
+            "--promoted-by",
+            "ops",
+            "--promotion-reason",
+            "go",
+            "--validation-artifact",
+            "CAB-2",
+            "--simulation-scenarios",
+            "examples/simulation_scenarios.json",
+        ]
+    ).check_returncode()
+
+    rollback = _run_cli(
+        [
+            "bundle",
+            "rollback",
+            "--sqlite-path",
+            str(db_path),
+            "--bundle-name",
+            "enterprise-compliance-controls",
+            "--version",
+            "2026.10",
+        ]
+    )
+    rollback.check_returncode()
+    assert json.loads(rollback.stdout)["active_bundle_id"] == id1
 
 
 def test_registry_promote_break_glass_without_artifact(tmp_path) -> None:

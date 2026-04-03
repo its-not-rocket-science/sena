@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from time import perf_counter
 from typing import Any
 
@@ -22,6 +23,7 @@ from sena.engine.replay import (
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.integrations.base import DecisionPayload
+from sena.audit.sinks import JsonlFileAuditSink
 from sena.policy.parser import load_policy_bundle
 from sena.services.audit_service import AuditService
 
@@ -102,6 +104,7 @@ class EvaluationService:
         strict_require_allow: bool,
         notify_on_escalation: bool = True,
         append_audit: bool = True,
+        replay_input: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         evaluator = PolicyEvaluator(
             self.state.rules,
@@ -130,6 +133,8 @@ class EvaluationService:
             endpoint=endpoint,
         )
         payload = trace.to_dict()
+        if replay_input is not None and "audit_record" in payload:
+            payload["audit_record"]["replay_input"] = replay_input
         if append_audit:
             appended = self.audit_service.append_record(payload["audit_record"])
             if appended is not None:
@@ -246,3 +251,88 @@ class EvaluationService:
             baseline_label=f"{baseline_meta.bundle_name}:{baseline_meta.version}",
             candidate_label=f"{candidate_meta.bundle_name}:{candidate_meta.version}",
         )
+
+    @staticmethod
+    def replay_recent_traffic(
+        *,
+        audit_path: str | None,
+        proposed_policy_dir: str,
+        window_seconds: int,
+        max_samples: int,
+    ) -> dict[str, Any]:
+        if not audit_path:
+            raise ValueError("audit sink not configured")
+        sink = JsonlFileAuditSink(path=audit_path)
+        records = sink.load_records()
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+        candidate_rules, candidate_meta = load_policy_bundle(proposed_policy_dir)
+        evaluator = PolicyEvaluator(candidate_rules, policy_bundle=candidate_meta)
+
+        changed = 0
+        unchanged = 0
+        replayed = 0
+        skipped = 0
+        samples: list[dict[str, Any]] = []
+        for row in records:
+            replay_input = row.get("replay_input")
+            ts_raw = row.get("write_timestamp") or row.get("timestamp")
+            if not isinstance(ts_raw, str):
+                skipped += 1
+                continue
+            try:
+                timestamp = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+            except ValueError:
+                skipped += 1
+                continue
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            if timestamp < cutoff:
+                continue
+            if not isinstance(replay_input, dict):
+                skipped += 1
+                continue
+            action_type = replay_input.get("action_type")
+            if not isinstance(action_type, str) or not action_type:
+                skipped += 1
+                continue
+            proposal = ActionProposal(
+                action_type=action_type,
+                request_id=replay_input.get("request_id"),
+                actor_id=replay_input.get("actor_id"),
+                actor_role=replay_input.get("actor_role"),
+                attributes=dict(replay_input.get("attributes") or {}),
+            )
+            facts = replay_input.get("facts") or {}
+            if not isinstance(facts, dict):
+                skipped += 1
+                continue
+            trace = evaluator.evaluate(proposal, facts)
+            replayed += 1
+            before = str(row.get("outcome", "UNKNOWN"))
+            after = trace.outcome.value
+            if before != after:
+                changed += 1
+                if len(samples) < max_samples:
+                    samples.append(
+                        {
+                            "decision_id": row.get("decision_id"),
+                            "action_type": action_type,
+                            "before": before,
+                            "after": after,
+                        }
+                    )
+            else:
+                unchanged += 1
+        return {
+            "window_seconds": window_seconds,
+            "proposed_bundle": {
+                "bundle_name": candidate_meta.bundle_name,
+                "version": candidate_meta.version,
+            },
+            "summary": f"{changed} events would change outcome, {unchanged} would stay same",
+            "total_replayed": replayed,
+            "changed_outcomes": changed,
+            "unchanged_outcomes": unchanged,
+            "skipped_events": skipped,
+            "changed_samples": samples,
+        }
