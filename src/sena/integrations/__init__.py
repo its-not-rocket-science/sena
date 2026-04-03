@@ -7,6 +7,13 @@ from sena.integrations.base import (
     IntegrationError,
 )
 from sena.integrations.registry import build_connector_registry
+from sena.integrations.langchain import (
+    LangChainIntegrationError,
+    SenaApprovalCallback,
+    SenaBlockedError,
+    SenaClient,
+    SenaDecision,
+)
 from sena.integrations.jira import (
     AllowAllJiraWebhookVerifier,
     InMemoryJiraIdempotencyStore,
@@ -42,6 +49,11 @@ from sena.integrations.webhook import (
 
 __all__ = [
     "Connector",
+    "SenaApprovalCallback",
+    "SenaBlockedError",
+    "SenaClient",
+    "SenaDecision",
+    "LangChainIntegrationError",
     "ConnectorRegistry",
     "DecisionPayload",
     "IntegrationError",
