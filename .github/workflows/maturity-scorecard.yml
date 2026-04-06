@@ -21,7 +21,6 @@ jobs:
       - name: Install package and CI tools
         run: |
           pip install -e .[dev]
-          pip install bandit safety
 
       - name: Run tests
         run: pytest
@@ -39,7 +38,8 @@ jobs:
         run: bandit -r src/sena -f json -o bandit-report.json
 
       - name: Run safety
-        run: safety check --full-report
+        run: |
+          safety check --full-report || safety scan --target . --output text
 
       - name: Compute maturity scorecard
         run: python scripts/maturity_scorecard.py --output-json artifacts/maturity_scorecard.json
