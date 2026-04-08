@@ -1,70 +1,94 @@
 # Testing Strategy: Failure Modes, Determinism, and Migration Safety
 
-This document explains the test posture used to make SENA safe to ship under real-world failures, not only happy paths.
+This document defines the test posture used to prevent subtle correctness regressions in SENA's highest-risk paths: deterministic evaluator behavior, policy parsing, integrations, and audit-chain integrity.
 
-## Why this strategy
+## Objectives
 
-The control plane and evaluator sit on high-consequence paths. A confidence-oriented test suite must prove:
+- Preserve decision determinism for equivalent inputs across runs and deployments.
+- Fail closed for malformed policy and integration payloads.
+- Preserve audit-chain tamper evidence under record edits, reordering, truncation, and replay.
+- Keep integration entrypoints idempotent so retries do not create duplicate side effects.
 
-- malformed or adversarial inputs fail clearly,
-- evaluator behavior remains deterministic,
-- lifecycle/promotion guardrails cannot be bypassed,
-- migrations preserve operability for older persisted states,
-- API and integration envelopes remain stable for downstream consumers.
+## Test strategy by layer
 
-## Coverage areas
+### 1) Unit tests
 
-### 1) Failure modes (unit + integration)
+Use unit tests for narrow, deterministic contracts and precedence behavior.
 
-The suite intentionally stresses:
+Coverage focus:
+- **Evaluator precedence and reasoning**: BLOCK vs ESCALATE vs ALLOW ordering, strict allow mode, schema validation short-circuiting.
+- **Policy parsing and validation**: malformed bundle manifest, bad condition shapes, unsupported schema evolution fields, duplicate rule IDs.
+- **Integration normalization**: route resolution, required-field extraction, delivery-id computation, unsupported event handling.
+- **Audit chain primitives**: chain hash computation, append semantics, sequence monotonicity, duplicate decision ID detection.
 
-- malformed policy bundles and parser failures,
-- duplicate rule IDs in promotion targets,
-- invalid lifecycle transitions,
-- missing identity/context in strict allow mode,
-- conflicting rules and precedence behavior,
-- invalid integration payloads and missing required fields,
-- invalid content-length headers,
-- payload size enforcement,
-- timeout behavior and unauthorized access handling,
-- audit chain verification failures.
+Design constraints:
+- Prefer fixed fixtures over randomized values for readability.
+- Assert decision artifacts (`decision_hash`, `input_fingerprint`, matched controls) rather than volatile metadata (`decision_id`, timestamps).
 
-### 2) Property-based invariants
+### 2) Property-based tests
 
-Hypothesis-based tests focus on high-value invariants:
+Use Hypothesis where a small invariant can be violated by many structurally different inputs.
 
-- evaluator determinism for same input material,
-- lifecycle diff idempotence (`diff(x, x)` has no changes),
-- audit hash stability for same inputs,
-- parser resilience against malformed payloads.
+Coverage focus:
+- **Determinism invariants**: same semantic input => same outcome + same `decision_hash`.
+- **Parser robustness**: malformed text and near-valid structures never crash unpredictably.
+- **Lifecycle algebra**: `diff(x, x)` has no changes; set operations are stable for reordered rules.
+- **Audit hash stability**: canonical hash function is stable for equal payloads.
 
-These tests are bounded to keep local runtime practical.
+Runtime controls:
+- Keep example counts bounded for local feedback.
+- Prefer strategies that generate JSON-like structures without NaN/Infinity drift.
 
-### 3) Golden-file regression tests
+### 3) Integration tests
 
-Golden fixtures enforce stability for externally visible and operator-facing structures:
+Use API/service-level tests to verify cross-component behavior with realistic envelopes.
 
-- API error envelopes,
-- bundle diff output,
-- promotion validation output,
-- normalized integration payload shape.
+Coverage focus:
+- **End-to-end evaluate/webhook paths** with app factory + test client.
+- **Idempotency behavior** for API keys and connector delivery IDs.
+- **Error envelope stability** and DLQ routing for malformed external payloads.
+- **Bundle/version checks** to prevent wrong-policy execution at integration boundaries.
 
-Golden tests normalize volatile fields (timestamps/request IDs generated at runtime) before assertion.
+Regression pattern:
+- Assert both response shape and persistent state implications (idempotency store rows, DLQ entries, audit append behavior).
 
-### 4) Migration regression fixtures
+### 4) Replay determinism tests
 
-Fixtures under `tests/fixtures/migrations/` model historical states:
+Replay tests are the highest-signal guard against silent policy drift.
 
-- `legacy_bundle_v1/` captures an older bundle format and content,
-- `storage_states/legacy_registry_v1.sql` captures a pre-enhancement SQLite registry.
+Coverage focus:
+- Re-evaluate previously captured proposals/traces and compare against baseline outcome/materialized controls.
+- Verify drift reports detect mapping/config changes that alter action type or control matches.
+- Include replay fixtures from real integration payloads to protect envelope contracts.
 
-Tests then migrate forward and verify schema/application compatibility invariants.
+Key assertion fields:
+- `outcome`
+- `decision_hash`
+- `matched_rule_ids`
+- `missing_evidence`
+- escalation rates and changed-control counters
 
-## Fast feedback principles
+## Current gaps and risk-ranked improvements
 
-To keep the suite useful for local development:
+1. **Idempotency-key payload binding (High)**  
+   Current API idempotency tests assert cache reuse for same key, but do not assert behavior when the same key is reused with a different payload. Add conflict tests to prevent accidental cross-request replay.
 
-- tests are behavior-dense rather than volume-heavy,
-- property-based tests cap examples,
-- migration tests reuse lightweight fixture states,
-- golden tests assert entire envelopes to maximize signal per test.
+2. **Replay corpus breadth (High)**  
+   Replay tests cover representative cases but not enough historical/production-shaped envelopes. Add a curated replay corpus (approved baseline snapshots) for each integration provider.
+
+3. **Audit-chain adversarial rewrites (Medium)**  
+   Existing tests cover tampering and duplicates; extend with recomputed-hash attacks, segment-manifest divergence, and sequence-gap manipulations across rotated segments.
+
+4. **Parser compatibility matrix (Medium)**  
+   Add matrix tests for policy schema evolution (`schema_version`, optional fields, deprecated aliases) so parser changes cannot silently alter rule semantics.
+
+5. **Concurrency/idempotency race windows (Medium)**  
+   Add targeted multithreaded tests for concurrent duplicate deliveries and concurrent idempotency-key writes at API layer.
+
+## New example regression tests
+
+The suite now includes focused examples for subtle correctness failures:
+
+- Determinism for semantically equivalent inputs with different key ordering.
+- Audit verification that still fails after a tampered record has its chain hash recomputed.
+- Integration duplicate-delivery rejection to enforce idempotent normalization.
