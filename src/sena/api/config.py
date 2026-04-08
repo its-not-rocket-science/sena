@@ -13,7 +13,7 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 @dataclass(frozen=True)
 class ApiSettings:
     runtime_mode: str = "development"
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8000
     policy_dir: str = str(DEFAULT_POLICY_DIR)
     bundle_name: str = "enterprise-compliance-controls"
@@ -131,7 +131,7 @@ def _parse_regression_budgets(raw: str | None) -> tuple[tuple[str, int], ...]:
 def load_settings_from_env() -> ApiSettings:
     return ApiSettings(
         runtime_mode=os.getenv("SENA_RUNTIME_MODE", "development").strip().lower(),
-        host=os.getenv("SENA_API_HOST", "0.0.0.0"),
+        host=os.getenv("SENA_API_HOST", "127.0.0.1"),
         port=_parse_int(os.getenv("SENA_API_PORT"), default=8000),
         policy_dir=os.getenv(
             "SENA_POLICY_DIR",
