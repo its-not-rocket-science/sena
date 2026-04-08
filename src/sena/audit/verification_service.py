@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from urllib import request
 from sena.audit.chain import verify_audit_chain
 from sena.audit.merkle import build_merkle_tree, get_proof, verify_proof
 from sena.audit.sinks import JsonlFileAuditSink
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -103,7 +106,7 @@ class DailyAuditVerificationService:
                 try:
                     self.run_once()
                 except Exception:
-                    pass
+                    logger.exception("daily audit verification loop failed")
                 threading.Event().wait(interval_seconds)
 
         thread = threading.Thread(target=_loop, daemon=True, name="sena-audit-verify")

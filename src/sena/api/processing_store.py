@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -8,6 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessingStore:
@@ -239,5 +242,5 @@ class DeadLetterWorker:
             try:
                 self.run_once()
             except Exception:  # pragma: no cover
-                pass
+                logger.exception("dead-letter worker loop failed")
             time.sleep(self.poll_interval_seconds)
