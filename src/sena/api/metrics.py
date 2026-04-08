@@ -22,6 +22,18 @@ class ApiMetrics:
             status_code=status_code,
         )
 
+    def observe_request_latency(
+        self, *, method: str, path: str, duration_seconds: float
+    ) -> None:
+        self.traction.observe_request_latency(
+            method=method, path=path, duration_seconds=duration_seconds
+        )
+
+    def observe_api_error(self, *, path: str, error_code: str, status_code: int) -> None:
+        self.traction.observe_api_error(
+            path=path, error_code=error_code, status_code=status_code
+        )
+
     def observe_decision_outcome(self, *, outcome: str, policy: str) -> None:
         self.traction.observe_decision_outcome(outcome=outcome, policy=policy)
 

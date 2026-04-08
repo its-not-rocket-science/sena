@@ -163,7 +163,65 @@ Experimental integration surfaces (evaluation-only, no compatibility guarantees)
 - `/v1/integrations/webhook`
 - `/v1/integrations/slack/interactions`
 
-## 10) Policy registry backup, restore, and disaster recovery runbook
+## 10) Observability design (logs, metrics, tracing, alerts)
+
+### Structured logs
+
+Every request emits JSON logs with:
+- request correlation: `request_id`, `trace_id`, `span_id`
+- HTTP context: `method`, `path`, `status_code`, `duration_ms`
+- decision context when applicable: `decision_id`, `outcome`, `policy_bundle`, `evaluation_ms`, `endpoint`
+- failure context: `error_code`, `errors`
+
+Operator usage:
+- join logs by `request_id` for API incident triage;
+- join cross-system requests by `trace_id` (propagated via `traceparent` and echoed in response headers).
+
+### Metrics that matter
+
+Prometheus endpoints: `/metrics`, `/v1/metrics/prometheus`.
+
+Key metrics:
+- availability/traffic:
+  - `request_count_total{method,path,status_code}`
+  - `request_duration_seconds_bucket{method,path}`
+  - `api_errors_total{path,error_code,status_code}`
+- policy decision quality and latency:
+  - `sena_decisions_total{outcome,policy}`
+  - `sena_evaluation_seconds_bucket`
+  - `sena_active_policies`
+- audit integrity:
+  - `sena_audit_entries_total`
+  - `sena_merkle_root_timestamp`
+  - `sena_verification_requests_total`
+  - `sena_verification_failures_total`
+  - `sena_audit_verification_passed`
+
+### Tracing
+
+SENA now supports trace correlation at the HTTP edge:
+- accepts inbound W3C `traceparent` header;
+- if absent/invalid, generates `trace_id` + `span_id`;
+- returns `traceparent` and `x-trace-id` response headers for downstream correlation.
+
+This is sufficient for log/metric correlation without requiring a full OpenTelemetry backend.
+
+### Alert thresholds (starter SLO-driven defaults)
+
+- **API availability (critical)**: 5xx ratio > 1% for 5 minutes on evaluation endpoints.
+- **Latency (warning/critical)**:
+  - warning: p95 `request_duration_seconds` > 250ms for 10 minutes;
+  - critical: p95 > 1s for 5 minutes.
+- **Policy evaluation (critical)**: p95 `sena_evaluation_seconds` > 500ms for 10 minutes.
+- **Error storms (critical)**: `api_errors_total{error_code="timeout"}` increases > 20 in 5 minutes.
+- **Rate limiting pressure (warning)**: `api_errors_total{error_code="rate_limited"}` ratio > 5% for 10 minutes.
+- **Audit integrity (critical)**:
+  - `sena_audit_verification_passed == 0` for 2 consecutive checks;
+  - any increase in `sena_verification_failures_total`.
+- **Audit freshness (critical)**: `time() - sena_merkle_root_timestamp > 300` for active systems.
+- **Auto-recovery trigger (critical)**: alert on `policy.automatic_recovery` webhook events.
+
+## 11) Policy registry backup, restore, and disaster recovery runbook
 
 Use this runbook for sqlite-backed policy registry deployments (`SENA_POLICY_STORE_BACKEND=sqlite`) and JSONL audit chains.
 
@@ -225,7 +283,7 @@ python -m sena.cli.main registry --sqlite-path /var/lib/sena/policy-registry.db 
 
 On any verification failure, restore exits non-zero and includes machine-parseable check output.
 
-## 11) Audit operations (pilot-grade)
+## 12) Audit operations (pilot-grade)
 
 Use the audit CLI for operator workflows:
 
