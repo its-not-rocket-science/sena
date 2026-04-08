@@ -124,6 +124,10 @@ Define and verify "good enough for pilot" using:
 |---|---|---|
 | Deterministic governance failure modes | Expanded | See `docs/FAILURE_MODE_MATRIX.md` for tested vs not-yet-tested classes and stable error contracts. |
 
+## Canonical workflow definition
+
+For the single end-to-end workflow definition (steps, evidence, repository mapping, and gap list), see `docs/CANONICAL_WORKFLOW.md`.
+
 ## 15-minute canonical integration quickstart
 
 Run the design-partner-grade ServiceNow pack (with Jira portability proof):
