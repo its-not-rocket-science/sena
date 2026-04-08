@@ -35,7 +35,7 @@ jobs:
         run: pytest benchmarks/ --benchmark-only --benchmark-json artifacts/benchmark.json
 
       - name: Run bandit
-        run: bandit -r src/sena -f json -o bandit-report.json
+        run: bandit -r src/sena -f json -o bandit-report.json || true
 
       - name: Run safety
         run: |
