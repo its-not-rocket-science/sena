@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from sena.integrations.approval import (
+    ApprovalConnectorBase,
+    ApprovalConnectorConfig,
     ApprovalEventRoute,
     InMemoryDeliveryIdempotencyStore,
+    MinimalApprovalEventContract,
     NormalizedApprovalEvent,
     build_normalized_approval_event,
+    load_mapping_document,
+    parse_approval_routes,
     resolve_path,
-    to_action_proposal,
 )
-from sena.integrations.base import Connector, DecisionPayload, IntegrationError
+from sena.integrations.base import DecisionPayload, IntegrationError
 
 
 class JiraIntegrationError(IntegrationError):
@@ -60,8 +63,6 @@ class SharedSecretJiraWebhookVerifier:
             raise JiraIntegrationError("invalid webhook signature")
 
 
-
-
 class RotatingSharedSecretJiraWebhookVerifier:
     def __init__(
         self, secrets: tuple[str, ...], signature_header: str = "x-sena-signature"
@@ -79,6 +80,7 @@ class RotatingSharedSecretJiraWebhookVerifier:
                 return
         raise JiraIntegrationError("invalid webhook signature")
 
+
 class JiraIdempotencyStore(Protocol):
     def mark_if_new(self, delivery_id: str) -> bool: ...
 
@@ -88,58 +90,8 @@ NormalizedJiraEvent = NormalizedApprovalEvent
 
 
 def load_jira_mapping_config(path: str) -> JiraMappingConfig:
-    try:
-        import yaml  # type: ignore
-    except ModuleNotFoundError:
-        yaml = None
-
-    text = open(path, encoding="utf-8").read()
-    raw = yaml.safe_load(text) if yaml else json.loads(text)
-    routes_raw = raw.get("routes")
-    if not isinstance(routes_raw, dict) or not routes_raw:
-        raise JiraIntegrationError("Jira mapping config must define non-empty routes")
-
-    routes: dict[str, JiraEventRoute] = {}
-    for event_type, route in routes_raw.items():
-        if not isinstance(route, dict):
-            raise JiraIntegrationError(f"route '{event_type}' must be an object")
-        if "action_type" not in route or "actor_id_path" not in route:
-            raise JiraIntegrationError(f"route '{event_type}' missing required keys")
-        attrs = route.get("attributes", {})
-        if not isinstance(attrs, dict):
-            raise JiraIntegrationError(
-                f"route '{event_type}' attributes must be an object"
-            )
-        required_fields = route.get("required_fields", [])
-        if not isinstance(required_fields, list):
-            raise JiraIntegrationError(
-                f"route '{event_type}' required_fields must be a list"
-            )
-        routes[event_type] = JiraEventRoute(
-            action_type=str(route["action_type"]),
-            actor_id_path=str(route["actor_id_path"]),
-            attributes={str(k): str(v) for k, v in attrs.items()},
-            required_fields=[str(item) for item in required_fields],
-            static_attributes=route.get("static_attributes", {}) or {},
-            payload_path=route.get("payload_path"),
-            request_id_path=route.get("request_id_path"),
-            actor_role_path=route.get("actor_role_path"),
-            source_record_id_path=route.get("source_record_id_path"),
-            policy_bundle=route.get("policy_bundle"),
-            source_object_type_path=route.get("source_object_type_path"),
-            workflow_stage_path=route.get("workflow_stage_path"),
-            requested_action_path=route.get("requested_action_path"),
-            correlation_key_path=route.get("correlation_key_path"),
-            idempotency_key_path=route.get("idempotency_key_path"),
-            risk_attributes={
-                str(k): str(v)
-                for k, v in (route.get("risk_attributes", {}) or {}).items()
-            },
-            evidence_references_path=route.get("evidence_references_path"),
-            static_source_object_type=route.get("static_source_object_type"),
-            static_workflow_stage=route.get("static_workflow_stage"),
-            static_requested_action=route.get("static_requested_action"),
-        )
+    raw = load_mapping_document(path)
+    routes = parse_approval_routes(raw, error_cls=JiraIntegrationError, config_name="Jira")
     outbound_raw = raw.get("outbound", {}) or {}
     mode = str(outbound_raw.get("mode", "comment"))
     if mode not in {"comment", "status", "both", "none"}:
@@ -152,9 +104,7 @@ def load_jira_mapping_config(path: str) -> JiraMappingConfig:
 class JiraDeliveryClient(Protocol):
     def publish_comment(self, issue_key: str, message: str) -> dict[str, Any]: ...
 
-    def publish_status(
-        self, issue_key: str, payload: dict[str, Any]
-    ) -> dict[str, Any]: ...
+    def publish_status(self, issue_key: str, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class NullJiraDeliveryClient:
@@ -165,8 +115,11 @@ class NullJiraDeliveryClient:
         return {"status": "skipped", "target": "status", "issue_key": issue_key}
 
 
-class JiraConnector(Connector):
+class JiraConnector(ApprovalConnectorBase):
     name = "jira"
+    source_system = "jira"
+    error_cls = JiraIntegrationError
+    invalid_envelope_message = "invalid jira event envelope"
 
     def __init__(
         self,
@@ -176,41 +129,26 @@ class JiraConnector(Connector):
         idempotency_store: JiraIdempotencyStore | None = None,
         delivery_client: JiraDeliveryClient | None = None,
     ) -> None:
-        self._config = config
-        self._verifier = verifier
-        self._idempotency = idempotency_store or InMemoryJiraIdempotencyStore()
-        self._delivery_client = delivery_client or NullJiraDeliveryClient()
-
-    def handle_event(self, event: dict[str, Any]) -> dict[str, Any]:
-        headers = event.get("headers") or {}
-        payload = event.get("payload") or {}
-        raw_body = event.get("raw_body") or b""
-        if (
-            not isinstance(headers, dict)
-            or not isinstance(payload, dict)
-            or not isinstance(raw_body, bytes)
-        ):
-            raise JiraIntegrationError("invalid jira event envelope")
-        normalized = self.normalize_event(
-            headers=headers, payload=payload, raw_body=raw_body
+        super().__init__(
+            config=ApprovalConnectorConfig(routes=config.routes),
+            verifier=verifier,
+            idempotency_store=idempotency_store or InMemoryJiraIdempotencyStore(),
         )
-        proposal = self.map_to_proposal(normalized)
-        return {
-            "normalized_event": normalized.model_dump(),
-            "action_proposal": proposal,
-        }
+        self._config = config
+        self._delivery_client = delivery_client or NullJiraDeliveryClient()
 
     def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:
         issue_key = payload.request_id or "unknown"
-        message = f"SENA decision={payload.summary} decision_id={payload.decision_id} merkle_proof={payload.merkle_proof or 'na'} rules={','.join(payload.matched_rule_ids)}"
+        message = (
+            f"SENA decision={payload.summary} decision_id={payload.decision_id} "
+            f"merkle_proof={payload.merkle_proof or 'na'} rules={','.join(payload.matched_rule_ids)}"
+        )
         mode = self._config.outbound.mode
         results: list[dict[str, Any]] = []
         errors: list[str] = []
         if mode in {"comment", "both"}:
             try:
-                results.append(
-                    self._delivery_client.publish_comment(issue_key, message)
-                )
+                results.append(self._delivery_client.publish_comment(issue_key, message))
             except Exception as exc:  # pragma: no cover
                 errors.append(f"comment:{exc}")
         if mode in {"status", "both"}:
@@ -232,61 +170,60 @@ class JiraConnector(Connector):
             return {"status": "partial_failure", "results": results, "errors": errors}
         return {"status": "delivered", "results": results}
 
-    def normalize_event(
+    def extract_event_type(self, payload: dict[str, Any]) -> str:
+        event_type = str(payload.get("webhookEvent") or "").strip()
+        if not event_type:
+            raise JiraIntegrationError("missing webhookEvent")
+        return event_type
+
+    def compute_delivery_id(
         self,
         *,
         headers: dict[str, str],
         payload: dict[str, Any],
-        raw_body: bytes,
-    ) -> NormalizedJiraEvent:
-        lowered_headers = {str(k).lower(): str(v) for k, v in headers.items()}
-        self._verifier.verify(headers=lowered_headers, raw_body=raw_body)
-
-        event_type = str(payload.get("webhookEvent") or "").strip()
-        if not event_type:
-            raise JiraIntegrationError("missing webhookEvent")
-        route = self._config.routes.get(event_type)
-        if route is None:
-            raise JiraIntegrationError(f"unsupported jira event type '{event_type}'")
-
-        issue_id = str(
-            resolve_path(payload, "issue.id", error_cls=JiraIntegrationError)
-        )
-        delivery_id = (
-            lowered_headers.get("x-atlassian-webhook-identifier")
-            or lowered_headers.get("x-request-id")
+        event_type: str,
+        route: JiraEventRoute,
+    ) -> str:
+        del route
+        issue_id = str(resolve_path(payload, "issue.id", error_cls=JiraIntegrationError))
+        return (
+            headers.get("x-atlassian-webhook-identifier")
+            or headers.get("x-request-id")
             or f"{event_type}:{payload.get('timestamp')}:{issue_id}"
         )
-        if not self._idempotency.mark_if_new(delivery_id):
-            raise JiraIntegrationError(f"duplicate delivery '{delivery_id}'")
 
-        return build_normalized_approval_event(
+    def build_normalized_event(
+        self,
+        *,
+        payload: dict[str, Any],
+        event_type: str,
+        route: JiraEventRoute,
+        delivery_id: str,
+    ) -> NormalizedJiraEvent:
+        issue_id = str(resolve_path(payload, "issue.id", error_cls=JiraIntegrationError))
+        issue_key = str(resolve_path(payload, "issue.key", error_cls=JiraIntegrationError))
+        normalized = build_normalized_approval_event(
             payload=payload,
             route=route,
             source_event_type=event_type,
             idempotency_key=delivery_id,
             source_system="jira",
-            default_request_id=str(
-                resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)
-            ),
+            default_request_id=issue_key,
             default_source_record_id=issue_id,
             error_cls=JiraIntegrationError,
             default_source_object_type="jira_issue",
             default_workflow_stage="pending_approval",
             default_requested_action=route.action_type,
-            default_correlation_key=str(
-                resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)
-            ),
-            source_metadata={
-                "jira_issue_key": str(
-                    resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)
-                )
-            },
+            default_correlation_key=issue_key,
+            source_metadata={"jira_issue_key": issue_key},
         )
-
-    def map_to_proposal(self, event: NormalizedJiraEvent):
-        route = self._config.routes[event.source_event_type]
-        return to_action_proposal(event, route)
-
-    def route_for_event_type(self, event_type: str) -> JiraEventRoute | None:
-        return self._config.routes.get(event_type)
+        MinimalApprovalEventContract(
+            source_system=normalized.source_system,
+            source_event_type=normalized.source_event_type,
+            request_id=normalized.request_id,
+            requested_action=normalized.requested_action,
+            actor_id=normalized.actor.actor_id,
+            correlation_key=normalized.correlation_key,
+            idempotency_key=normalized.idempotency_key,
+        )
+        return normalized
