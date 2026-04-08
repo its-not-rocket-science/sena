@@ -46,11 +46,21 @@ def register_request_middleware(
 ) -> None:
     @app.middleware("http")
     async def request_context(request: Request, call_next):
+        def _extract_trace_context() -> tuple[str, str]:
+            traceparent = request.headers.get("traceparent", "")
+            parts = traceparent.split("-")
+            if len(parts) == 4 and len(parts[1]) == 32 and len(parts[2]) == 16:
+                return parts[1], parts[2]
+            return uuid.uuid4().hex, uuid.uuid4().hex[:16]
+
         request_id = (
             request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex[:12]}"
         )
+        trace_id, span_id = _extract_trace_context()
         request.state.request_id = request_id
-        bind_request_context(request_id=request_id)
+        request.state.trace_id = trace_id
+        request.state.span_id = span_id
+        bind_request_context(request_id=request_id, trace_id=trace_id, span_id=span_id)
 
         started = time.perf_counter()
         client_key = request.headers.get("x-api-key", "")
@@ -64,10 +74,22 @@ def register_request_middleware(
                 content=error_payload(code, message, request_id),
             )
             error_response.headers["x-request-id"] = request_id
+            error_response.headers["x-trace-id"] = trace_id
+            error_response.headers["traceparent"] = f"00-{trace_id}-{span_id}-01"
             duration_ms = round((time.perf_counter() - started) * 1000, 3)
             state.metrics.observe_request(
                 method=request.method,
                 path=request.url.path,
+                status_code=status_code,
+            )
+            state.metrics.observe_request_latency(
+                method=request.method,
+                path=request.url.path,
+                duration_seconds=duration_ms / 1000,
+            )
+            state.metrics.observe_api_error(
+                path=request.url.path,
+                error_code=code,
                 status_code=status_code,
             )
             if state.recovery_service is not None:
@@ -80,6 +102,7 @@ def register_request_middleware(
                 path=request.url.path,
                 status_code=status_code,
                 duration_ms=duration_ms,
+                error_code=code,
             )
             clear_request_context()
             return error_response
@@ -134,11 +157,18 @@ def register_request_middleware(
             raise
 
         response.headers["x-request-id"] = request_id
+        response.headers["x-trace-id"] = trace_id
+        response.headers["traceparent"] = f"00-{trace_id}-{span_id}-01"
         duration_ms = round((time.perf_counter() - started) * 1000, 3)
         state.metrics.observe_request(
             method=request.method,
             path=request.url.path,
             status_code=response.status_code,
+        )
+        state.metrics.observe_request_latency(
+            method=request.method,
+            path=request.url.path,
+            duration_seconds=duration_ms / 1000,
         )
         if state.recovery_service is not None:
             state.recovery_service.record(

@@ -26,6 +26,19 @@ class TractionMetrics:
             labelnames=("method", "path", "status_code"),
             registry=registry,
         )
+        self.request_duration_seconds = Histogram(
+            "request_duration_seconds",
+            "HTTP request latency in seconds",
+            labelnames=("method", "path"),
+            buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10),
+            registry=registry,
+        )
+        self.api_errors_total = Counter(
+            "api_errors_total",
+            "Total API errors by path/code/status",
+            labelnames=("path", "error_code", "status_code"),
+            registry=registry,
+        )
         self.sena_decisions_total = Counter(
             "sena_decisions_total",
             "Total decisions",
@@ -81,6 +94,18 @@ class TractionMetrics:
 
     def observe_decision_outcome(self, *, outcome: str, policy: str) -> None:
         self.sena_decisions_total.labels(outcome=outcome, policy=policy).inc()
+
+    def observe_request_latency(
+        self, *, method: str, path: str, duration_seconds: float
+    ) -> None:
+        self.request_duration_seconds.labels(method=method, path=path).observe(
+            max(0.0, duration_seconds)
+        )
+
+    def observe_api_error(self, *, path: str, error_code: str, status_code: int) -> None:
+        self.api_errors_total.labels(
+            path=path, error_code=error_code, status_code=str(status_code)
+        ).inc()
 
     @contextmanager
     def evaluation_timer(self) -> Iterator[None]:
