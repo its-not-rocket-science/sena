@@ -114,6 +114,7 @@ Define and verify "good enough for pilot" using:
 
 - Criteria + checklist: `docs/PILOT_ACCEPTANCE.md`
 - A-grade trust rubric + gap roadmap: `docs/A_GRADE_PILOT_READY.md`
+- A-grade 30-day transformation plan for first 3 customers: `docs/TRANSFORMATION_PLAN_30_DAY_A_GRADE.md`
 - Reproducible evidence command: `make pilot-evidence`
 - End-to-end integration pack command: `make pilot-integration-pack`
 - Sample committed bundle: `docs/examples/pilot_evidence_sample/`
