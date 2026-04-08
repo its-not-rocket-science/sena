@@ -109,10 +109,21 @@ def _verify_bundle_integrity(
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        predicate = "WHERE lifecycle = 'active'" if active_only else ""
-        bundles = conn.execute(
-            f"SELECT id, name, version, lifecycle, integrity_digest, signature_verification_strict, signature_verified FROM bundles {predicate}"
-        ).fetchall()
+        if active_only:
+            bundles = conn.execute(
+                """
+                SELECT id, name, version, lifecycle, integrity_digest, signature_verification_strict, signature_verified
+                FROM bundles
+                WHERE lifecycle = 'active'
+                """
+            ).fetchall()
+        else:
+            bundles = conn.execute(
+                """
+                SELECT id, name, version, lifecycle, integrity_digest, signature_verification_strict, signature_verified
+                FROM bundles
+                """
+            ).fetchall()
         checks: list[dict[str, object]] = []
         errors: list[str] = []
         for bundle in bundles:

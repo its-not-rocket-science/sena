@@ -167,15 +167,18 @@ class ProcessingStore:
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._conn() as conn:
             if ids:
-                placeholders = ",".join("?" for _ in ids)
-                cur = conn.execute(
-                    f"""
-                    UPDATE dead_letter_queue
-                    SET status = 'pending', next_retry_at = ?
-                    WHERE id IN ({placeholders})
-                    """,
-                    (now, *ids),
-                )
+                updated = 0
+                for dlq_id in ids:
+                    cur = conn.execute(
+                        """
+                        UPDATE dead_letter_queue
+                        SET status = 'pending', next_retry_at = ?
+                        WHERE id = ?
+                        """,
+                        (now, dlq_id),
+                    )
+                    updated += int(cur.rowcount)
+                return updated
             else:
                 cur = conn.execute(
                     """
