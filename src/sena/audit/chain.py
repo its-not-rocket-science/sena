@@ -68,6 +68,8 @@ def verify_audit_chain(path_or_sink: str | AuditSink) -> dict[str, Any]:
     previous_seq = None
     count = 0
     errors: list[str] = []
+    seen_decision_ids: set[str] = set()
+    seen_storage_sequence_numbers: set[int] = set()
     for row in rows:
         count += 1
         location = _row_location(details, count)
@@ -80,6 +82,10 @@ def verify_audit_chain(path_or_sink: str | AuditSink) -> dict[str, Any]:
 
         if "storage_sequence_number" in row:
             seq = row.get("storage_sequence_number")
+            if isinstance(seq, int) and seq in seen_storage_sequence_numbers:
+                errors.append(
+                    f"record {count} ({location}): duplicate storage sequence number ({seq})"
+                )
             if (
                 previous_seq is not None
                 and isinstance(seq, int)
@@ -91,6 +97,15 @@ def verify_audit_chain(path_or_sink: str | AuditSink) -> dict[str, Any]:
                 )
             if isinstance(seq, int):
                 previous_seq = seq
+                seen_storage_sequence_numbers.add(seq)
+
+        decision_id = row.get("decision_id")
+        if isinstance(decision_id, str) and decision_id:
+            if decision_id in seen_decision_ids:
+                errors.append(
+                    f"record {count} ({location}): duplicate decision_id ({decision_id})"
+                )
+            seen_decision_ids.add(decision_id)
 
         current_hash = row.get("chain_hash")
         record = {k: v for k, v in row.items() if k not in {"chain_hash"}}
