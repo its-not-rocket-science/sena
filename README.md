@@ -113,6 +113,7 @@ See `CONTRIBUTING.md` for contributor workflow and local quality guidance.
 Define and verify "good enough for pilot" using:
 
 - Criteria + checklist: `docs/PILOT_ACCEPTANCE.md`
+- A-grade trust rubric + gap roadmap: `docs/A_GRADE_PILOT_READY.md`
 - Reproducible evidence command: `make pilot-evidence`
 - End-to-end integration pack command: `make pilot-integration-pack`
 - Sample committed bundle: `docs/examples/pilot_evidence_sample/`
