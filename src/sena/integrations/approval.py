@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import json
+from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
 from sena.core.enums import ActionOrigin
 from sena.core.models import ActionProposal, AutonomousToolMetadata
-from sena.integrations.base import IntegrationError
+from sena.integrations.base import Connector, IntegrationError
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,178 @@ class NormalizedApprovalEvent(BaseModel):
     idempotency_key: str
     source_metadata: dict[str, Any] = Field(default_factory=dict)
 
+
+class MinimalApprovalEventContract(BaseModel):
+    """Stable minimum event envelope required by the policy engine."""
+
+    schema_version: str = "1"
+    source_system: str
+    source_event_type: str
+    request_id: str
+    requested_action: str
+    actor_id: str
+    correlation_key: str
+    idempotency_key: str
+
+
+class ApprovalWebhookVerifier(Protocol):
+    def verify(self, *, headers: dict[str, str], raw_body: bytes) -> None: ...
+
+
+@dataclass(frozen=True)
+class ApprovalConnectorConfig:
+    routes: dict[str, ApprovalEventRoute]
+
+
+def load_mapping_document(path: str) -> dict[str, Any]:
+    try:
+        import yaml  # type: ignore
+    except ModuleNotFoundError:
+        yaml = None
+
+    text = Path(path).read_text(encoding="utf-8")
+    raw = yaml.safe_load(text) if yaml else json.loads(text)
+    if not isinstance(raw, dict):
+        raise ValueError("mapping config must be an object")
+    return raw
+
+
+def parse_approval_routes(
+    raw: dict[str, Any], *, error_cls: type[IntegrationError], config_name: str
+) -> dict[str, ApprovalEventRoute]:
+    routes_raw = raw.get("routes")
+    if not isinstance(routes_raw, dict) or not routes_raw:
+        raise error_cls(f"{config_name} mapping config must define non-empty routes")
+    routes: dict[str, ApprovalEventRoute] = {}
+    for event_type, route in routes_raw.items():
+        if not isinstance(route, dict):
+            raise error_cls(f"route '{event_type}' must be an object")
+        if "action_type" not in route or "actor_id_path" not in route:
+            raise error_cls(f"route '{event_type}' missing required keys")
+        attrs = route.get("attributes", {})
+        if not isinstance(attrs, dict):
+            raise error_cls(f"route '{event_type}' attributes must be an object")
+        required_fields = route.get("required_fields", [])
+        if not isinstance(required_fields, list):
+            raise error_cls(f"route '{event_type}' required_fields must be a list")
+        routes[event_type] = ApprovalEventRoute(
+            action_type=str(route["action_type"]),
+            actor_id_path=str(route["actor_id_path"]),
+            attributes={str(k): str(v) for k, v in attrs.items()},
+            required_fields=[str(item) for item in required_fields],
+            static_attributes=route.get("static_attributes", {}) or {},
+            payload_path=route.get("payload_path"),
+            request_id_path=route.get("request_id_path"),
+            actor_role_path=route.get("actor_role_path"),
+            source_record_id_path=route.get("source_record_id_path"),
+            policy_bundle=route.get("policy_bundle"),
+            source_object_type_path=route.get("source_object_type_path"),
+            workflow_stage_path=route.get("workflow_stage_path"),
+            requested_action_path=route.get("requested_action_path"),
+            correlation_key_path=route.get("correlation_key_path"),
+            idempotency_key_path=route.get("idempotency_key_path"),
+            risk_attributes={
+                str(k): str(v)
+                for k, v in (route.get("risk_attributes", {}) or {}).items()
+            },
+            evidence_references_path=route.get("evidence_references_path"),
+            static_source_object_type=route.get("static_source_object_type"),
+            static_workflow_stage=route.get("static_workflow_stage"),
+            static_requested_action=route.get("static_requested_action"),
+        )
+    return routes
+
+
+class ApprovalConnectorBase(Connector):
+    """Shared inbound normalization pipeline for enterprise approval connectors."""
+
+    invalid_envelope_message: str
+    error_cls: type[IntegrationError]
+    source_system: str
+
+    def __init__(
+        self,
+        *,
+        config: ApprovalConnectorConfig,
+        verifier: ApprovalWebhookVerifier,
+        idempotency_store: DeliveryIdempotencyStore,
+    ) -> None:
+        self._config = config
+        self._verifier = verifier
+        self._idempotency = idempotency_store
+
+    def handle_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        headers = event.get("headers") or {}
+        payload = event.get("payload") or {}
+        raw_body = event.get("raw_body") or b""
+        if (
+            not isinstance(headers, dict)
+            or not isinstance(payload, dict)
+            or not isinstance(raw_body, bytes)
+        ):
+            raise self.error_cls(self.invalid_envelope_message)
+        normalized = self.normalize_event(headers=headers, payload=payload, raw_body=raw_body)
+        return {
+            "normalized_event": normalized.model_dump(),
+            "action_proposal": self.map_to_proposal(normalized),
+        }
+
+    def normalize_event(
+        self,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        raw_body: bytes,
+    ) -> NormalizedApprovalEvent:
+        lowered_headers = {str(k).lower(): str(v) for k, v in headers.items()}
+        self._verifier.verify(headers=lowered_headers, raw_body=raw_body)
+        event_type = self.extract_event_type(payload)
+        route = self._config.routes.get(event_type)
+        if route is None:
+            raise self.error_cls(
+                f"unsupported {self.source_system} event type '{event_type}'"
+            )
+        delivery_id = self.compute_delivery_id(
+            headers=lowered_headers,
+            payload=payload,
+            event_type=event_type,
+            route=route,
+        )
+        if not self._idempotency.mark_if_new(delivery_id):
+            raise self.error_cls(f"duplicate delivery '{delivery_id}'")
+        return self.build_normalized_event(
+            payload=payload, event_type=event_type, route=route, delivery_id=delivery_id
+        )
+
+    def map_to_proposal(self, event: NormalizedApprovalEvent) -> ActionProposal:
+        route = self._config.routes[event.source_event_type]
+        return to_action_proposal(event, route)
+
+    def route_for_event_type(self, event_type: str) -> ApprovalEventRoute | None:
+        return self._config.routes.get(event_type)
+
+    def extract_event_type(self, payload: dict[str, Any]) -> str:
+        raise NotImplementedError
+
+    def compute_delivery_id(
+        self,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        event_type: str,
+        route: ApprovalEventRoute,
+    ) -> str:
+        raise NotImplementedError
+
+    def build_normalized_event(
+        self,
+        *,
+        payload: dict[str, Any],
+        event_type: str,
+        route: ApprovalEventRoute,
+        delivery_id: str,
+    ) -> NormalizedApprovalEvent:
+        raise NotImplementedError
 
 def resolve_path(
     payload: dict[str, Any], path: str, *, error_cls: type[IntegrationError]
