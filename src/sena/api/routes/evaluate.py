@@ -8,6 +8,8 @@ from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, parse_default_decision
 from sena.api.schemas import (
     BatchEvaluateRequest,
+    DecisionAttestationSignRequest,
+    DecisionAttestationsResponse,
     EvaluateRequest,
     ReplayDriftRequest,
     SimulationReplayRequest,
@@ -16,6 +18,7 @@ from sena.api.schemas import (
 from sena.services.audit_service import AuditService
 from sena.services.evaluation_service import EvaluationService
 from sena.services.reliability_service import QueueOverflowError
+from sena.verification import DecisionAttestation, VERIFIER_ROLE, sign_attestation, verify_attestation_signature
 
 ERROR_RESPONSES = {
     400: {"description": "Invalid request or evaluation failure."},
@@ -172,5 +175,85 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
                 ),
             )
         return payload
+
+    @router.post(
+        "/decision/{decision_id}/attestations/sign",
+        summary="Sign a decision attestation",
+        description=(
+            "Allows third-party verifier role to sign an immutable decision hash. "
+            "Returns persisted attestation with verification status."
+        ),
+    )
+    def sign_decision_attestation(
+        decision_id: str,
+        req: DecisionAttestationSignRequest,
+    ) -> dict:
+        decision_hash = state.processing_store.get_decision_hash(decision_id)
+        if decision_hash is None:
+            raise_api_error(
+                "http_not_found",
+                message=f"Decision not found for '{decision_id}'.",
+            )
+        if req.signer_role != VERIFIER_ROLE:
+            raise_api_error(
+                "http_bad_request",
+                message="Only verifier role can sign decision attestations.",
+            )
+        attestation = sign_attestation(
+            decision_id=decision_id,
+            decision_hash=decision_hash,
+            signer_id=req.signer_id,
+            signer_role=req.signer_role,
+            signing_key=req.signing_key,
+            key_id=req.key_id,
+        )
+        state.processing_store.store_decision_attestation(attestation.to_dict())
+        verified = verify_attestation_signature(
+            attestation=attestation,
+            decision_hash=decision_hash,
+            signing_key=req.signing_key,
+        )
+        return {
+            **attestation.to_dict(),
+            "verified": verified,
+        }
+
+    @router.get(
+        "/decision/{decision_id}/attestations",
+        response_model=DecisionAttestationsResponse,
+        summary="List decision attestations",
+        description="Returns all third-party signatures for one decision.",
+    )
+    def get_decision_attestations(decision_id: str) -> dict:
+        decision_hash = state.processing_store.get_decision_hash(decision_id)
+        if decision_hash is None:
+            raise_api_error(
+                "http_not_found",
+                message=f"Decision not found for '{decision_id}'.",
+            )
+
+        rows = state.processing_store.list_decision_attestations(decision_id)
+        attestations: list[dict[str, str | bool]] = []
+        for row in rows:
+            attestation = DecisionAttestation(
+                attestation_id=str(row["attestation_id"]),
+                decision_id=str(row["decision_id"]),
+                decision_hash=str(row["decision_hash"]),
+                signer_id=str(row["signer_id"]),
+                signer_role=str(row["signer_role"]),
+                key_id=str(row["key_id"]),
+                signature=str(row["signature"]),
+                signed_at=str(row["signed_at"]),
+            )
+            attestations.append(
+                {
+                    **attestation.to_dict(),
+                    "verified": attestation.decision_hash == decision_hash,
+                }
+            )
+        return {
+            "decision_id": decision_id,
+            "attestations": attestations,
+        }
 
     return router
