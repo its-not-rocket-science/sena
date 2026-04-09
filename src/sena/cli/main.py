@@ -22,6 +22,11 @@ from sena.audit.evidentiary import (
     export_evidence_bundle,
     load_signer_from_keyring_file,
 )
+from sena.audit.compliance import (
+    build_control_mapping,
+    build_evidence_vault,
+    export_control_audit_package,
+)
 from sena.api.config import load_settings_from_env
 from sena.api.production_check import run_production_readiness_check
 from sena.core.enums import DecisionOutcome
@@ -907,6 +912,34 @@ def _run_audit_export_bundle(args: argparse.Namespace) -> None:
     print(json.dumps({"status": "ok", "output": str(args.output)}, indent=2))
 
 
+def _run_audit_export_control_mapping(args: argparse.Namespace) -> None:
+    rules, _ = load_policy_bundle(args.policy_dir)
+    payload = build_control_mapping(rules)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps({"status": "ok", "output": str(args.output)}, indent=2))
+
+
+def _run_audit_export_evidence_vault(args: argparse.Namespace) -> None:
+    rules, _ = load_policy_bundle(args.policy_dir)
+    payload = build_evidence_vault(str(args.audit_path), rules)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps({"status": "ok", "output": str(args.output)}, indent=2))
+
+
+def _run_audit_export_control_package(args: argparse.Namespace) -> None:
+    rules, _ = load_policy_bundle(args.policy_dir)
+    package = export_control_audit_package(
+        str(args.audit_path),
+        rules,
+        args.control_id,
+    )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(package, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps({"status": "ok", "output": str(args.output)}, indent=2))
+
+
 def _run_production_check(args: argparse.Namespace) -> None:
     settings = load_settings_from_env()
     report = run_production_readiness_check(settings)
@@ -1425,6 +1458,31 @@ def _build_audit_parser() -> argparse.ArgumentParser:
     export_bundle.add_argument("decision_id")
     export_bundle.add_argument("--output", type=Path, required=True)
     export_bundle.set_defaults(handler=_run_audit_export_bundle)
+
+    export_control_mapping = sub.add_parser(
+        "export-control-mapping",
+        help="Export framework control mapping from policy rule control_ids",
+    )
+    export_control_mapping.add_argument("--policy-dir", type=Path, required=True)
+    export_control_mapping.add_argument("--output", type=Path, required=True)
+    export_control_mapping.set_defaults(handler=_run_audit_export_control_mapping)
+
+    export_evidence_vault = sub.add_parser(
+        "export-evidence-vault",
+        help="Export decision-to-control evidence vault using matched audit decisions",
+    )
+    export_evidence_vault.add_argument("--policy-dir", type=Path, required=True)
+    export_evidence_vault.add_argument("--output", type=Path, required=True)
+    export_evidence_vault.set_defaults(handler=_run_audit_export_evidence_vault)
+
+    export_control_package = sub.add_parser(
+        "export-control-package",
+        help="Export an audit package for one control_id with all related evidence bundles",
+    )
+    export_control_package.add_argument("--policy-dir", type=Path, required=True)
+    export_control_package.add_argument("--control-id", required=True)
+    export_control_package.add_argument("--output", type=Path, required=True)
+    export_control_package.set_defaults(handler=_run_audit_export_control_package)
     return parser
 
 

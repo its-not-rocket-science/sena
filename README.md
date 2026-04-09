@@ -286,4 +286,7 @@ Merkle proof verification attempts).
 ```bash
 python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl verify-evidence --keyring configs/audit-keyring.json
 python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl export-evidence-bundle dec_123 --output artifacts/evidence/dec_123.json
+python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl export-control-mapping --policy-dir policies/active --output artifacts/evidence/control-mapping.json
+python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl export-evidence-vault --policy-dir policies/active --output artifacts/evidence/evidence-vault.json
+python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl export-control-package --policy-dir policies/active --control-id SOC2:CC7.2 --output artifacts/evidence/soc2-cc7-2-package.json
 ```

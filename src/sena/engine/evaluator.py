@@ -545,6 +545,14 @@ class PolicyEvaluator:
         matched_controls = [
             {
                 "rule_id": result.rule_id,
+                "control_ids": next(
+                    (
+                        list(rule.control_ids)
+                        for rule in self.rules
+                        if rule.id == result.rule_id
+                    ),
+                    [],
+                ),
                 "decision": result.decision.value if result.decision else None,
                 "inviolable": result.inviolable,
                 "reason": result.reason,

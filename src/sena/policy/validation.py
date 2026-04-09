@@ -92,6 +92,17 @@ def validate_rule_payload(rule: dict[str, object]) -> None:
 
     validate_condition(rule["condition"])
 
+    control_ids = rule.get("control_ids", [])
+    if control_ids is None:
+        control_ids = []
+    if not isinstance(control_ids, list):
+        raise PolicyValidationError("'control_ids' must be a list when provided")
+    invalid_control_ids = [
+        item for item in control_ids if not isinstance(item, str) or not item.strip()
+    ]
+    if invalid_control_ids:
+        raise PolicyValidationError("'control_ids' entries must be non-empty strings")
+
     required_evidence = rule.get("required_evidence", [])
     if required_evidence is None:
         required_evidence = []

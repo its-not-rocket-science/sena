@@ -93,6 +93,7 @@ class PolicyRule:
     condition: dict[str, Any]
     decision: RuleDecision
     reason: str
+    control_ids: list[str] = field(default_factory=list)
     required_evidence: list[str] = field(default_factory=list)
     missing_evidence_decision: RuleDecision | None = None
 
