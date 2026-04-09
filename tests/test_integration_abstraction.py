@@ -98,4 +98,6 @@ def test_approval_connector_base_produces_normalized_contract_and_proposal() -> 
         }
     )
     assert response["normalized_event"]["source_system"] == "demo"
+    assert "event_timestamp" not in response["canonical_replay_payload"]
+    assert "event_timestamp" in response["operational_metadata"]
     assert response["action_proposal"].request_id == "REQ-1"

@@ -23,7 +23,7 @@ Coverage focus:
 
 Design constraints:
 - Prefer fixed fixtures over randomized values for readability.
-- Assert decision artifacts (`decision_hash`, `input_fingerprint`, matched controls) rather than volatile metadata (`decision_id`, timestamps).
+- Assert canonical decision artifacts (`canonical_replay_payload`, `decision_hash`, `input_fingerprint`, matched controls) rather than volatile metadata (`decision_id`, timestamps).
 
 ### 2) Property-based tests
 

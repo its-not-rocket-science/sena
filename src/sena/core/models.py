@@ -152,6 +152,7 @@ class EvaluatorConfig:
     default_decision: DecisionOutcome = DecisionOutcome.APPROVED
     require_allow_match: bool = False
     enforce_context_schema: bool = True
+    deterministic_mode: bool = False
     on_escalation: Callable[["EvaluationTrace"], None] | None = None
 
 
@@ -198,6 +199,8 @@ class AuditRecord:
     storage_sequence_number: int | None = None
     chain_hash: str | None = None
     previous_chain_hash: str | None = None
+    canonical_replay_payload: dict[str, Any] = field(default_factory=dict)
+    operational_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -225,6 +228,8 @@ class EvaluationTrace:
     missing_fields: list[str] = field(default_factory=list)
     context: dict[str, Any] = field(default_factory=dict)
     audit_record: AuditRecord | None = None
+    canonical_replay_payload: dict[str, Any] = field(default_factory=dict)
+    operational_metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)

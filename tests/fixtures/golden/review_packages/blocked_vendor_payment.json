@@ -7,7 +7,7 @@
     "decision": "BLOCKED",
     "outcome": "BLOCKED",
     "action_type": "approve_vendor_payment",
-    "summary": "Decision <decision_id>: BLOCKED due to inviolable policy constraints (payment_block_unverified_vendor).",
+    "summary": "BLOCKED due to inviolable policy constraints (payment_block_unverified_vendor).",
     "decision_timestamp": "<timestamp>"
   },
   "rules": {
