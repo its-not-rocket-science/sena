@@ -31,6 +31,8 @@ class WebhookEvaluateRequest(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": {"provider": "jira", "event_type": "issue_updated", "payload": {"id": "ISSUE-101"}, "facts": {}, "default_decision": "APPROVED", "strict_require_allow": False}})
     provider: NonEmptyStr
     event_type: NonEmptyStr
+    tenant_id: str | None = None
+    region: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     facts: dict[str, Any] = Field(default_factory=dict)
     default_decision: Literal[

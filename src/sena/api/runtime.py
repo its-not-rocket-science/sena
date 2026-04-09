@@ -62,6 +62,9 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("POST", "/v1/audit/verify/tree"),
         ("GET", "/v1/audit/hold"),
         ("GET", "/v1/admin/dlq"),
+        ("GET", "/v1/admin/data-access"),
+        ("GET", "/v1/admin/data/payloads"),
+        ("POST", "/v1/admin/data/payloads/{payload_id}/hold"),
         ("POST", "/v1/admin/audit/config"),
     },
 }
@@ -211,6 +214,12 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
                 "SENA_POLICY_STORE_SQLITE_PATH parent directory must exist: "
                 f"{runtime_settings.policy_store_sqlite_path}"
             )
+    if not runtime_settings.data_allowed_regions:
+        raise RuntimeError("SENA_DATA_ALLOWED_REGIONS must include at least one region")
+    if runtime_settings.data_default_region not in set(runtime_settings.data_allowed_regions):
+        raise RuntimeError(
+            "SENA_DATA_DEFAULT_REGION must be present in SENA_DATA_ALLOWED_REGIONS"
+        )
 
     if runtime_settings.api_key and not runtime_settings.enable_api_key_auth:
         raise RuntimeError("SENA_API_KEY is set but SENA_API_KEY_ENABLED is not true")
