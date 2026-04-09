@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 from sena.integrations.approval import (
@@ -10,8 +11,8 @@ from sena.integrations.approval import (
     ApprovalConnectorConfig,
     ApprovalEventRoute,
     DeliveryRetryError,
-    InMemoryDeliveryIdempotencyStore,
     InMemoryDeadLetterQueue,
+    InMemoryDeliveryIdempotencyStore,
     InMemoryDeliveryExecutionStore,
     MinimalApprovalEventContract,
     NormalizedApprovalEvent,
@@ -22,6 +23,7 @@ from sena.integrations.approval import (
     resolve_path,
 )
 from sena.integrations.base import DecisionPayload, IntegrationError
+from sena.policy.integration_persistence import SQLiteIntegrationReliabilityStore
 
 
 class JiraIntegrationError(IntegrationError):
@@ -136,19 +138,26 @@ class JiraConnector(ApprovalConnectorBase):
         config: JiraMappingConfig,
         verifier: JiraWebhookVerifier,
         idempotency_store: JiraIdempotencyStore | None = None,
+        reliability_store: SQLiteIntegrationReliabilityStore | None = None,
+        reliability_db_path: str | None = None,
         delivery_client: JiraDeliveryClient | None = None,
     ) -> None:
+        durable_store = reliability_store
+        if durable_store is None and reliability_db_path:
+            durable_store = SQLiteIntegrationReliabilityStore(str(Path(reliability_db_path)))
         super().__init__(
             config=ApprovalConnectorConfig(routes=config.routes),
             verifier=verifier,
-            idempotency_store=idempotency_store or InMemoryJiraIdempotencyStore(),
+            idempotency_store=idempotency_store
+            or durable_store
+            or InMemoryJiraIdempotencyStore(),
         )
         self._config = config
         self._delivery_client = delivery_client or NullJiraDeliveryClient()
         self._delivery_executor = ReliableDeliveryExecutor(
             max_attempts=config.outbound.max_attempts,
-            completion_store=InMemoryDeliveryExecutionStore(),
-            dlq=InMemoryDeadLetterQueue(),
+            completion_store=durable_store or InMemoryDeliveryExecutionStore(),
+            dlq=durable_store or InMemoryDeadLetterQueue(),
         )
 
     def dead_letter_items(self) -> list[dict[str, Any]]:

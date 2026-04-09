@@ -51,6 +51,27 @@ class DeliveryIdempotencyStore(Protocol):
     def mark_if_new(self, delivery_id: str) -> bool: ...
 
 
+class DeliveryCompletionStore(Protocol):
+    def mark_completed(
+        self,
+        operation_key: str,
+        *,
+        target: str,
+        payload: dict[str, Any],
+        result: dict[str, Any] | None,
+        attempts: int,
+        max_attempts: int,
+    ) -> None: ...
+
+    def has_completed(self, operation_key: str) -> bool: ...
+
+
+class DeadLetterQueue(Protocol):
+    def push(self, item: "DeadLetterItem") -> None: ...
+
+    def items(self) -> list["DeadLetterItem"]: ...
+
+
 class InMemoryDeliveryIdempotencyStore:
     def __init__(self) -> None:
         self._seen: set[str] = set()
@@ -110,6 +131,9 @@ class DeadLetterItem:
     error: str
     attempts: int
     payload: dict[str, Any]
+    max_attempts: int | None = None
+    first_failed_at: str | None = None
+    last_failed_at: str | None = None
 
 
 class InMemoryDeadLetterQueue:
@@ -127,7 +151,17 @@ class InMemoryDeliveryExecutionStore:
     def __init__(self) -> None:
         self._completed: set[str] = set()
 
-    def mark_completed(self, operation_key: str) -> None:
+    def mark_completed(
+        self,
+        operation_key: str,
+        *,
+        target: str,
+        payload: dict[str, Any],
+        result: dict[str, Any] | None,
+        attempts: int,
+        max_attempts: int,
+    ) -> None:
+        del target, payload, result, attempts, max_attempts
         self._completed.add(operation_key)
 
     def has_completed(self, operation_key: str) -> bool:
@@ -139,8 +173,8 @@ class ReliableDeliveryExecutor:
         self,
         *,
         max_attempts: int,
-        completion_store: InMemoryDeliveryExecutionStore | None = None,
-        dlq: InMemoryDeadLetterQueue | None = None,
+        completion_store: DeliveryCompletionStore | None = None,
+        dlq: DeadLetterQueue | None = None,
     ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be >= 1")
@@ -149,7 +183,7 @@ class ReliableDeliveryExecutor:
         self._dlq = dlq or InMemoryDeadLetterQueue()
 
     @property
-    def dlq(self) -> InMemoryDeadLetterQueue:
+    def dlq(self) -> DeadLetterQueue:
         return self._dlq
 
     def deliver(
@@ -167,11 +201,17 @@ class ReliableDeliveryExecutor:
                 "operation_key": operation_key,
             }
         last_error: str | None = None
+        first_failed_at: str | None = None
+        last_failed_at: str | None = None
         for attempt in range(1, self._max_attempts + 1):
             try:
                 result = delivery_fn()
             except Exception as exc:  # pragma: no cover - exercised via connector tests
                 last_error = str(exc)
+                now = datetime.now(timezone.utc).isoformat()
+                if first_failed_at is None:
+                    first_failed_at = now
+                last_failed_at = now
                 if attempt == self._max_attempts:
                     self._dlq.push(
                         DeadLetterItem(
@@ -180,13 +220,23 @@ class ReliableDeliveryExecutor:
                             error=last_error,
                             attempts=attempt,
                             payload=payload,
+                            max_attempts=self._max_attempts,
+                            first_failed_at=first_failed_at,
+                            last_failed_at=last_failed_at,
                         )
                     )
                     raise DeliveryRetryError(
                         f"delivery failed after {attempt} attempts: {last_error}"
                     ) from exc
                 continue
-            self._completion_store.mark_completed(operation_key)
+            self._completion_store.mark_completed(
+                operation_key,
+                target=target,
+                payload=payload,
+                result=result if isinstance(result, dict) else {"value": result},
+                attempts=attempt,
+                max_attempts=self._max_attempts,
+            )
             return {"status": "delivered", "target": target, "result": result}
         raise DeliveryRetryError(
             f"delivery failed after {self._max_attempts} attempts: {last_error or 'unknown'}"
