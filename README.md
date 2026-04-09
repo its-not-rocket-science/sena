@@ -207,6 +207,10 @@ Operational audit durability guidance (local sink + archive/restore drills):
 - `docs/DEPLOYMENT.md` (production deployment patterns)
 - `docs/COOKBOOK.md` (copy/paste integration examples)
 - `docs/TENANCY_MODEL.md` (tenant + region pinning, PII redaction, retention/legal hold model)
+- `docs/SECURITY_DATA_FLOW_AND_THREAT_MODEL.md` (enterprise DFD + STRIDE threat model)
+- `docs/INCIDENT_RESPONSE_AND_BREACH_NOTIFICATION.md` (incident response + breach notification process)
+- `docs/VULNERABILITY_MANAGEMENT_AND_SUBPROCESSORS.md` (dependency scanning, patch cadence, subprocessors register)
+- `docs/SECURITY_CHECKLIST.md` (release/readiness security checklist)
 
 Experimental endpoints:
 - `POST /v1/integrations/webhook`
