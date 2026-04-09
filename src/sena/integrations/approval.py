@@ -35,6 +35,16 @@ class ApprovalEventRoute:
     static_source_object_type: str | None = None
     static_workflow_stage: str | None = None
     static_requested_action: str | None = None
+    external_state_path: str | None = None
+    previous_external_state_path: str | None = None
+    external_to_internal_state: dict[str, str] = field(default_factory=dict)
+    internal_to_external_state: dict[str, str] = field(default_factory=dict)
+    allowed_state_transitions: dict[str, list[str]] = field(default_factory=dict)
+    context_fields: dict[str, str] = field(default_factory=dict)
+    metadata_fields: dict[str, str] = field(default_factory=dict)
+    required_metadata_fields: list[str] = field(default_factory=list)
+    sla_deadline_path: str | None = None
+    escalation_deadline_path: str | None = None
 
 
 class DeliveryIdempotencyStore(Protocol):
@@ -73,7 +83,105 @@ class NormalizedApprovalEvent(BaseModel):
     evidence_references: list[str] = Field(default_factory=list)
     correlation_key: str
     idempotency_key: str
+    external_state: str | None = None
+    previous_external_state: str | None = None
+    sla_deadline_at: str | None = None
+    escalation_deadline_at: str | None = None
     source_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DeliveryRetryError(IntegrationError):
+    """Raised when outbound delivery exhausts retry budget."""
+
+
+@dataclass(frozen=True)
+class DeadLetterItem:
+    operation_key: str
+    target: str
+    error: str
+    attempts: int
+    payload: dict[str, Any]
+
+
+class InMemoryDeadLetterQueue:
+    def __init__(self) -> None:
+        self._items: list[DeadLetterItem] = []
+
+    def push(self, item: DeadLetterItem) -> None:
+        self._items.append(item)
+
+    def items(self) -> list[DeadLetterItem]:
+        return list(self._items)
+
+
+class InMemoryDeliveryExecutionStore:
+    def __init__(self) -> None:
+        self._completed: set[str] = set()
+
+    def mark_completed(self, operation_key: str) -> None:
+        self._completed.add(operation_key)
+
+    def has_completed(self, operation_key: str) -> bool:
+        return operation_key in self._completed
+
+
+class ReliableDeliveryExecutor:
+    def __init__(
+        self,
+        *,
+        max_attempts: int,
+        completion_store: InMemoryDeliveryExecutionStore | None = None,
+        dlq: InMemoryDeadLetterQueue | None = None,
+    ) -> None:
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be >= 1")
+        self._max_attempts = max_attempts
+        self._completion_store = completion_store or InMemoryDeliveryExecutionStore()
+        self._dlq = dlq or InMemoryDeadLetterQueue()
+
+    @property
+    def dlq(self) -> InMemoryDeadLetterQueue:
+        return self._dlq
+
+    def deliver(
+        self,
+        *,
+        operation_key: str,
+        target: str,
+        payload: dict[str, Any],
+        delivery_fn: Any,
+    ) -> dict[str, Any]:
+        if self._completion_store.has_completed(operation_key):
+            return {
+                "status": "duplicate_suppressed",
+                "target": target,
+                "operation_key": operation_key,
+            }
+        last_error: str | None = None
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                result = delivery_fn()
+            except Exception as exc:  # pragma: no cover - exercised via connector tests
+                last_error = str(exc)
+                if attempt == self._max_attempts:
+                    self._dlq.push(
+                        DeadLetterItem(
+                            operation_key=operation_key,
+                            target=target,
+                            error=last_error,
+                            attempts=attempt,
+                            payload=payload,
+                        )
+                    )
+                    raise DeliveryRetryError(
+                        f"delivery failed after {attempt} attempts: {last_error}"
+                    ) from exc
+                continue
+            self._completion_store.mark_completed(operation_key)
+            return {"status": "delivered", "target": target, "result": result}
+        raise DeliveryRetryError(
+            f"delivery failed after {self._max_attempts} attempts: {last_error or 'unknown'}"
+        )
 
 
 class MinimalApprovalEventContract(BaseModel):
@@ -153,6 +261,34 @@ def parse_approval_routes(
             static_source_object_type=route.get("static_source_object_type"),
             static_workflow_stage=route.get("static_workflow_stage"),
             static_requested_action=route.get("static_requested_action"),
+            external_state_path=route.get("external_state_path"),
+            previous_external_state_path=route.get("previous_external_state_path"),
+            external_to_internal_state={
+                str(k): str(v)
+                for k, v in (route.get("external_to_internal_state", {}) or {}).items()
+            },
+            internal_to_external_state={
+                str(k): str(v)
+                for k, v in (route.get("internal_to_external_state", {}) or {}).items()
+            },
+            allowed_state_transitions={
+                str(k): [str(item) for item in v]
+                for k, v in (route.get("allowed_state_transitions", {}) or {}).items()
+                if isinstance(v, list)
+            },
+            context_fields={
+                str(k): str(v)
+                for k, v in (route.get("context_fields", {}) or {}).items()
+            },
+            metadata_fields={
+                str(k): str(v)
+                for k, v in (route.get("metadata_fields", {}) or {}).items()
+            },
+            required_metadata_fields=[
+                str(item) for item in (route.get("required_metadata_fields", []) or [])
+            ],
+            sla_deadline_path=route.get("sla_deadline_path"),
+            escalation_deadline_path=route.get("escalation_deadline_path"),
         )
     return routes
 
@@ -275,6 +411,9 @@ def to_action_proposal(
         "idempotency_key": event.idempotency_key,
         "risk_attributes": event.risk_attributes,
         "evidence_references": event.evidence_references,
+        "external_state": event.external_state,
+        "sla_deadline_at": event.sla_deadline_at,
+        "escalation_deadline_at": event.escalation_deadline_at,
         **event.source_metadata,
     }
     return ActionProposal(
@@ -351,11 +490,37 @@ def build_normalized_approval_event(
             resolve_path(payload, route.source_object_type_path, error_cls=error_cls)
         )
 
+    external_state: str | None = None
+    if route.external_state_path:
+        external_state = str(
+            resolve_path(payload, route.external_state_path, error_cls=error_cls)
+        )
+
+    previous_external_state: str | None = None
+    if route.previous_external_state_path:
+        previous_external_state = str(
+            resolve_path(payload, route.previous_external_state_path, error_cls=error_cls)
+        )
+
     workflow_stage = route.static_workflow_stage or default_workflow_stage
     if route.workflow_stage_path:
         workflow_stage = str(
             resolve_path(payload, route.workflow_stage_path, error_cls=error_cls)
         )
+    if external_state and route.external_to_internal_state:
+        mapped_state = route.external_to_internal_state.get(external_state)
+        if not mapped_state:
+            raise error_cls(f"unmapped external state '{external_state}'")
+        workflow_stage = mapped_state
+        if previous_external_state and route.allowed_state_transitions:
+            previous_internal = route.external_to_internal_state.get(previous_external_state)
+            if not previous_internal:
+                raise error_cls(f"unmapped previous external state '{previous_external_state}'")
+            allowed = route.allowed_state_transitions.get(previous_internal, [])
+            if workflow_stage not in allowed:
+                raise error_cls(
+                    f"invalid transition '{previous_internal}' -> '{workflow_stage}'"
+                )
 
     requested_action = route.static_requested_action or default_requested_action
     if route.requested_action_path:
@@ -378,6 +543,8 @@ def build_normalized_approval_event(
     attrs: dict[str, Any] = {}
     for out_key, in_path in route.attributes.items():
         attrs[out_key] = resolve_path(payload, in_path, error_cls=error_cls)
+    for out_key, in_path in route.context_fields.items():
+        attrs[out_key] = resolve_path(payload, in_path, error_cls=error_cls)
     attrs.update(route.static_attributes)
 
     risk_attributes: dict[str, Any] = {}
@@ -393,6 +560,28 @@ def build_normalized_approval_event(
             evidence_references = [str(item) for item in evidence_payload]
         elif evidence_payload:
             evidence_references = [str(evidence_payload)]
+
+    metadata_values: dict[str, Any] = {}
+    for out_key, in_path in route.metadata_fields.items():
+        metadata_values[out_key] = resolve_path(payload, in_path, error_cls=error_cls)
+    missing_metadata = [
+        key
+        for key in route.required_metadata_fields
+        if not str(metadata_values.get(key, "")).strip()
+    ]
+    if missing_metadata:
+        raise error_cls(f"missing required metadata fields: {','.join(missing_metadata)}")
+
+    sla_deadline_at: str | None = None
+    if route.sla_deadline_path:
+        sla_deadline_at = str(
+            resolve_path(payload, route.sla_deadline_path, error_cls=error_cls)
+        )
+    escalation_deadline_at: str | None = None
+    if route.escalation_deadline_path:
+        escalation_deadline_at = str(
+            resolve_path(payload, route.escalation_deadline_path, error_cls=error_cls)
+        )
 
     required_normalized = {
         "source_object_type": source_object_type,
@@ -410,6 +599,8 @@ def build_normalized_approval_event(
             f"missing required normalized fields: {','.join(missing_normalized)}"
         )
 
+    combined_metadata = dict(source_metadata or {})
+    combined_metadata.update(metadata_values)
     return NormalizedApprovalEvent(
         source_system=source_system,
         source_event_type=source_event_type,
@@ -425,5 +616,9 @@ def build_normalized_approval_event(
         evidence_references=evidence_references,
         correlation_key=str(correlation_key),
         idempotency_key=str(event_idempotency_key),
-        source_metadata=source_metadata or {},
+        external_state=external_state,
+        previous_external_state=previous_external_state,
+        sla_deadline_at=sla_deadline_at,
+        escalation_deadline_at=escalation_deadline_at,
+        source_metadata=combined_metadata,
     )

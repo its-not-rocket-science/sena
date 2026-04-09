@@ -9,9 +9,13 @@ from sena.integrations.approval import (
     ApprovalConnectorBase,
     ApprovalConnectorConfig,
     ApprovalEventRoute,
+    DeliveryRetryError,
     InMemoryDeliveryIdempotencyStore,
+    InMemoryDeadLetterQueue,
+    InMemoryDeliveryExecutionStore,
     MinimalApprovalEventContract,
     NormalizedApprovalEvent,
+    ReliableDeliveryExecutor,
     build_normalized_approval_event,
     load_mapping_document,
     parse_approval_routes,
@@ -30,6 +34,7 @@ ServiceNowEventRoute = ApprovalEventRoute
 @dataclass(frozen=True)
 class ServiceNowOutboundConfig:
     mode: str = "callback"
+    max_attempts: int = 1
 
 
 @dataclass(frozen=True)
@@ -95,13 +100,14 @@ def load_servicenow_mapping_config(path: str) -> ServiceNowMappingConfig:
     )
     outbound_raw = raw.get("outbound", {}) or {}
     mode = str(outbound_raw.get("mode", "callback"))
+    max_attempts = int(outbound_raw.get("max_attempts", 1))
     if mode not in {"callback", "none"}:
         raise ServiceNowIntegrationError(
             "ServiceNow outbound.mode must be one of: callback,none"
         )
     return ServiceNowMappingConfig(
         routes=routes,
-        outbound=ServiceNowOutboundConfig(mode=mode),
+        outbound=ServiceNowOutboundConfig(mode=mode, max_attempts=max_attempts),
     )
 
 
@@ -126,6 +132,14 @@ class ServiceNowConnector(ApprovalConnectorBase):
         )
         self._config = config
         self._delivery_client = delivery_client or NullServiceNowDeliveryClient()
+        self._delivery_executor = ReliableDeliveryExecutor(
+            max_attempts=config.outbound.max_attempts,
+            completion_store=InMemoryDeliveryExecutionStore(),
+            dlq=InMemoryDeadLetterQueue(),
+        )
+
+    def dead_letter_items(self) -> list[dict[str, Any]]:
+        return [item.__dict__.copy() for item in self._delivery_executor.dlq.items()]
 
     def extract_event_type(self, payload: dict[str, Any]) -> str:
         event_type = str(payload.get("event_type") or payload.get("type") or "").strip()
@@ -239,8 +253,15 @@ class ServiceNowConnector(ApprovalConnectorBase):
         if self._config.outbound.mode == "none":
             return {"status": "skipped", "payload": callback_payload}
         try:
-            delivery = self._delivery_client.publish_callback(callback_payload)
-        except Exception as exc:  # pragma: no cover
+            delivery = self._delivery_executor.deliver(
+                operation_key=f"{payload.decision_id}:callback:{payload.request_id or 'na'}",
+                target="callback",
+                payload=callback_payload,
+                delivery_fn=lambda: self._delivery_client.publish_callback(
+                    callback_payload
+                ),
+            )
+        except DeliveryRetryError as exc:
             return {
                 "status": "delivery_failed",
                 "error": str(exc),
