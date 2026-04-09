@@ -107,6 +107,7 @@ def parse_policy_file(path: str | Path) -> list[PolicyRule]:
                     condition=dict(normalized_item["condition"]),
                     decision=RuleDecision(normalized_item["decision"]),
                     reason=normalized_item["reason"],
+                    control_ids=list(normalized_item.get("control_ids", [])),
                     required_evidence=list(
                         normalized_item.get("required_evidence", [])
                     ),

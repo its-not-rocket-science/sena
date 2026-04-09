@@ -16,7 +16,13 @@ from sena.audit.evidentiary import (
     SymmetricSigningKey,
     export_evidence_bundle,
 )
+from sena.audit.compliance import (
+    build_control_mapping,
+    build_evidence_vault,
+    export_control_audit_package,
+)
 from sena.audit.sqlite_sink import SQLiteAppendOnlyAuditSink
+from sena.policy.parser import load_policy_bundle
 
 
 def _signer() -> AuditRecordSigner:
@@ -134,3 +140,174 @@ def test_cli_audit_verify_evidence(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["valid"] is True
+
+
+def test_control_mapping_vault_and_audit_package(tmp_path: Path) -> None:
+    policy_dir = tmp_path / "policy"
+    policy_dir.mkdir()
+    (policy_dir / "rules.yaml").write_text(
+        """
+- id: block_high_risk
+  description: Block high-risk requests
+  severity: high
+  inviolable: true
+  applies_to: [approve_change_request]
+  condition:
+    field: risk_score
+    gte: 90
+  decision: BLOCK
+  reason: High risk must be blocked
+  control_ids: [SOC2:CC7.2, ISO27001:A.8.16]
+- id: allow_low_risk
+  description: Allow low-risk requests
+  severity: low
+  inviolable: false
+  applies_to: [approve_change_request]
+  condition:
+    field: risk_score
+    lt: 20
+  decision: ALLOW
+  reason: Low risk can pass
+  control_ids: [SOC2:CC7.2]
+""".strip()
+    )
+
+    rules, _ = load_policy_bundle(policy_dir)
+    control_mapping = build_control_mapping(rules)
+    assert len(control_mapping["controls"]) == 2
+
+    audit_path = tmp_path / "audit.jsonl"
+    signer = _signer()
+    append_audit_record(
+        str(audit_path),
+        {
+            "decision_id": "dec-control-1",
+            "outcome": "BLOCKED",
+            "matched_rule_ids": ["block_high_risk"],
+            "input_payload": {"risk_score": 95},
+            "policy_version": "2026.04",
+        },
+        signer=signer,
+    )
+    append_audit_record(
+        str(audit_path),
+        {
+            "decision_id": "dec-control-2",
+            "outcome": "APPROVED",
+            "matched_rule_ids": ["allow_low_risk"],
+            "input_payload": {"risk_score": 10},
+            "policy_version": "2026.04",
+        },
+        signer=signer,
+    )
+
+    vault = build_evidence_vault(str(audit_path), rules)
+    soc2 = next(item for item in vault["controls"] if item["control_id"] == "SOC2:CC7.2")
+    assert soc2["decision_count"] == 2
+
+    package = export_control_audit_package(str(audit_path), rules, "SOC2:CC7.2")
+    assert package["control"]["control_id"] == "SOC2:CC7.2"
+    assert len(package["evidence_bundles"]) == 2
+
+
+def test_cli_export_control_mapping_vault_and_package(tmp_path: Path) -> None:
+    policy_dir = tmp_path / "policy"
+    policy_dir.mkdir()
+    (policy_dir / "rules.yaml").write_text(
+        """
+- id: block_high_risk
+  description: Block high-risk requests
+  severity: high
+  inviolable: true
+  applies_to: [approve_change_request]
+  condition:
+    field: risk_score
+    gte: 90
+  decision: BLOCK
+  reason: High risk must be blocked
+  control_ids: [SOC2:CC7.2]
+""".strip()
+    )
+    audit_path = tmp_path / "audit.jsonl"
+    append_audit_record(
+        str(audit_path),
+        {
+            "decision_id": "dec-cli-control",
+            "outcome": "BLOCKED",
+            "matched_rule_ids": ["block_high_risk"],
+            "input_payload": {"risk_score": 95},
+            "policy_version": "2026.04",
+        },
+        signer=_signer(),
+    )
+
+    control_map_path = tmp_path / "control-mapping.json"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = f"src:{env.get('PYTHONPATH', '')}".rstrip(":")
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "sena.cli.main",
+            "audit",
+            "--audit-path",
+            str(audit_path),
+            "export-control-mapping",
+            "--policy-dir",
+            str(policy_dir),
+            "--output",
+            str(control_map_path),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+    assert control_map_path.exists()
+
+    evidence_vault_path = tmp_path / "evidence-vault.json"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "sena.cli.main",
+            "audit",
+            "--audit-path",
+            str(audit_path),
+            "export-evidence-vault",
+            "--policy-dir",
+            str(policy_dir),
+            "--output",
+            str(evidence_vault_path),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+    assert evidence_vault_path.exists()
+
+    control_package_path = tmp_path / "control-package.json"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "sena.cli.main",
+            "audit",
+            "--audit-path",
+            str(audit_path),
+            "export-control-package",
+            "--policy-dir",
+            str(policy_dir),
+            "--control-id",
+            "SOC2:CC7.2",
+            "--output",
+            str(control_package_path),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+    payload = json.loads(control_package_path.read_text())
+    assert payload["control"]["control_id"] == "SOC2:CC7.2"
