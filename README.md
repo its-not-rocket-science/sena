@@ -153,6 +153,22 @@ python -m sena.cli.main \
   --json
 ```
 
+### Enterprise adoption utilities
+
+- Import existing policy definitions into SENA bundle format:
+  - `python -m sena.cli.main policy import-legacy --source ./legacy_policies.yaml --output-dir ./bundle --bundle-name enterprise-controls --bundle-version 2026.04`
+- Run legacy vs. new bundles in parallel and emit discrepancy report JSON:
+  - `python -m sena.cli.main replay parallel-run --replay-file ./replay_cases.json --old-policy-dir ./legacy_bundle --new-policy-dir ./candidate_bundle`
+- Resolve phased rollout mode by business unit and region:
+  - `python -m sena.cli.main rollout resolve --config ./rollout.yaml --business-unit finance --region us-east-1`
+
+Parallel-run discrepancy output format:
+- `report_type: sena.parallel_run_discrepancy_report`
+- `mode: parallel`
+- `old_label`, `new_label`
+- `discrepancy_summary` (`outcome_changes`, `matched_control_changes`, `missing_evidence_changes`)
+- `discrepancies[]` entries with per-case old/new outcomes, control deltas, evidence deltas, and source metadata.
+
 ## API quickstart
 
 ```bash

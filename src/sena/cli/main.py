@@ -32,6 +32,7 @@ from sena.engine.replay import (
     evaluate_replay_cases,
     load_replay_cases,
 )
+from sena.engine.parallel import run_parallel_mode
 from sena.engine.explain import format_trace
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
@@ -67,8 +68,10 @@ from sena.policy.disaster_recovery import (
 )
 from sena.policy.store import SQLitePolicyBundleRepository
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
+from sena.policy.importer import PolicyImportError, import_legacy_policy_file
 from sena.schemas import EvaluatePayload
 from sena.policy.test_runner import PolicyTestRunnerError, run_policy_tests
+from sena.services.rollout import RolloutConfigError, load_rollout_config
 
 TEMPLATES_ROOT = (
     Path(__file__).resolve().parent.parent / "examples" / "policy_templates"
@@ -317,6 +320,21 @@ def _run_policy_test(args: argparse.Namespace) -> None:
     print(json.dumps(report, indent=2))
     if int(report.get("failures", 0)) > 0:
         raise SystemExit("Policy tests failed")
+
+
+def _run_policy_import_legacy(args: argparse.Namespace) -> None:
+    try:
+        result = import_legacy_policy_file(
+            source_path=args.source,
+            output_dir=args.output_dir,
+            bundle_name=args.bundle_name,
+            bundle_version=args.bundle_version,
+            owner=args.owner,
+            description=args.description,
+        )
+    except PolicyImportError as exc:
+        raise SystemExit(_format_error("Policy import failed", exc)) from exc
+    print(json.dumps(result.__dict__, indent=2))
 
 
 def _run_policy_schema_version(args: argparse.Namespace) -> None:
@@ -964,6 +982,44 @@ def _run_replay_drift(args: argparse.Namespace) -> None:
     print(json.dumps(report, indent=2))
 
 
+def _run_replay_parallel(args: argparse.Namespace) -> None:
+    replay_payload = _load_json_file(args.replay_file, "replay fixture")
+    old_rules, old_meta = load_policy_bundle(args.old_policy_dir)
+    new_rules, new_meta = load_policy_bundle(args.new_policy_dir)
+    cases = load_replay_cases(
+        replay_payload,
+        mapping_mode=args.mapping_mode,
+        mapping_config_path=(
+            str(args.mapping_config_path) if args.mapping_config_path else None
+        ),
+    )
+    report = run_parallel_mode(
+        cases=cases,
+        old_rules=old_rules,
+        old_metadata=old_meta,
+        new_rules=new_rules,
+        new_metadata=new_meta,
+    )
+    print(json.dumps(report, indent=2))
+
+
+def _run_rollout_resolve(args: argparse.Namespace) -> None:
+    try:
+        config = load_rollout_config(args.config)
+        target = config.resolve(business_unit=args.business_unit, region=args.region)
+    except RolloutConfigError as exc:
+        raise SystemExit(_format_error("Rollout resolution failed", exc)) from exc
+    payload = {
+        "business_unit": args.business_unit,
+        "region": args.region,
+        "mode": target.mode,
+        "policy_bundle": target.policy_bundle,
+        "parallel_candidate_bundle": target.parallel_candidate_bundle,
+        "matched_rule_index": target.matched_rule_index,
+    }
+    print(json.dumps(payload, indent=2))
+
+
 def _build_evaluate_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -1125,6 +1181,17 @@ def _build_policy_parser() -> argparse.ArgumentParser:
     compatibility_parser.add_argument("--min-evaluator-version")
     compatibility_parser.add_argument("--max-evaluator-version")
     compatibility_parser.set_defaults(handler=_run_policy_verify_compatibility)
+
+    import_parser = sub.add_parser(
+        "import-legacy", help="Convert legacy policy files to SENA bundle format"
+    )
+    import_parser.add_argument("--source", type=Path, required=True)
+    import_parser.add_argument("--output-dir", type=Path, required=True)
+    import_parser.add_argument("--bundle-name", required=True)
+    import_parser.add_argument("--bundle-version", required=True)
+    import_parser.add_argument("--owner")
+    import_parser.add_argument("--description")
+    import_parser.set_defaults(handler=_run_policy_import_legacy)
 
     return parser
 
@@ -1442,6 +1509,26 @@ def main() -> None:
         )
         drift.add_argument("--candidate-mapping-config-path", type=Path)
         drift.set_defaults(handler=_run_replay_drift)
+        parallel = sub.add_parser("parallel-run")
+        parallel.add_argument("--replay-file", type=Path, required=True)
+        parallel.add_argument("--old-policy-dir", type=Path, required=True)
+        parallel.add_argument("--new-policy-dir", type=Path, required=True)
+        parallel.add_argument("--mapping-mode", choices=["jira", "servicenow", "webhook"])
+        parallel.add_argument("--mapping-config-path", type=Path)
+        parallel.set_defaults(handler=_run_replay_parallel)
+        args = parser.parse_args(sys.argv[2:])
+        args.handler(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "rollout":
+        parser = argparse.ArgumentParser(
+            description="SENA phased rollout controls"
+        )
+        sub = parser.add_subparsers(dest="rollout_command", required=True)
+        resolve = sub.add_parser("resolve")
+        resolve.add_argument("--config", type=Path, required=True)
+        resolve.add_argument("--business-unit", required=True)
+        resolve.add_argument("--region", required=True)
+        resolve.set_defaults(handler=_run_rollout_resolve)
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return
