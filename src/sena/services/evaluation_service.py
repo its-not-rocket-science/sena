@@ -15,6 +15,7 @@ from sena.core.models import (
     RiskClassification,
 )
 from sena.engine.evaluator import PolicyEvaluator
+from sena.engine.explain import build_explanation
 from sena.engine.replay import (
     build_drift_report,
     evaluate_replay_cases,
@@ -136,6 +137,14 @@ class EvaluationService:
             endpoint=endpoint,
         )
         payload = trace.to_dict()
+        explanation_bundle = {
+            "analyst": build_explanation(trace, view="analyst"),
+            "auditor": build_explanation(trace, view="auditor"),
+        }
+        payload["explanation"] = explanation_bundle["auditor"]
+        self.state.processing_store.store_decision_explanation(
+            trace.decision_id, explanation_bundle
+        )
         if simulate_exceptions:
             baseline_trace = PolicyEvaluator(
                 self.state.rules,

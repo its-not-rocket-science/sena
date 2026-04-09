@@ -38,6 +38,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("POST", "/v1/evaluate"),
         ("POST", "/v1/evaluate/review-package"),
         ("POST", "/v1/evaluate/batch"),
+        ("GET", "/v1/decision/{decision_id}/explanation"),
         ("POST", "/v1/exceptions/create"),
         ("POST", "/v1/exceptions/approve"),
         ("GET", "/v1/exceptions/active"),
@@ -57,6 +58,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
     },
     "auditor": {
         ("GET", "/v1/audit/verify"),
+        ("GET", "/v1/decision/{decision_id}/explanation"),
         ("POST", "/v1/audit/verify/tree"),
         ("GET", "/v1/audit/hold"),
         ("GET", "/v1/admin/dlq"),

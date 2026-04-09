@@ -51,6 +51,15 @@ class ProcessingStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS decision_explanations (
+                    decision_id TEXT PRIMARY KEY,
+                    explanation_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
 
     def get_idempotency_response(self, key: str) -> str | None:
         now = datetime.now(timezone.utc).isoformat()
@@ -192,6 +201,33 @@ class ProcessingStore:
                     (now,),
                 )
             return int(cur.rowcount)
+
+    def store_decision_explanation(
+        self, decision_id: str, explanation: dict[str, Any]
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._conn() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO decision_explanations(decision_id, explanation_json, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (decision_id, json.dumps(explanation, sort_keys=True), now),
+            )
+
+    def get_decision_explanation(self, decision_id: str) -> dict[str, Any] | None:
+        with self._lock, self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT explanation_json
+                FROM decision_explanations
+                WHERE decision_id = ?
+                """,
+                (decision_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return json.loads(str(row["explanation_json"]))
 
 
 @dataclass

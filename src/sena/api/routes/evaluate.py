@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 
 from sena.api.dependencies import check_idempotency_key, persist_idempotency_response
@@ -138,5 +138,33 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
             )
         except ValueError as exc:
             raise_api_error("http_bad_request", details={"reason": str(exc)})
+
+    @router.get(
+        "/decision/{decision_id}/explanation",
+        summary="Export decision explanation",
+        description=(
+            "Returns a role-specific explanation object. "
+            "Use view=analyst for concise output or view=auditor for full trace."
+        ),
+    )
+    def get_decision_explanation(
+        decision_id: str,
+        view: str = Query(default="auditor", pattern="^(analyst|auditor)$"),
+    ) -> dict:
+        stored = state.processing_store.get_decision_explanation(decision_id)
+        if stored is None:
+            raise_api_error(
+                "http_not_found",
+                message=f"Decision explanation not found for '{decision_id}'.",
+            )
+        payload = stored.get(view)
+        if not isinstance(payload, dict):
+            raise_api_error(
+                "http_not_found",
+                message=(
+                    f"Decision explanation view '{view}' not found for '{decision_id}'."
+                ),
+            )
+        return payload
 
     return router

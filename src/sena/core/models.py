@@ -106,6 +106,16 @@ class RuleEvaluationResult:
     reason: str | None = None
     required_evidence: list[str] = field(default_factory=list)
     missing_evidence: list[str] = field(default_factory=list)
+    condition_matched: bool | None = None
+    condition_missing_fields: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PrecedenceResolutionStep:
+    stage: str
+    description: str
+    matched_rule_ids: list[str] = field(default_factory=list)
+    outcome: DecisionOutcome | None = None
 
 
 @dataclass
@@ -208,6 +218,7 @@ class EvaluationTrace:
     evaluated_exceptions: list[ExceptionEvaluationResult] = field(default_factory=list)
     applied_exceptions: list[ExceptionEvaluationResult] = field(default_factory=list)
     conflicting_rules: list[str] = field(default_factory=list)
+    precedence_steps: list[PrecedenceResolutionStep] = field(default_factory=list)
     missing_fields: list[str] = field(default_factory=list)
     context: dict[str, Any] = field(default_factory=dict)
     audit_record: AuditRecord | None = None
