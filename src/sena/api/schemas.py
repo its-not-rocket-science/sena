@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
@@ -75,6 +76,30 @@ class SimulationReplayRequest(BaseModel):
     proposed_policy_dir: NonEmptyStr
     window: Literal["last_1_hour", "last_1_day"] = "last_1_hour"
     max_samples: int = Field(default=10, ge=1, le=100)
+
+
+class ExceptionScopeRequest(BaseModel):
+    action_type: NonEmptyStr
+    actor: str | None = None
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExceptionCreateRequest(BaseModel):
+    exception_id: NonEmptyStr
+    scope: ExceptionScopeRequest
+    expiry: datetime
+    approver_class: NonEmptyStr
+    justification: NonEmptyStr
+
+
+class ExceptionApproveRequest(BaseModel):
+    exception_id: NonEmptyStr
+    approver_role: NonEmptyStr
+    approver_id: NonEmptyStr
+
+
+class ExceptionActiveQuery(BaseModel):
+    as_of: datetime | None = None
 
 
 class BundleInfo(BaseModel):

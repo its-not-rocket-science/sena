@@ -13,8 +13,11 @@ from sena.core.models import (
     AuditRecord,
     DecisionReasoning,
     EvaluatorConfig,
+    ExceptionEvaluationResult,
+    ExceptionScope,
     EvaluationTrace,
     InvariantEvaluationResult,
+    PolicyException,
     PolicyBundleMetadata,
     PolicyInvariant,
     PolicyRule,
@@ -62,6 +65,7 @@ class PolicyEvaluator:
         self,
         rules: list[PolicyRule],
         invariants: list[PolicyInvariant] | None = None,
+        exceptions: list[PolicyException] | None = None,
         policy_bundle: PolicyBundleMetadata | None = None,
         config: EvaluatorConfig | None = None,
     ):
@@ -76,6 +80,7 @@ class PolicyEvaluator:
             if invariants is not None
             else list(self.policy_bundle.invariants)
         )
+        self.exceptions = list(exceptions or [])
         self.config = config or EvaluatorConfig()
         compatibility = evaluate_bundle_compatibility(
             schema_version=self.policy_bundle.schema_version,
@@ -86,6 +91,87 @@ class PolicyEvaluator:
                 "policy bundle compatibility check failed: "
                 + "; ".join(compatibility.errors)
             )
+
+    @staticmethod
+    def _normalize_timestamp(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    @staticmethod
+    def _scope_matches(scope: ExceptionScope, proposal: ActionProposal) -> bool:
+        if scope.action_type != proposal.action_type:
+            return False
+        if scope.actor is not None and scope.actor != proposal.actor_id:
+            return False
+        for key, expected in scope.attributes.items():
+            if proposal.attributes.get(key) != expected:
+                return False
+        return True
+
+    def _apply_exception_overlay(
+        self,
+        *,
+        proposal: ActionProposal,
+        baseline_outcome: DecisionOutcome,
+        decision_time: datetime,
+    ) -> tuple[
+        DecisionOutcome,
+        list[ExceptionEvaluationResult],
+        list[ExceptionEvaluationResult],
+        str | None,
+    ]:
+        evaluated: list[ExceptionEvaluationResult] = []
+        applied: list[ExceptionEvaluationResult] = []
+        overlay_note: str | None = None
+        outcome = baseline_outcome
+        normalized_time = self._normalize_timestamp(decision_time)
+        for item in sorted(self.exceptions, key=lambda exc: exc.exception_id):
+            expired = self._normalize_timestamp(item.expiry) <= normalized_time
+            matched = (
+                not expired
+                and item.approved_at is not None
+                and self._scope_matches(item.scope, proposal)
+            )
+            changed = (
+                matched
+                and baseline_outcome != DecisionOutcome.APPROVED
+                and baseline_outcome != DecisionOutcome.BLOCKED
+            )
+            override = DecisionOutcome.APPROVED if changed else None
+            reason = None
+            if expired:
+                reason = "expired_exception_ignored"
+            elif item.approved_at is None:
+                reason = "pending_approval"
+            elif matched:
+                reason = "approved_exception_match"
+            evaluated_result = ExceptionEvaluationResult(
+                exception_id=item.exception_id,
+                matched=matched,
+                expired=expired,
+                changed_outcome=changed,
+                override_outcome=override,
+                reason=reason,
+            )
+            evaluated.append(evaluated_result)
+            if matched:
+                applied.append(evaluated_result)
+        if applied:
+            changed_results = [result for result in applied if result.changed_outcome]
+            if changed_results:
+                changed_ids = ", ".join(result.exception_id for result in changed_results)
+                outcome = DecisionOutcome.APPROVED
+                overlay_note = (
+                    "Exception overlay applied after baseline evaluation. "
+                    f"Approved exception(s) changed baseline outcome to APPROVED: {changed_ids}."
+                )
+            else:
+                overlay_note = (
+                    "Exception overlay evaluated approved exceptions, but baseline "
+                    "outcome remained unchanged due to safety constraints."
+                )
+        return outcome, evaluated, applied, overlay_note
 
     def evaluate(self, proposal: ActionProposal, facts: dict) -> EvaluationTrace:
         decision_id = f"dec_{uuid.uuid4().hex[:12]}"
@@ -298,6 +384,25 @@ class PolicyEvaluator:
                 "BLOCK takes precedence over ESCALATE and ALLOW."
             )
 
+        decision_timestamp = datetime.now(timezone.utc)
+        baseline_outcome = outcome
+        (
+            outcome,
+            evaluated_exceptions,
+            applied_exceptions,
+            overlay_note,
+        ) = self._apply_exception_overlay(
+            proposal=proposal,
+            baseline_outcome=baseline_outcome,
+            decision_time=decision_timestamp,
+        )
+        if overlay_note:
+            precedence_explanation = f"{precedence_explanation} {overlay_note}"
+            summary = (
+                f"Decision {decision_id}: {outcome.value}. "
+                f"Baseline was {baseline_outcome.value}."
+            )
+
         risk_summary = {
             "risk_attributes": proposal.attributes.get("risk_attributes", {}),
             "requested_action": proposal.attributes.get("requested_action"),
@@ -347,6 +452,12 @@ class PolicyEvaluator:
             outcome_rationale.append(
                 "Missing governance evidence influenced one or more matched AI-assisted controls."
             )
+        if evaluated_exceptions:
+            outcome_rationale.append(
+                "Exception overlay stage executed deterministically after baseline evaluation."
+            )
+        if overlay_note:
+            outcome_rationale.append(overlay_note)
         reviewer_guidance = [
             "Verify matched controls align with control owner expectations.",
             "Retain decision hash and input fingerprint for audit replay.",
@@ -360,7 +471,6 @@ class PolicyEvaluator:
                 "Treat as control failure until remediating evidence is attached."
             )
 
-        decision_timestamp = datetime.now(timezone.utc)
         canonical_payload = {
             "proposal": {
                 "action_type": proposal.action_type,
@@ -395,6 +505,12 @@ class PolicyEvaluator:
                     "matched_invariant_ids": sorted(
                         r.invariant_id for r in matched_invariants
                     ),
+                    "evaluated_exception_ids": sorted(
+                        result.exception_id for result in evaluated_exceptions
+                    ),
+                    "applied_exception_ids": sorted(
+                        result.exception_id for result in applied_exceptions
+                    ),
                     "outcome": outcome.value,
                 },
                 sort_keys=True,
@@ -416,6 +532,15 @@ class PolicyEvaluator:
                 "evaluator_version": SENA_VERSION,
                 "input_fingerprint": input_fingerprint,
                 "decision_hash": decision_hash,
+            },
+            exception_summary={
+                "baseline_outcome": baseline_outcome.value,
+                "evaluated_exception_ids": [
+                    item.exception_id for item in evaluated_exceptions
+                ],
+                "applied_exception_ids": [
+                    item.exception_id for item in applied_exceptions
+                ],
             },
         )
 
@@ -447,6 +572,9 @@ class PolicyEvaluator:
             precedence_explanation=precedence_explanation,
             input_fingerprint=input_fingerprint,
             decision_hash=decision_hash,
+            baseline_outcome=baseline_outcome,
+            applied_exception_ids=[r.exception_id for r in applied_exceptions],
+            evaluated_exception_ids=[r.exception_id for r in evaluated_exceptions],
             source_metadata=source_metadata,
             request_correlation_id=proposal.request_id,
             evaluator_version=SENA_VERSION,
@@ -469,6 +597,9 @@ class PolicyEvaluator:
             matched_rules=matched,
             evaluated_invariants=evaluated_invariants,
             matched_invariants=matched_invariants,
+            baseline_outcome=baseline_outcome,
+            evaluated_exceptions=evaluated_exceptions,
+            applied_exceptions=applied_exceptions,
             conflicting_rules=conflicting_rules,
             missing_fields=sorted(missing_fields),
             context=context,

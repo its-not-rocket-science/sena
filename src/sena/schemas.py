@@ -60,6 +60,7 @@ class EvaluatePayload(BaseModel):
     ] = "APPROVED"
     strict_require_allow: bool = False
     dry_run: bool = False
+    simulate_exceptions: bool = False
 
     @model_validator(mode="after")
     def validate_strict_identity_fields(self) -> "EvaluatePayload":

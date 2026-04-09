@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
@@ -1648,3 +1648,90 @@ def test_bundle_rollback_target_not_found_returns_machine_readable_failure(
     body = response.json()
     assert body["error"]["code"] == "promotion_validation_failed"
     assert body["error"]["details"]["errors"] == ["rollback target bundle not found"]
+
+def test_exception_endpoints_and_simulation_mode() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    expiry = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    create_response = client.post(
+        "/v1/exceptions/create",
+        json={
+            "exception_id": "exc-api-1",
+            "scope": {
+                "action_type": "approve_vendor_payment",
+                "actor": "user-42",
+                "attributes": {"vendor_verified": True},
+            },
+            "expiry": expiry,
+            "approver_class": "finance_director",
+            "justification": "Emergency vendor payment window",
+        },
+    )
+    assert create_response.status_code == 200
+
+    approve_response = client.post(
+        "/v1/exceptions/approve",
+        json={
+            "exception_id": "exc-api-1",
+            "approver_role": "finance_director",
+            "approver_id": "director-1",
+        },
+    )
+    assert approve_response.status_code == 200
+
+    active_response = client.get("/v1/exceptions/active")
+    assert active_response.status_code == 200
+    assert active_response.json()["count"] == 1
+
+    evaluate_response = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "actor_id": "user-42",
+            "attributes": {
+                "amount": 15000,
+                "vendor_verified": True,
+                "requester_role": "finance_analyst",
+            },
+            "simulate_exceptions": True,
+        },
+    )
+    assert evaluate_response.status_code == 200
+    body = evaluate_response.json()
+    assert body["baseline_outcome"] == "ESCALATE_FOR_HUMAN_REVIEW"
+    assert body["outcome"] == "APPROVED"
+    assert body["exception_simulation"]["changed"] is True
+    assert body["audit_record"]["applied_exception_ids"] == ["exc-api-1"]
+
+
+def test_expired_exceptions_not_returned_active() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    expiry = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    create_response = client.post(
+        "/v1/exceptions/create",
+        json={
+            "exception_id": "exc-expired-api",
+            "scope": {"action_type": "approve_vendor_payment"},
+            "expiry": expiry,
+            "approver_class": "finance_director",
+            "justification": "Expired exception",
+        },
+    )
+    assert create_response.status_code == 200
+
+    approve_response = client.post(
+        "/v1/exceptions/approve",
+        json={
+            "exception_id": "exc-expired-api",
+            "approver_role": "finance_director",
+            "approver_id": "director-2",
+        },
+    )
+    assert approve_response.status_code == 200
+
+    active_response = client.get("/v1/exceptions/active")
+    assert active_response.status_code == 200
+    assert active_response.json()["count"] == 0

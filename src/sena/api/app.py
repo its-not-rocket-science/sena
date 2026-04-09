@@ -11,6 +11,7 @@ from sena.api.logging import configure_logging
 from sena.api.middleware import FixedWindowRateLimiter, register_request_middleware
 from sena.api.routes.bundles import create_bundles_router
 from sena.api.routes.evaluate import create_evaluate_router
+from sena.api.routes.exceptions import create_exceptions_router
 from sena.api.routes.health import create_health_router
 from sena.api.routes.integrations import create_integrations_router
 from sena.api.schemas import AuditTreeVerifyRequest
@@ -96,6 +97,7 @@ def build_app(state):
     api_v1 = APIRouter(prefix="/v1")
     api_v1.include_router(create_health_router(state))
     api_v1.include_router(create_evaluate_router(state))
+    api_v1.include_router(create_exceptions_router(state))
     api_v1.include_router(create_bundles_router(state))
     api_v1.include_router(create_integrations_router(state))
 

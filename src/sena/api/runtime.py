@@ -12,6 +12,7 @@ from sena.policy.store import SQLitePolicyBundleRepository
 from sena.api.processing_store import DeadLetterWorker, ProcessingStore
 from sena.services.production_processing_service import ProductionProcessingService
 from sena.services.automatic_recovery_service import AutomaticRecoveryService
+from sena.services.exception_service import ExceptionService
 
 VALID_API_ROLES = {"admin", "policy_author", "evaluator"}
 VALID_RUNTIME_MODES = {"development", "pilot", "production"}
@@ -31,6 +32,9 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("POST", "/v1/evaluate"),
         ("POST", "/v1/evaluate/review-package"),
         ("POST", "/v1/evaluate/batch"),
+        ("POST", "/v1/exceptions/create"),
+        ("POST", "/v1/exceptions/approve"),
+        ("GET", "/v1/exceptions/active"),
         ("POST", "/v1/integrations/webhook"),
         ("POST", "/v1/integrations/jira/webhook"),
         ("POST", "/v1/integrations/servicenow/webhook"),
@@ -64,6 +68,7 @@ class EngineState:
         self.processing_service: ProductionProcessingService | None = None
         self.dlq_worker: DeadLetterWorker | None = None
         self.recovery_service: Any | None = None
+        self.exception_service = ExceptionService()
 
 
 def _build_connector_registry(**kwargs: Any) -> Any:

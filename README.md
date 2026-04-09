@@ -165,6 +165,9 @@ If API key auth is enabled, send `X-API-Key: <key>` on every request.
 
 Key endpoints:
 - `POST /v1/evaluate`
+- `POST /v1/exceptions/create`
+- `POST /v1/exceptions/approve`
+- `GET /v1/exceptions/active`
 - `POST /v1/evaluate/batch`
 - `POST /v1/simulation`
 - `POST /v1/replay/drift`
@@ -186,6 +189,9 @@ Operational audit durability guidance (local sink + archive/restore drills):
 Experimental endpoints:
 - `POST /v1/integrations/webhook`
 - `POST /v1/integrations/slack/interactions`
+
+`POST /v1/evaluate` also supports `simulate_exceptions: true` to return an explicit
+comparison between baseline deterministic evaluation and exception-overlay results.
 
 
 ## LangChain callback quickstart (experimental)
