@@ -293,15 +293,15 @@ def test_api_key_auth_allows_authorized_request() -> None:
     assert response.status_code == 200
 
 
-def test_api_key_role_evaluator_cannot_promote_bundle() -> None:
+def test_api_key_role_reviewer_cannot_promote_bundle() -> None:
     app = create_app(
-        _settings(enable_api_key_auth=True, api_keys=(("eval-key", "evaluator"),))
+        _settings(enable_api_key_auth=True, api_keys=(("review-key", "reviewer"),))
     )
     client = TestClient(app)
 
     response = client.post(
         "/v1/bundle/promote",
-        headers={"x-api-key": "eval-key"},
+        headers={"x-api-key": "review-key"},
         json={
             "bundle_id": 1,
             "target_lifecycle": "active",
@@ -327,6 +327,101 @@ def test_api_key_role_policy_author_cannot_evaluate() -> None:
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "forbidden"
+
+
+def test_policy_author_cannot_promote_bundle_due_to_separation_of_duties() -> None:
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_keys=(("author-key", "policy_author"),))
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/bundle/promote",
+        headers={
+            "x-api-key": "author-key",
+            "x-step-up-auth": "mfa-ok",
+            "x-approver-id": "a1",
+            "x-secondary-approver-id": "a2",
+        },
+        json={
+            "bundle_id": 1,
+            "target_lifecycle": "active",
+            "promoted_by": "u",
+            "promotion_reason": "r",
+            "validation_artifact": "a",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["details"]["reason"].startswith("separation_of_duties")
+
+
+def test_deployer_cannot_register_bundle_due_to_separation_of_duties() -> None:
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_keys=(("deploy-key", "deployer"),))
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/bundle/register",
+        headers={"x-api-key": "deploy-key"},
+        json={"policy_dir": "src/sena/examples/policies"},
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["details"]["reason"].startswith("separation_of_duties")
+
+
+def test_promotion_requires_step_up_and_dual_approval() -> None:
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_keys=(("deploy-key", "deployer"),))
+    )
+    client = TestClient(app)
+    missing_step_up = client.post(
+        "/v1/bundle/promote",
+        headers={"x-api-key": "deploy-key"},
+        json={
+            "bundle_id": 1,
+            "target_lifecycle": "active",
+            "promoted_by": "u",
+            "promotion_reason": "r",
+            "validation_artifact": "a",
+        },
+    )
+    assert missing_step_up.status_code == 403
+    assert missing_step_up.json()["error"]["details"]["reason"] == "step_up_auth_required"
+
+    duplicate_approver = client.post(
+        "/v1/bundle/promote",
+        headers={
+            "x-api-key": "deploy-key",
+            "x-step-up-auth": "mfa-ok",
+            "x-approver-id": "same",
+            "x-secondary-approver-id": "same",
+        },
+        json={
+            "bundle_id": 1,
+            "target_lifecycle": "active",
+            "promoted_by": "u",
+            "promotion_reason": "r",
+            "validation_artifact": "a",
+        },
+    )
+    assert duplicate_approver.status_code == 403
+    assert (
+        duplicate_approver.json()["error"]["details"]["reason"]
+        == "dual_approval_requires_distinct_approvers"
+    )
+
+
+def test_audit_config_change_requires_step_up_secondary_approval() -> None:
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_keys=(("audit-key", "auditor"),))
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/admin/audit/config",
+        headers={"x-api-key": "audit-key"},
+        json={"audit_verify_daily_enabled": True},
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["details"]["reason"] == "step_up_auth_required"
 
 
 def test_validation_error_shape() -> None:

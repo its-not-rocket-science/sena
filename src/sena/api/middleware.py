@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse
 
 from sena.api.error_handlers import error_payload
 from sena.api.logging import bind_request_context, clear_request_context, get_logger
-from sena.api.runtime import EngineState, is_role_allowed
+from sena.api.runtime import EngineState, evaluate_abac_policy, is_role_allowed
+from sena.services.audit_service import AuditService
 
 logger = get_logger(__name__)
 
@@ -142,6 +143,32 @@ def register_request_middleware(
                 return _json_error(
                     403, "forbidden", "API key role is not authorized for this endpoint"
                 )
+            body_payload: dict[str, Any] = {}
+            if body:
+                try:
+                    import json
+
+                    decoded = json.loads(body.decode("utf-8"))
+                    if isinstance(decoded, dict):
+                        body_payload = decoded
+                except Exception:
+                    body_payload = {}
+            environment = request.headers.get("x-sena-environment") or state.settings.runtime_mode
+            bundle_name = (
+                request.headers.get("x-sena-bundle-name")
+                or request.query_params.get("bundle_name")
+                or body_payload.get("bundle_name")
+            )
+            action_type = body_payload.get("action_type")
+            abac_allowed, abac_reason = evaluate_abac_policy(
+                role=role,
+                environment=environment,
+                bundle_name=bundle_name,
+                action_type=action_type,
+                expected_bundle_name=state.settings.bundle_name,
+            )
+            if not abac_allowed:
+                return _json_error(403, "forbidden", abac_reason or "ABAC policy denied request")
 
         if not rate_limiter.allow(client_key, time.monotonic()):
             return _json_error(429, "rate_limited", "Rate limit exceeded")
@@ -181,5 +208,25 @@ def register_request_middleware(
             status_code=response.status_code,
             duration_ms=duration_ms,
         )
+        is_admin_action = request.url.path.startswith(("/v1/bundle", "/v1/admin")) and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        if is_admin_action and state.settings.audit_sink_jsonl:
+            try:
+                AuditService(state.settings.audit_sink_jsonl).append_record(
+                    {
+                        "event_type": "api.admin_action",
+                        "path": request.url.path,
+                        "method": request.method,
+                        "status_code": response.status_code,
+                        "request_id": request_id,
+                        "role": getattr(request.state, "api_role", "anonymous"),
+                        "environment": request.headers.get("x-sena-environment")
+                        or state.settings.runtime_mode,
+                        "bundle_name": request.headers.get("x-sena-bundle-name")
+                        or request.query_params.get("bundle_name")
+                        or state.settings.bundle_name,
+                    }
+                )
+            except Exception:
+                logger.exception("failed_to_write_admin_audit_record")
         clear_request_context()
         return response

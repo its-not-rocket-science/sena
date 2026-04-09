@@ -15,7 +15,7 @@ from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.release_signing import verify_release_manifest
 from sena.policy.store import SQLitePolicyBundleRepository
 
-VALID_API_ROLES = {"admin", "policy_author", "evaluator"}
+VALID_API_ROLES = {"admin", "policy_author", "reviewer", "deployer", "auditor"}
 VALID_RUNTIME_MODES = {"development", "pilot", "production"}
 VALID_POLICY_STORE_BACKENDS = {"filesystem", "sqlite"}
 

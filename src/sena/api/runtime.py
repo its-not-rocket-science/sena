@@ -14,21 +14,27 @@ from sena.services.production_processing_service import ProductionProcessingServ
 from sena.services.automatic_recovery_service import AutomaticRecoveryService
 from sena.services.exception_service import ExceptionService
 
-VALID_API_ROLES = {"admin", "policy_author", "evaluator"}
+VALID_API_ROLES = {
+    "admin",
+    "policy_author",
+    "reviewer",
+    "deployer",
+    "auditor",
+}
 VALID_RUNTIME_MODES = {"development", "pilot", "production"}
 VALID_POLICY_STORE_BACKENDS = {"filesystem", "sqlite"}
 ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
     "policy_author": {
         ("POST", "/v1/bundle/register"),
-        ("POST", "/v1/bundle/promote"),
         ("POST", "/v1/bundle/diff"),
         ("POST", "/v1/bundle/promotion/validate"),
-        ("POST", "/v1/bundle/rollback"),
         ("GET", "/v1/bundles/history"),
         ("GET", "/v1/bundles/active"),
         ("GET", "/v1/bundles/by-version"),
     },
-    "evaluator": {
+    "reviewer": {
+        ("POST", "/v1/bundle/promote"),
+        ("POST", "/v1/admin/audit/config"),
         ("POST", "/v1/evaluate"),
         ("POST", "/v1/evaluate/review-package"),
         ("POST", "/v1/evaluate/batch"),
@@ -42,6 +48,33 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("POST", "/v1/simulation"),
         ("POST", "/v1/simulation/replay"),
     },
+    "deployer": {
+        ("POST", "/v1/bundle/promote"),
+        ("POST", "/v1/bundle/rollback"),
+        ("GET", "/v1/bundles/history"),
+        ("GET", "/v1/bundles/active"),
+        ("GET", "/v1/bundles/by-version"),
+    },
+    "auditor": {
+        ("GET", "/v1/audit/verify"),
+        ("POST", "/v1/audit/verify/tree"),
+        ("GET", "/v1/audit/hold"),
+        ("GET", "/v1/admin/dlq"),
+        ("POST", "/v1/admin/audit/config"),
+    },
+}
+
+ROLE_ALLOWED_ENVIRONMENTS: dict[str, set[str]] = {
+    "policy_author": {"development", "pilot"},
+    "reviewer": {"development", "pilot", "production"},
+    "deployer": {"pilot", "production"},
+    "auditor": {"development", "pilot", "production"},
+}
+
+ROLE_ACTION_TYPE_DENYLIST: dict[str, set[str]] = {
+    "policy_author": {"policy_promotion", "policy_deploy", "audit_config_change"},
+    "reviewer": {"policy_deploy"},
+    "deployer": {"policy_authoring"},
 }
 
 
@@ -406,3 +439,27 @@ def is_role_allowed(role: str, method: str, path: str) -> bool:
     if role == "admin":
         return True
     return (method, path) in ROLE_ALLOWED_ENDPOINTS.get(role, set())
+
+
+def evaluate_abac_policy(
+    *,
+    role: str,
+    environment: str,
+    bundle_name: str | None,
+    action_type: str | None,
+    expected_bundle_name: str,
+) -> tuple[bool, str | None]:
+    if role == "admin":
+        return True, None
+    allowed_envs = ROLE_ALLOWED_ENVIRONMENTS.get(role)
+    if allowed_envs is not None and environment not in allowed_envs:
+        return False, f"role '{role}' is not permitted in environment '{environment}'"
+    if bundle_name and bundle_name != expected_bundle_name:
+        return (
+            False,
+            f"bundle '{bundle_name}' is not allowed for this key; expected '{expected_bundle_name}'",
+        )
+    denied_actions = ROLE_ACTION_TYPE_DENYLIST.get(role, set())
+    if action_type and action_type in denied_actions:
+        return False, f"action_type '{action_type}' is prohibited for role '{role}'"
+    return True, None

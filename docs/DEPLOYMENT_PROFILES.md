@@ -47,7 +47,7 @@ Use the repository's `docker-compose.yml` as base and layer environment override
 ```bash
 export SENA_RUNTIME_MODE=pilot
 export SENA_API_KEY_ENABLED=true
-export SENA_API_KEYS="author-key:policy_author,eval-key:evaluator,admin-key:admin"
+export SENA_API_KEYS="author-key:policy_author,review-key:reviewer,deploy-key:deployer,audit-key:auditor,admin-key:admin"
 
 export SENA_POLICY_STORE_BACKEND=sqlite
 export SENA_POLICY_STORE_SQLITE_PATH=/var/lib/sena/policy_registry.db
@@ -83,7 +83,7 @@ Example:
 ```bash
 export SENA_RUNTIME_MODE=production
 export SENA_API_KEY_ENABLED=true
-export SENA_API_KEYS="ops-admin:admin,policy-ci:policy_author,eval-svc:evaluator"
+export SENA_API_KEYS="ops-admin:admin,policy-ci:policy_author,review-svc:reviewer,deploy-svc:deployer,audit-svc:auditor"
 
 export SENA_POLICY_STORE_BACKEND=sqlite
 export SENA_POLICY_STORE_SQLITE_PATH=/var/lib/sena/policy_registry.db
