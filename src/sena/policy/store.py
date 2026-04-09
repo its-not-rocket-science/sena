@@ -17,7 +17,9 @@ from sena.policy.persistence_models import BundleHistoryRow, BundleRow
 
 ALLOWED_TRANSITIONS: set[tuple[str, str]] = {
     ("draft", "candidate"),
+    ("candidate", "approved"),
     ("candidate", "active"),
+    ("approved", "active"),
     ("active", "deprecated"),
 }
 

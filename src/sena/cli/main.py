@@ -1153,7 +1153,7 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     register.add_argument(
         "--lifecycle",
         default="draft",
-        choices=["draft", "candidate", "active", "deprecated"],
+        choices=["draft", "candidate", "approved", "active", "deprecated"],
     )
     register.add_argument("--created-by", default="system")
     register.add_argument("--creation-reason")
@@ -1180,7 +1180,7 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     validate.add_argument(
         "--target-lifecycle",
         required=True,
-        choices=["candidate", "active", "deprecated"],
+        choices=["candidate", "approved", "active", "deprecated"],
     )
     validate.add_argument("--validation-artifact")
     validate.set_defaults(handler=_run_registry_validate)
@@ -1190,7 +1190,7 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     promote.add_argument(
         "--target-lifecycle",
         required=True,
-        choices=["candidate", "active", "deprecated"],
+        choices=["candidate", "approved", "active", "deprecated"],
     )
     promote.add_argument("--promoted-by", required=True)
     promote.add_argument("--promotion-reason", required=True)
@@ -1204,6 +1204,7 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     promote.add_argument("--max-changed-risk-category", action="append")
     promote.add_argument("--break-glass", action="store_true")
     promote.add_argument("--break-glass-reason")
+    promote.add_argument("--approver-attestation", action="append")
     promote.set_defaults(handler=_run_registry_promote)
 
     rollback = sub.add_parser("rollback")

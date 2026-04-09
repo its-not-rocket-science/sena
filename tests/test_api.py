@@ -1670,6 +1670,78 @@ def test_bundle_rollback_by_version_endpoint(tmp_path) -> None:
     assert rollback.json()["active_bundle_id"] == id1
 
 
+def test_bundle_rollback_preview_returns_impact_without_mutating_active(tmp_path) -> None:
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    db_path = tmp_path / "policy_registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+
+    metadata.lifecycle = "draft"
+    id1 = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(id1, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        id1,
+        "active",
+        promoted_by="ops",
+        promotion_reason="go",
+        validation_artifact="CAB-1",
+        evidence_json='{"simulation":"ok"}',
+    )
+
+    metadata.version = "2026.98"
+    metadata.lifecycle = "draft"
+    id2 = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(id2, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        id2,
+        "active",
+        promoted_by="ops",
+        promotion_reason="go",
+        validation_artifact="CAB-2",
+        evidence_json='{"simulation":"ok"}',
+    )
+
+    app = create_app(
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
+    )
+    client = TestClient(app)
+    preview = client.post(
+        "/v1/bundle/rollback",
+        json={
+            "bundle_name": metadata.bundle_name,
+            "to_bundle_id": id1,
+            "promoted_by": "ops",
+            "promotion_reason": "incident-drill",
+            "validation_artifact": "INC-PR-1",
+            "preview_only": True,
+            "simulation_scenarios": [
+                {
+                    "scenario_id": "vendor-payment",
+                    "action_type": "approve_vendor_payment",
+                    "attributes": {"amount": 1200, "vendor_verified": False},
+                    "facts": {},
+                }
+            ],
+        },
+    )
+    assert preview.status_code == 200
+    assert preview.json()["status"] == "preview"
+    assert preview.json()["preview"]["to_bundle_id"] == id1
+
+    active = client.get(
+        "/v1/bundles/active", params={"bundle_name": metadata.bundle_name}
+    )
+    assert active.status_code == 200
+    assert active.json()["bundle_id"] == id2
+
+
 def test_bundle_promote_invalid_transition_returns_machine_readable_failure(
     tmp_path,
 ) -> None:

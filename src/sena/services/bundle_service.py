@@ -142,6 +142,8 @@ class BundleService:
             source_rules,
             stored_bundle.rules,
             validation_artifact=payload.validation_artifact,
+            simulation_report=simulation_report,
+            approver_attestations=payload.approver_attestations,
             signature_verified=stored_bundle.signature_verified,
             signature_verification_strict=stored_bundle.signature_verification_strict,
         )
@@ -169,6 +171,13 @@ class BundleService:
         try:
             evidence_payload = {
                 "simulation_report": simulation_report,
+                "approver_attestations": sorted(
+                    {
+                        item.strip()
+                        for item in payload.approver_attestations
+                        if item.strip()
+                    }
+                ),
                 "thresholds": payload.thresholds.model_dump()
                 if payload.thresholds
                 else {},
@@ -292,6 +301,7 @@ class BundleService:
 
     def rollback_bundle(self, payload: BundleRollbackRequest) -> dict[str, Any]:
         target_bundle_id = payload.to_bundle_id
+        current_active = self.policy_repo.get_active_bundle(payload.bundle_name)
         if target_bundle_id is None and payload.version:
             by_version = self.policy_repo.get_bundle_by_version(
                 payload.bundle_name, payload.version
@@ -301,6 +311,50 @@ class BundleService:
             target_bundle_id = by_version.id
         if target_bundle_id is None:
             raise ValueError("rollback requires rollback target")
+        target_bundle = self.policy_repo.get_bundle(int(target_bundle_id))
+        if target_bundle is None:
+            raise ValueError("rollback target bundle not found")
+        preview_diff = (
+            diff_rule_sets(current_active.rules, target_bundle.rules).__dict__
+            if current_active is not None
+            else diff_rule_sets([], target_bundle.rules).__dict__
+        )
+        rollback_preview: dict[str, Any] = {
+            "from_bundle_id": current_active.id if current_active is not None else None,
+            "to_bundle_id": target_bundle.id,
+            "from_version": (
+                current_active.metadata.version if current_active is not None else None
+            ),
+            "to_version": target_bundle.metadata.version,
+            "policy_diff": preview_diff,
+        }
+        if payload.simulation_scenarios:
+            scenarios = {
+                scenario.scenario_id: SimulationScenario(
+                    action_type=scenario.action_type,
+                    request_id=scenario.request_id,
+                    actor_id=scenario.actor_id,
+                    attributes=scenario.attributes,
+                    facts=scenario.facts,
+                    source_system=scenario.source_system,
+                    workflow_stage=scenario.workflow_stage,
+                    risk_category=scenario.risk_category,
+                )
+                for scenario in payload.simulation_scenarios
+            }
+            rollback_preview["simulation_report"] = simulate_bundle_impact(
+                scenarios,
+                current_active.rules if current_active is not None else [],
+                target_bundle.rules,
+                current_active.metadata if current_active is not None else target_bundle.metadata,
+                target_bundle.metadata,
+            )
+        if payload.preview_only:
+            return {
+                "status": "preview",
+                "bundle_name": payload.bundle_name,
+                "preview": rollback_preview,
+            }
         try:
             self.policy_repo.rollback_bundle(
                 payload.bundle_name,
@@ -333,6 +387,7 @@ class BundleService:
             "bundle_name": payload.bundle_name,
             "active_bundle_id": target_bundle_id,
             "version": active.metadata.version if active is not None else None,
+            "preview": rollback_preview,
         }
 
     def get_active_bundle(
@@ -434,6 +489,8 @@ class BundleService:
                 source_rules,
                 bundle.rules,
                 validation_artifact=payload.get("validation_artifact"),
+                simulation_report=payload.get("simulation_report"),
+                approver_attestations=payload.get("approver_attestations", []),
                 signature_verified=bundle.signature_verified,
                 signature_verification_strict=bundle.signature_verification_strict,
             ).__dict__
@@ -465,6 +522,8 @@ class BundleService:
             source_rules,
             target_rules,
             validation_artifact=payload.get("validation_artifact"),
+            simulation_report=payload.get("simulation_report"),
+            approver_attestations=payload.get("approver_attestations", []),
             signature_verified=signature_verified,
             signature_verification_strict=signature_strict,
         ).__dict__
