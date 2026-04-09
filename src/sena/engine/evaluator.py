@@ -686,6 +686,20 @@ class PolicyEvaluator:
         event_type = str(
             source_metadata.get("source_event_type") or "decision.evaluated"
         )
+        downstream_outcome_raw = proposal.attributes.get("downstream_outcome")
+        downstream_outcome = (
+            str(downstream_outcome_raw).strip().lower()
+            if downstream_outcome_raw is not None
+            else None
+        )
+        if downstream_outcome not in {"success", "failure"}:
+            downstream_outcome = None
+        incident_flag_raw = proposal.attributes.get("incident_flag")
+        incident_flag = (
+            incident_flag_raw
+            if isinstance(incident_flag_raw, bool)
+            else None
+        )
 
         audit_record = AuditRecord(
             decision_id=decision_id,
@@ -711,6 +725,8 @@ class PolicyEvaluator:
             request_correlation_id=proposal.request_id,
             evaluator_version=SENA_VERSION,
             policy_bundle_release_id=self.policy_bundle.version,
+            downstream_outcome=downstream_outcome,
+            incident_flag=incident_flag,
         )
 
         trace = EvaluationTrace(

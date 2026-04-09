@@ -63,6 +63,8 @@ class EvaluatePayload(BaseModel):
     strict_require_allow: bool = False
     dry_run: bool = False
     simulate_exceptions: bool = False
+    downstream_outcome: Literal["success", "failure"] | None = None
+    incident_flag: bool | None = None
 
     @model_validator(mode="after")
     def validate_strict_identity_fields(self) -> "EvaluatePayload":
@@ -145,4 +147,6 @@ class EvaluatePayload(BaseModel):
             "actor_role": self.actor_role,
             "attributes": self.attributes,
             "facts": self.facts,
+            "downstream_outcome": self.downstream_outcome,
+            "incident_flag": self.incident_flag,
         }

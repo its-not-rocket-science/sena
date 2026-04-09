@@ -107,6 +107,8 @@ class EvaluationService:
         append_audit: bool = True,
         replay_input: dict[str, Any] | None = None,
         simulate_exceptions: bool = False,
+        downstream_outcome: str | None = None,
+        incident_flag: bool | None = None,
     ) -> dict[str, Any]:
         active_exceptions = self.state.exception_service.list_active()
         evaluator = PolicyEvaluator(
@@ -169,6 +171,11 @@ class EvaluationService:
             }
         if replay_input is not None and "audit_record" in payload:
             payload["audit_record"]["replay_input"] = replay_input
+        if "audit_record" in payload:
+            if downstream_outcome in {"success", "failure"}:
+                payload["audit_record"]["downstream_outcome"] = downstream_outcome
+            if isinstance(incident_flag, bool):
+                payload["audit_record"]["incident_flag"] = incident_flag
         if append_audit:
             appended = self.audit_service.append_record(payload["audit_record"])
             if appended is not None:

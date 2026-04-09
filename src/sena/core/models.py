@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from sena.core.enums import ActionOrigin, DecisionOutcome, RuleDecision, Severity
 
@@ -192,6 +192,8 @@ class AuditRecord:
     request_correlation_id: str | None = None
     evaluator_version: str | None = None
     policy_bundle_release_id: str | None = None
+    downstream_outcome: Literal["success", "failure"] | None = None
+    incident_flag: bool | None = None
     storage_sequence_number: int | None = None
     chain_hash: str | None = None
     previous_chain_hash: str | None = None
