@@ -1,57 +1,37 @@
 # SENA Technical Maturity Plan (Alpha → Pilot-Ready)
 
-## Positioning lock
+## Coherent product narrative
 
-This plan aligns to one product story:
+- **Primary wedge:** normalized deterministic policy decisions for Jira + ServiceNow approvals.
+- **Supported integration story:** one bundle, deterministic outcomes, replay/audit evidence across Jira + ServiceNow.
+- **Experimental bucket:** generic webhook, Slack, LangChain callback, Kubernetes demo (evaluation-only).
 
-- **Primary wedge:** deterministic policy decisioning for AI-assisted approval workflows.
-- **Supported integrations:** Jira + ServiceNow.
-- **Experimental integrations:** generic webhook + Slack interactions.
+## Honest maturity statement
 
-## Alpha reality (current)
+SENA is **alpha**. The deterministic engine and evidence workflows are implemented, but pilot-ready enterprise operations are still in progress.
 
-Implemented now:
-- deterministic policy parser/validator/interpreter/evaluator,
-- versioned API and CLI surfaces,
-- bundle lifecycle primitives (register, diff, validate promotion, promote),
-- simulation/replay features,
-- hash-linked audit chain verification,
-- Jira and ServiceNow normalized integration routes.
+## Top priorities for pilot-ready progress
 
-Not yet pilot-ready by default:
-- enterprise tenancy + OIDC/RBAC admin plane,
-- replicated/WORM-native audit durability,
-- full asynchronous job orchestration,
-- full policy authoring and collaboration UI.
+1. **Integration depth hardening (Jira + ServiceNow)**
+   - Fixture/edge-case coverage,
+   - deterministic failure contracts,
+   - partner-facing runbooks.
+2. **Promotion governance gates**
+   - fail-closed simulation-backed promotions,
+   - required evidence artifacts,
+   - explicit audited break-glass flow.
+3. **Operational trust baseline**
+   - durability/migration safety,
+   - backup/restore and audit verification drills,
+   - deployment hardening and observability.
 
-## Top 3 priorities to reach pilot-ready
+## Non-goals (this phase)
 
-### 1) Integration depth hardening (Jira + ServiceNow)
-- Expand deterministic mapping fixtures and edge-case coverage.
-- Strengthen failure contracts for unsupported events, missing required fields, duplicate delivery handling.
-- Publish design-partner runbooks that avoid source-code archaeology.
-
-### 2) Promotion governance gates
-- Enforce fail-closed simulation-backed promotion checks for candidate→active.
-- Require promotion evidence artifacts (diff + scenario deltas + provenance digest).
-- Support explicit break-glass promotion with auditable reason capture.
-
-### 3) Operational trust baseline
-- Improve SQLite persistence durability and migration safety.
-- Add backup/restore + audit archive verification drills as repeatable runbooks.
-- Tighten deployment hardening and observability guidance.
-
-## Explicit non-goals (this phase)
-
-- Broad connector marketplace expansion before Jira + ServiceNow depth targets are met.
-- Repositioning SENA as generalized AI safety software.
+- Broad connector marketplace expansion before supported-path depth goals.
+- Generalized AI safety repositioning.
 - Formal verification guarantees.
-- Full enterprise control-plane UX/IAM surface.
+- Claiming full enterprise control-plane UX/IAM maturity.
 
-## Pilot-ready definition
+## Conflict marker
 
-SENA can be called **pilot-ready** only when all are true:
-
-1. Jira and ServiceNow partner workflows run end-to-end with deterministic outcomes and documented runbooks.
-2. Active bundle promotions are evidence-gated by deterministic simulation and diff artifacts.
-3. Persistence and audit recovery drills are repeatable and pass in CI-backed checks.
+Prior planning language that elevates demo connectors to primary GTM should be treated as superseded by this maturity plan.

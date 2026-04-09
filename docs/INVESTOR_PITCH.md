@@ -1,26 +1,36 @@
-# Investor Pitch: SENA
+# Investor Pitch: SENA (Docs-Aligned)
 
-## The Problem
-AI agents are already making high-impact, irreversible decisions: approving refunds, modifying infrastructure, granting access, and executing operational workflows. Most teams can log the final action, but they cannot prove exactly why the agent did it, whether the record was tampered with, or whether the same input would reproduce the same decision. That gap creates governance risk, slows enterprise adoption, and weakens accountability.
+## What SENA is today
 
-## The Solution
-SENA provides hash-linked decision traces for AI agent actions. Every decision is evaluated deterministically, recorded in a cryptographically linked audit chain, and exposed through verification and replay workflows. The result is a verifiable system of record for AI decisions rather than opaque event logs.
+SENA is an **alpha deterministic policy decision and audit evidence layer** for AI-assisted approvals.
 
-## Competition
-| Option | Strength | Limitation vs. SENA |
-|---|---|---|
-| OPA | Mature policy engine | No cryptographic audit trail and no decision-proof workflow |
-| Cedar | Strong policy language | No replayable audit evidence for historical AI decisions |
-| Lakera | Model/content safety controls | Focused on content/runtime risk, not deterministic decision proofs |
-| Custom code | Flexible and tailored | Expensive to maintain, inconsistent semantics, no standard cryptographic proofs |
+## Primary wedge
 
-## Market Size
-Every company deploying AI agents needs auditable decision infrastructure. As AI systems move from copilots to autonomous operators, verifiable decision records become a baseline requirement for compliance, incident response, procurement, and cyber insurance.
+SENA’s product wedge is one normalized policy decision layer across **Jira + ServiceNow approval events**, with deterministic outcomes and cryptographically verifiable audit records.
 
-## Traction Path
-1. Open-source adoption around deterministic decision auditing.
-2. Kubernetes integration for infrastructure-change governance.
-3. LangChain and LlamaIndex plugins to audit LLM tool calls across agent frameworks.
+## Supported integration story
 
-## Ask
-$500k seed to build the connector ecosystem and accelerate integrations where AI agents execute high-impact actions.
+A team can define one policy bundle and apply it consistently to Jira and ServiceNow approval events, then verify resulting decision records through replay and audit verification workflows.
+
+## Experimental bucket (not primary positioning)
+
+The following are useful discovery/demo surfaces but not productized commitments in this phase:
+- generic webhook mapping,
+- Slack interactions,
+- LangChain callback integration,
+- Kubernetes admission demo assets.
+
+## Honest maturity statement
+
+SENA is alpha and not yet a full enterprise control plane by default. Missing/partial areas include built-in enterprise tenancy administration, full OIDC/RBAC admin UX, WORM-native replicated audit storage, and asynchronous large simulation orchestration.
+
+## Non-goals (current phase)
+
+- Becoming a generalized AI guardrails platform.
+- Claiming broad connector coverage as current product depth.
+- Presenting demo integrations as supported production commitments.
+- Making formal verification claims.
+
+## Why this framing
+
+This narrative is intentionally constrained to what is implemented in `src/sena/*` and the currently supported integration paths.

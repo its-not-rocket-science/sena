@@ -1,63 +1,36 @@
 # SENA Control Plane (Alpha)
 
-SENA’s control plane is an **alpha deterministic governance layer** for AI-assisted enterprise approval workflows.
+## Coherent product narrative
 
-## Positioning
-
-SENA is a deterministic policy decision system, not a generalized AI safety platform and not a formal verification framework.
-
-## Primary wedge
-
-**One normalized policy model across Jira + ServiceNow approval events**, with deterministic outcomes and evidence-first release workflows.
+- **Primary wedge:** one normalized policy decision layer for Jira + ServiceNow approval events.
+- **Supported integration story:** one policy bundle can be evaluated consistently across Jira and ServiceNow with deterministic outcomes (`APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`) and audit evidence.
+- **Experimental bucket:** generic webhook, Slack interactions, LangChain callback, and Kubernetes demo surfaces are evaluation-only.
 
 ## Implemented capabilities
 
-1. **Deterministic evaluation core**
-   - Strict rule validation and deterministic precedence handling.
-   - Explicit outcomes: allow, block, escalate.
+1. Deterministic policy evaluation core.
+2. Jira + ServiceNow normalized integration routes.
+3. Bundle diff, simulation, and promotion-validation release evidence primitives.
+4. Hash-linked audit records with verification endpoints.
+5. Policy lifecycle state transitions.
 
-2. **Normalized integration depth (supported today)**
-   - Jira webhook normalization + evaluation.
-   - ServiceNow webhook normalization + evaluation.
-   - Shared normalized approval contract enables portable policy bundles.
+## Honest maturity statement
 
-3. **Release evidence primitives**
-   - Bundle diff and promotion validation APIs.
-   - Scenario simulation for baseline vs candidate impact.
-   - Trace/provenance metadata for every decision.
+SENA is **alpha**. It should be represented as pilot-prep infrastructure, not as a complete enterprise control plane.
 
-4. **Auditable decision records**
-   - Hash-linked JSONL audit chain.
-   - Verification endpoint for tamper detection.
-
-5. **Policy lifecycle controls**
-   - Bundle lifecycle states (`draft`, `candidate`, `active`, `deprecated`).
-   - Registry/promotion endpoints for explicit state transitions.
-
-## Integration status labels
-
-### Supported (productized depth)
-- `POST /v1/integrations/jira/webhook`
-- `POST /v1/integrations/servicenow/webhook`
-
-### Experimental (evaluation-only)
-- `POST /v1/integrations/webhook`
-- `POST /v1/integrations/slack/interactions`
-
-Experimental surfaces are intentionally unstable and may change without backward-compatibility guarantees.
-
-## Current maturity boundary
-
-SENA is **alpha** and should be represented as pilot-prep infrastructure.
-
-Not yet included as built-in platform controls:
-- tenant isolation and enterprise identity/RBAC administration,
+Not yet complete as built-in platform controls:
+- full enterprise tenancy administration,
+- full OIDC/RBAC admin UX,
 - replicated/WORM-native audit storage,
-- asynchronous long-running simulation orchestration,
-- full policy authoring/approval UI.
+- async long-running orchestration for large simulation workloads,
+- full policy authoring/collaboration UI.
 
-## Near-term roadmap alignment
+## Non-goals (current phase)
 
-1. Harden Jira + ServiceNow workflows and failure-mode coverage.
-2. Enforce simulation-backed promotion gates with better evidence packaging.
-3. Improve operational durability (persistence + audit recovery drills).
+- Broad connector marketplace expansion before Jira + ServiceNow depth hardening.
+- Generalized AI safety positioning.
+- Formal verification claims.
+
+## Strategy conflict marker
+
+Any materials framing Kubernetes or other demo connectors as the primary product wedge should be treated as outdated for the current phase.

@@ -1,69 +1,38 @@
 # SENA Architecture (Supported vs Legacy)
 
-## Architecture intent
+## Coherent product narrative anchor
 
-SENA is a deterministic policy control plane for AI-assisted approval workflows, with **Jira + ServiceNow normalization** as the current productized integration wedge.
+- **Primary wedge:** deterministic policy decisioning for Jira + ServiceNow approval workflows.
+- **Supported integration story:** normalized events from Jira and ServiceNow feed a shared deterministic evaluator and shared evidence pipeline.
+- **Experimental bucket:** generic webhook, Slack, LangChain callback, and Kubernetes demo code are non-contractual surfaces.
 
 ## Supported architecture (source of truth)
 
 Supported code lives in `src/sena/*`:
+1. `sena.policy.*` (parse/validate/interpret)
+2. `sena.engine.evaluator` (deterministic evaluation)
+3. `sena.api.*` and `sena.cli.*` (runtime surfaces)
+4. `sena.integrations.jira` and `sena.integrations.servicenow` (supported integration depth)
 
-1. Policy parsing/loading (`sena.policy.parser`)
-2. Policy validation (`sena.policy.validation`)
-3. Safe interpretation (`sena.policy.interpreter`)
-4. Deterministic evaluation (`sena.engine.evaluator`)
-5. API/CLI runtime surfaces (`sena.api.*`, `sena.cli.main`)
-
-Legacy code under `src/sena/legacy/*` is not part of supported claims.
+Legacy code under `src/sena/legacy/*` is out of supported claims.
 
 ## Decision flow
 
-1. Normalize input event into policy context.
-2. Evaluate rule conditions with allowed operators only.
-3. Apply precedence:
-   - inviolable block,
-   - ordinary block,
-   - escalate,
-   - default decision (`APPROVED` if unspecified).
-4. Emit deterministic trace + review/audit metadata.
+1. Normalize source event to policy context.
+2. Evaluate safe conditions/operators.
+3. Apply precedence (inviolable block, block, escalate, default).
+4. Emit deterministic trace and audit metadata.
 
-## Integration architecture status
+## Honest maturity statement
 
-### Supported integrations (today)
-- Jira: `POST /v1/integrations/jira/webhook`
-- ServiceNow: `POST /v1/integrations/servicenow/webhook`
+Current state is **alpha**. This repository contains core deterministic and evidence primitives, but not a finished enterprise control-plane experience.
 
-### Experimental integrations
-- Generic webhook mapper: `POST /v1/integrations/webhook`
-- Slack interactions: `POST /v1/integrations/slack/interactions`
+## Non-goals / boundaries
 
-Experimental integrations are intentionally marked non-contractual for this alpha phase.
+- No claim of broad production-grade connector parity across all demo connectors.
+- No claim of formal verification.
+- No claim that legacy path behavior defines current product guarantees.
 
-## Governance evidence architecture
+## Strategy conflict marker
 
-- Bundle diff + promotion validation APIs.
-- Scenario simulation and replay/drift evaluation.
-- Hash-linked audit records with verification endpoint.
-
-This is release-evidence infrastructure, not a full enterprise governance suite.
-
-## Maturity boundary
-
-SENA is **alpha** today. Pilot-ready objectives are documented in `docs/TECHNICAL_MATURITY_PLAN.md` and `ROADMAP.md`.
-
-Not yet built-in:
-- enterprise tenancy and OIDC/RBAC admin plane,
-- replicated/WORM-native audit persistence,
-- asynchronous large simulation jobs,
-- policy authoring UI.
-
-## API app/runtime boundary
-
-`src/sena/api/app.py` now separates app-object assembly from runtime initialization:
-
-- `build_app(state)` wires routes, middleware, and handlers using an already-built runtime state.
-- `initialize_runtime(settings)` performs startup validation and dependency loading (policy bundle, audit-chain verification, connectors).
-- `create_app(settings=None)` remains the public app factory and composes both steps.
-- Module-level `app` is now a lightweight lazy ASGI wrapper that defers `create_app()` until first ASGI invocation (for example, server startup), so importing `sena.api.app` no longer eagerly loads environment settings or policy bundles.
-
-This keeps startup failures explicit (raised when runtime is initialized) while making module import and app-factory testing lighter and more deterministic.
+Any architecture language that treats Kubernetes demo assets as the flagship integration path conflicts with the current supported-path narrative and should be considered historical.
