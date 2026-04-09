@@ -82,6 +82,17 @@ def create_bundles_router(state: EngineState) -> APIRouter:
                 "forbidden",
                 details={"reason": "dual_approval_requires_distinct_approvers"},
             )
+        if role:
+            merged_attestations = sorted(
+                {
+                    *(payload.approver_attestations or []),
+                    primary_approver or "",
+                    secondary_approver or "",
+                }
+            )
+            payload = payload.model_copy(
+                update={"approver_attestations": merged_attestations}
+            )
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
         try:

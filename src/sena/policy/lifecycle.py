@@ -8,7 +8,9 @@ from sena.core.models import PolicyRule
 
 ALLOWED_LIFECYCLE_TRANSITIONS = {
     ("draft", "candidate"),
+    ("candidate", "approved"),
     ("candidate", "active"),
+    ("approved", "active"),
     ("active", "deprecated"),
 }
 
@@ -203,6 +205,8 @@ def validate_promotion(
     target_rules: list[PolicyRule],
     *,
     validation_artifact: str | None = None,
+    simulation_report: dict[str, object] | None = None,
+    approver_attestations: list[str] | None = None,
     signature_verified: bool | None = None,
     signature_verification_strict: bool = False,
 ) -> PromotionValidation:
@@ -210,12 +214,26 @@ def validate_promotion(
     errors: list[str] = list(transition.errors)
 
     diff = diff_rule_sets(source_rules, target_rules)
-    if target_lifecycle == "active" and not validation_artifact:
-        errors.append("promotion to active requires validation artifact")
-    if target_lifecycle == "active" and not (
+    if target_lifecycle in {"approved", "active"} and not validation_artifact:
+        errors.append("promotion to approved/active requires validation artifact")
+    if target_lifecycle in {"approved", "active"} and not (
         diff.added_rule_ids or diff.changed_rule_ids
     ):
-        errors.append("promotion to active requires at least one added or changed rule")
+        errors.append(
+            "promotion to approved/active requires at least one added or changed rule"
+        )
+    if source_lifecycle == "candidate" and target_lifecycle in {"approved", "active"}:
+        if simulation_report is None:
+            errors.append(
+                "promotion from candidate requires simulation report"
+            )
+        attestations = sorted(
+            {item.strip() for item in (approver_attestations or []) if item.strip()}
+        )
+        if len(attestations) < 2:
+            errors.append(
+                "promotion from candidate requires at least two approver attestations"
+            )
 
     target_ids = {rule.id for rule in target_rules}
     if len(target_ids) != len(target_rules):

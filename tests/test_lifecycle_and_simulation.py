@@ -75,6 +75,26 @@ def test_lifecycle_transition_disallows_skip_and_backwards() -> None:
     assert validate_lifecycle_transition("draft", "active").valid is False
     assert validate_lifecycle_transition("active", "candidate").valid is False
     assert validate_lifecycle_transition("draft", "candidate").valid is True
+    assert validate_lifecycle_transition("candidate", "approved").valid is True
+    assert validate_lifecycle_transition("approved", "active").valid is True
+
+
+def test_candidate_promotion_requires_simulation_and_attestations() -> None:
+    source_rules, _ = load_policy_bundle("src/sena/examples/policies")
+    target_rules, _ = load_policy_bundle("src/sena/examples/policies")
+    result = validate_promotion(
+        "candidate",
+        "approved",
+        source_rules,
+        target_rules,
+        validation_artifact="CAB-1",
+        simulation_report=None,
+        approver_attestations=["approver-a"],
+    )
+    assert result.valid is False
+    joined = " ".join(result.errors)
+    assert "simulation report" in joined
+    assert "approver attestations" in joined
 
 
 def test_simulation_impact_changes_are_reported() -> None:

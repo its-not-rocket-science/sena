@@ -135,7 +135,7 @@ class BundleRegisterRequest(BaseModel):
     policy_dir: str | None = None
     bundle_name: str | None = None
     bundle_version: str | None = None
-    lifecycle: Literal["draft", "candidate", "active", "deprecated"] = "draft"
+    lifecycle: Literal["draft", "candidate", "approved", "active", "deprecated"] = "draft"
     created_by: NonEmptyStr = "system"
     creation_reason: str | None = None
     source_bundle_id: int | None = Field(default=None, gt=0)
@@ -154,7 +154,7 @@ class BundlePromoteRequest(BaseModel):
         required_risk_categories: list[str] = Field(default_factory=list)
 
     bundle_id: int = Field(gt=0)
-    target_lifecycle: Literal["candidate", "active", "deprecated"]
+    target_lifecycle: Literal["candidate", "approved", "active", "deprecated"]
     promoted_by: NonEmptyStr
     promotion_reason: NonEmptyStr
     validation_artifact: str | None = None
@@ -163,6 +163,7 @@ class BundlePromoteRequest(BaseModel):
     thresholds: PromotionThresholds | None = None
     break_glass: bool = False
     break_glass_reason: str | None = None
+    approver_attestations: list[str] = Field(default_factory=list)
 
 
 class BundleRollbackRequest(BaseModel):
@@ -172,6 +173,8 @@ class BundleRollbackRequest(BaseModel):
     promoted_by: NonEmptyStr
     promotion_reason: NonEmptyStr
     validation_artifact: NonEmptyStr
+    preview_only: bool = False
+    simulation_scenarios: list[SimulationScenarioRequest] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_target(self) -> "BundleRollbackRequest":
