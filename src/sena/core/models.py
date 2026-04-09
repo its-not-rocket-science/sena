@@ -108,6 +108,34 @@ class RuleEvaluationResult:
     missing_evidence: list[str] = field(default_factory=list)
 
 
+@dataclass
+class ExceptionScope:
+    action_type: str
+    actor: str | None = None
+    attributes: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PolicyException:
+    exception_id: str
+    scope: ExceptionScope
+    expiry: datetime
+    approver_class: str
+    justification: str
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+
+
+@dataclass
+class ExceptionEvaluationResult:
+    exception_id: str
+    matched: bool
+    expired: bool
+    changed_outcome: bool
+    override_outcome: DecisionOutcome | None = None
+    reason: str | None = None
+
+
 @dataclass(frozen=True)
 class EvaluatorConfig:
     default_decision: DecisionOutcome = DecisionOutcome.APPROVED
@@ -126,6 +154,7 @@ class DecisionReasoning:
     risk_summary: dict[str, Any] = field(default_factory=dict)
     reviewer_guidance: list[str] = field(default_factory=list)
     provenance: dict[str, Any] = field(default_factory=dict)
+    exception_summary: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -146,6 +175,9 @@ class AuditRecord:
     precedence_explanation: str
     input_fingerprint: str
     decision_hash: str
+    baseline_outcome: DecisionOutcome | None = None
+    applied_exception_ids: list[str] = field(default_factory=list)
+    evaluated_exception_ids: list[str] = field(default_factory=list)
     source_metadata: dict[str, Any] = field(default_factory=dict)
     request_correlation_id: str | None = None
     evaluator_version: str | None = None
@@ -172,6 +204,9 @@ class EvaluationTrace:
     matched_rules: list[RuleEvaluationResult] = field(default_factory=list)
     evaluated_invariants: list[InvariantEvaluationResult] = field(default_factory=list)
     matched_invariants: list[InvariantEvaluationResult] = field(default_factory=list)
+    baseline_outcome: DecisionOutcome | None = None
+    evaluated_exceptions: list[ExceptionEvaluationResult] = field(default_factory=list)
+    applied_exceptions: list[ExceptionEvaluationResult] = field(default_factory=list)
     conflicting_rules: list[str] = field(default_factory=list)
     missing_fields: list[str] = field(default_factory=list)
     context: dict[str, Any] = field(default_factory=dict)

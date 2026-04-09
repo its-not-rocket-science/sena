@@ -1,0 +1,22 @@
+# Baseline deterministic rules (Stage 1)
+- id: esc_high_value_vendor_payment
+  description: Escalate high-value vendor payments
+  severity: high
+  inviolable: false
+  applies_to: [approve_vendor_payment]
+  condition: {field: amount, gte: 10000}
+  decision: ESCALATE
+  reason: High value payment requires manual review
+
+# Governed exception payloads (Stage 2 overlay via /v1/exceptions/* APIs)
+exceptions:
+  - exception_id: exc-finance-quarter-close-001
+    scope:
+      action_type: approve_vendor_payment
+      actor: user-42
+      attributes:
+        vendor_verified: true
+        cost_center: payroll
+    expiry: "2026-12-31T23:59:59Z"
+    approver_class: finance_director
+    justification: "Quarter-close payroll cutover requires temporary fast-path."

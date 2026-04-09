@@ -36,6 +36,7 @@ class ProductionProcessingService:
             notify_on_escalation=not req.dry_run,
             append_audit=not req.dry_run,
             replay_input=req.to_replay_input(request_id),
+            simulate_exceptions=req.simulate_exceptions,
         )
 
     def process_webhook(self, payload: dict[str, Any], *, request_id: str) -> dict[str, Any]:

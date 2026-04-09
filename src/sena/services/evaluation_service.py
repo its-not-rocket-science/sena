@@ -105,9 +105,12 @@ class EvaluationService:
         notify_on_escalation: bool = True,
         append_audit: bool = True,
         replay_input: dict[str, Any] | None = None,
+        simulate_exceptions: bool = False,
     ) -> dict[str, Any]:
+        active_exceptions = self.state.exception_service.list_active()
         evaluator = PolicyEvaluator(
             self.state.rules,
+            exceptions=active_exceptions,
             policy_bundle=self.state.metadata,
             config=EvaluatorConfig(
                 default_decision=default_decision,
@@ -133,6 +136,28 @@ class EvaluationService:
             endpoint=endpoint,
         )
         payload = trace.to_dict()
+        if simulate_exceptions:
+            baseline_trace = PolicyEvaluator(
+                self.state.rules,
+                exceptions=[],
+                policy_bundle=self.state.metadata,
+                config=EvaluatorConfig(
+                    default_decision=default_decision,
+                    require_allow_match=strict_require_allow,
+                    on_escalation=None,
+                ),
+            ).evaluate(proposal, facts)
+            payload["exception_simulation"] = {
+                "without_exceptions": {
+                    "outcome": baseline_trace.outcome.value,
+                    "decision_hash": baseline_trace.decision_hash,
+                },
+                "with_exceptions": {
+                    "outcome": trace.outcome.value,
+                    "decision_hash": trace.decision_hash,
+                },
+                "changed": baseline_trace.outcome != trace.outcome,
+            }
         if replay_input is not None and "audit_record" in payload:
             payload["audit_record"]["replay_input"] = replay_input
         if append_audit:
@@ -155,6 +180,7 @@ class EvaluationService:
     ) -> dict[str, Any]:
         evaluator = PolicyEvaluator(
             self.state.rules,
+            exceptions=self.state.exception_service.list_active(),
             policy_bundle=self.state.metadata,
             config=EvaluatorConfig(
                 default_decision=default_decision,
