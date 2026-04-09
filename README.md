@@ -180,6 +180,7 @@ Key endpoints:
 - `POST /v1/audit/hold/{decision_id}` (apply legal hold)
 - `GET /v1/audit/hold` (list active legal holds)
 - `GET /v1/admin/data-access` (governed data access audit events)
+- `GET /v1/admin/slo` (SLO targets for latency, availability, and durability)
 - `GET /v1/admin/data/payloads?tenant_id=<id>&region=<region>` (tenant+region scoped governed payloads)
 - `POST /v1/admin/data/payloads/{payload_id}/hold` (legal hold for governed payload retention)
 - `GET /v1/decision/{decision_id}/explanation?view=analyst|auditor` (export concise or full decision explanation)
@@ -197,6 +198,25 @@ Experimental endpoints:
 
 `POST /v1/evaluate` also supports `simulate_exceptions: true` to return an explicit
 comparison between baseline deterministic evaluation and exception-overlay results.
+
+## Production reliability hardening
+
+SENA now includes a reliability layer for production hardening:
+- queue-based ingestion buffering (`memory` default, optional `redis` backend),
+- circuit breakers for integration dependencies (Jira / ServiceNow / webhook),
+- graceful degradation with deterministic `degraded` fallback payloads and DLQ retry records,
+- explicit SLO target definitions via `GET /v1/admin/slo`.
+
+Configuration knobs:
+- `SENA_INGESTION_QUEUE_BACKEND=memory|redis`
+- `SENA_INGESTION_QUEUE_MAX_SIZE=1000`
+- `SENA_INGESTION_QUEUE_REDIS_URL=redis://...` (required for `redis` backend)
+
+Load test harness:
+
+```bash
+python scripts/load_test.py --url http://127.0.0.1:8000/v1/evaluate --requests 500 --concurrency 50
+```
 
 
 ## LangChain callback quickstart (experimental)

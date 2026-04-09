@@ -72,6 +72,9 @@ class ApiSettings:
     auto_recovery_error_threshold: float = 0.10
     auto_recovery_window_seconds: int = 300
     auto_recovery_alert_webhook: str | None = None
+    ingestion_queue_backend: str = "memory"
+    ingestion_queue_max_size: int = 1000
+    ingestion_queue_redis_url: str | None = None
 
 
 def _parse_api_keys(raw: str | None) -> tuple[tuple[str, str], ...]:
@@ -238,4 +241,9 @@ def load_settings_from_env() -> ApiSettings:
             os.getenv("SENA_AUTO_RECOVERY_WINDOW_SECONDS"), default=300
         ),
         auto_recovery_alert_webhook=os.getenv("SENA_AUTO_RECOVERY_ALERT_WEBHOOK"),
+        ingestion_queue_backend=os.getenv("SENA_INGESTION_QUEUE_BACKEND", "memory"),
+        ingestion_queue_max_size=_parse_int(
+            os.getenv("SENA_INGESTION_QUEUE_MAX_SIZE"), default=1000
+        ),
+        ingestion_queue_redis_url=os.getenv("SENA_INGESTION_QUEUE_REDIS_URL"),
     )

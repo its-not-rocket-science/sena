@@ -90,18 +90,30 @@ class IntegrationService:
             notify_on_escalation=False,
             append_audit=False,
         )
-        outbound = self.state.jira_connector.send_decision(
-            DecisionPayload(
-                decision_id=decision["decision_id"],
-                request_id=proposal.request_id,
-                action_type=proposal.action_type,
-                matched_rule_ids=[
-                    item["rule_id"] for item in decision["matched_rules"]
-                ],
-                summary=decision["summary"],
-                merkle_proof=decision.get("decision_hash"),
-            )
+        reliability = self.state.reliability_service
+        decision_payload = DecisionPayload(
+            decision_id=decision["decision_id"],
+            request_id=proposal.request_id,
+            action_type=proposal.action_type,
+            matched_rule_ids=[item["rule_id"] for item in decision["matched_rules"]],
+            summary=decision["summary"],
+            merkle_proof=decision.get("decision_hash"),
         )
+        if reliability is None:
+            outbound = self.state.jira_connector.send_decision(decision_payload)
+        else:
+            outbound = reliability.call_dependency(
+                dependency_name="jira",
+                operation=lambda: self.state.jira_connector.send_decision(
+                    decision_payload
+                ),
+                fallback=lambda reason: self._degraded_outbound_fallback(
+                    dependency="jira",
+                    reason=reason,
+                    decision=decision,
+                    request_id=proposal.request_id,
+                ),
+            )
         return {
             "status": "evaluated",
             "normalized_event": normalized,
@@ -150,18 +162,30 @@ class IntegrationService:
             notify_on_escalation=False,
             append_audit=False,
         )
-        outbound = self.state.servicenow_connector.send_decision(
-            DecisionPayload(
-                decision_id=decision["decision_id"],
-                request_id=proposal.request_id,
-                action_type=proposal.action_type,
-                matched_rule_ids=[
-                    item["rule_id"] for item in decision["matched_rules"]
-                ],
-                summary=decision["summary"],
-                merkle_proof=decision.get("decision_hash"),
-            )
+        reliability = self.state.reliability_service
+        decision_payload = DecisionPayload(
+            decision_id=decision["decision_id"],
+            request_id=proposal.request_id,
+            action_type=proposal.action_type,
+            matched_rule_ids=[item["rule_id"] for item in decision["matched_rules"]],
+            summary=decision["summary"],
+            merkle_proof=decision.get("decision_hash"),
         )
+        if reliability is None:
+            outbound = self.state.servicenow_connector.send_decision(decision_payload)
+        else:
+            outbound = reliability.call_dependency(
+                dependency_name="servicenow",
+                operation=lambda: self.state.servicenow_connector.send_decision(
+                    decision_payload
+                ),
+                fallback=lambda reason: self._degraded_outbound_fallback(
+                    dependency="servicenow",
+                    reason=reason,
+                    decision=decision,
+                    request_id=proposal.request_id,
+                ),
+            )
         return {
             "status": "evaluated",
             "normalized_event": normalized,
@@ -185,4 +209,29 @@ class IntegrationService:
             "decision": interaction["decision"],
             "decision_id": interaction["decision_id"],
             "reviewer": interaction["reviewer"],
+        }
+
+    def _degraded_outbound_fallback(
+        self,
+        *,
+        dependency: str,
+        reason: str,
+        decision: dict[str, Any],
+        request_id: str | None,
+    ) -> dict[str, Any]:
+        self.state.processing_store.enqueue_dead_letter(
+            {
+                "event_type": "integration_outbound_retry",
+                "dependency": dependency,
+                "request_id": request_id,
+                "decision_id": decision.get("decision_id"),
+                "decision_summary": decision.get("summary"),
+            },
+            f"{dependency} outbound degraded: {reason}",
+        )
+        return {
+            "status": "degraded",
+            "fallback_mode": "queue_for_retry",
+            "reason": reason,
+            "dependency": dependency,
         }

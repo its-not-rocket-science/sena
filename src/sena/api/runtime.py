@@ -13,6 +13,11 @@ from sena.api.processing_store import DeadLetterWorker, ProcessingStore
 from sena.services.production_processing_service import ProductionProcessingService
 from sena.services.automatic_recovery_service import AutomaticRecoveryService
 from sena.services.exception_service import ExceptionService
+from sena.services.reliability_service import (
+    InMemoryIngestionQueue,
+    RedisIngestionQueue,
+    ReliabilityService,
+)
 
 VALID_API_ROLES = {
     "admin",
@@ -63,6 +68,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("GET", "/v1/audit/hold"),
         ("GET", "/v1/admin/dlq"),
         ("GET", "/v1/admin/data-access"),
+        ("GET", "/v1/admin/slo"),
         ("GET", "/v1/admin/data/payloads"),
         ("POST", "/v1/admin/data/payloads/{payload_id}/hold"),
         ("POST", "/v1/admin/audit/config"),
@@ -107,6 +113,7 @@ class EngineState:
         self.dlq_worker: DeadLetterWorker | None = None
         self.recovery_service: Any | None = None
         self.exception_service = ExceptionService()
+        self.reliability_service: ReliabilityService | None = None
 
 
 def _build_connector_registry(**kwargs: Any) -> Any:
@@ -310,6 +317,19 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
         )
     if runtime_settings.auto_recovery_window_seconds <= 0:
         raise RuntimeError("SENA_AUTO_RECOVERY_WINDOW_SECONDS must be > 0")
+    if runtime_settings.ingestion_queue_backend not in {"memory", "redis"}:
+        raise RuntimeError(
+            "SENA_INGESTION_QUEUE_BACKEND must be one of ['memory', 'redis']"
+        )
+    if runtime_settings.ingestion_queue_max_size <= 0:
+        raise RuntimeError("SENA_INGESTION_QUEUE_MAX_SIZE must be > 0")
+    if (
+        runtime_settings.ingestion_queue_backend == "redis"
+        and not runtime_settings.ingestion_queue_redis_url
+    ):
+        raise RuntimeError(
+            "SENA_INGESTION_QUEUE_REDIS_URL is required when backend is redis"
+        )
 
 
 def build_runtime_state(
@@ -319,6 +339,16 @@ def build_runtime_state(
     policy_repo: SQLitePolicyBundleRepository | None,
 ) -> EngineState:
     state = EngineState(runtime_settings, rules, metadata, policy_repo)
+    queue_backend: Any
+    if runtime_settings.ingestion_queue_backend == "redis":
+        queue_backend = RedisIngestionQueue(
+            redis_url=str(runtime_settings.ingestion_queue_redis_url)
+        )
+    else:
+        queue_backend = InMemoryIngestionQueue(
+            max_size=runtime_settings.ingestion_queue_max_size
+        )
+    state.reliability_service = ReliabilityService(ingestion_queue=queue_backend)
     if runtime_settings.webhook_mapping_config_path:
         from sena.integrations.webhook import (
             WebhookPayloadMapper,
