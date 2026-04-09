@@ -123,6 +123,115 @@ def test_policy_validate_returns_human_readable_error(tmp_path) -> None:
     )
 
 
+def test_policy_import_legacy_command(tmp_path) -> None:
+    legacy_file = tmp_path / "legacy.yaml"
+    legacy_file.write_text(
+        """
+policies:
+  - policy_id: legacy_allow_small
+    action: release_refund
+    severity: low
+    when:
+      all:
+        - field: amount
+          lte: 150
+    outcome: approve
+    justification: low-risk amount
+""".strip()
+    )
+    output_dir = tmp_path / "converted_bundle"
+    result = _run_cli(
+        [
+            "policy",
+            "import-legacy",
+            "--source",
+            str(legacy_file),
+            "--output-dir",
+            str(output_dir),
+            "--bundle-name",
+            "enterprise-controls",
+            "--bundle-version",
+            "2026.04",
+        ]
+    )
+    result.check_returncode()
+    payload = json.loads(result.stdout)
+    assert payload["output_rule_count"] == 1
+    assert (output_dir / "bundle.yaml").exists()
+
+
+def test_replay_parallel_run_command(tmp_path) -> None:
+    replay_file = tmp_path / "replay.json"
+    replay_file.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "case_id": "c1",
+                        "proposal": {
+                            "action_type": "release_refund",
+                            "request_id": "req-1",
+                            "actor_id": "agent-1",
+                            "actor_role": "support",
+                            "attributes": {
+                                "amount": 75,
+                                "order_exists": True,
+                                "delivery_failed": True,
+                            },
+                            "action_origin": "human",
+                        },
+                    }
+                ]
+            }
+        )
+    )
+    result = _run_cli(
+        [
+            "replay",
+            "parallel-run",
+            "--replay-file",
+            str(replay_file),
+            "--old-policy-dir",
+            "src/sena/examples/policies",
+            "--new-policy-dir",
+            "src/sena/examples/policies",
+        ]
+    )
+    result.check_returncode()
+    payload = json.loads(result.stdout)
+    assert payload["report_type"] == "sena.parallel_run_discrepancy_report"
+
+
+def test_rollout_resolve_command(tmp_path) -> None:
+    config_path = tmp_path / "rollout.yaml"
+    config_path.write_text(
+        """
+default_mode: legacy
+default_policy_bundle: legacy:stable
+rules:
+  - business_unit: finance
+    mode: parallel
+    policy_bundle: sena:2026.03
+    parallel_candidate_bundle: sena:2026.04
+""".strip()
+    )
+    result = _run_cli(
+        [
+            "rollout",
+            "resolve",
+            "--config",
+            str(config_path),
+            "--business-unit",
+            "finance",
+            "--region",
+            "us-east-1",
+        ]
+    )
+    result.check_returncode()
+    payload = json.loads(result.stdout)
+    assert payload["mode"] == "parallel"
+
+
 def test_registry_lifecycle_commands(tmp_path) -> None:
     db_path = tmp_path / "registry.db"
     base = ["registry", "--sqlite-path", str(db_path)]
