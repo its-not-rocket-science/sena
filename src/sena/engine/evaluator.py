@@ -178,7 +178,8 @@ class PolicyEvaluator:
                 )
         return outcome, evaluated, applied, overlay_note
 
-    def evaluate(self, proposal: ActionProposal, facts: dict) -> EvaluationTrace:
+    @staticmethod
+    def _build_context(proposal: ActionProposal, facts: dict) -> dict[str, object]:
         context = {
             "action_type": proposal.action_type,
             "request_id": proposal.request_id,
@@ -192,24 +193,14 @@ class PolicyEvaluator:
             context["ai_metadata"] = asdict(proposal.ai_metadata)
         if proposal.autonomous_metadata is not None:
             context["autonomous_metadata"] = asdict(proposal.autonomous_metadata)
-        applicable = [r for r in self.rules if proposal.action_type in r.applies_to]
-        applicable_invariants = [
-            invariant
-            for invariant in self.invariants
-            if proposal.action_type in invariant.applies_to
-        ]
-        evaluated: list[RuleEvaluationResult] = []
-        evaluated_invariants: list[InvariantEvaluationResult] = []
-        precedence_steps: list[PrecedenceResolutionStep] = [
-            PrecedenceResolutionStep(
-                stage="start",
-                description="Started deterministic policy evaluation.",
-            )
-        ]
-        missing_fields: set[str] = set()
+        return context
+
+    def _run_pre_evaluation_validation(
+        self, proposal: ActionProposal, context: dict[str, object]
+    ) -> tuple[list[str], list[str], list[str]]:
         schema_errors: list[str] = []
         identity_errors: list[str] = []
-        ai_metadata_errors: list[str] = validate_ai_originated_action_fields(proposal)
+        ai_metadata_errors = validate_ai_originated_action_fields(proposal)
         if self.config.require_allow_match:
             identity_errors = validate_identity_fields(
                 proposal.actor_id, proposal.actor_role
@@ -218,100 +209,117 @@ class PolicyEvaluator:
             schema_errors = validate_context_schema(
                 context, self.policy_bundle.context_schema
             )
+        return schema_errors, identity_errors, ai_metadata_errors
 
-        if not schema_errors and not identity_errors and not ai_metadata_errors:
-            for invariant in applicable_invariants:
-                condition_result = evaluate_condition_with_trace(
-                    invariant.condition, context
-                )
-                matched = condition_result.matched
-                missing_fields.update(condition_result.missing_fields)
-                evaluated_invariants.append(
-                    InvariantEvaluationResult(
-                        invariant_id=invariant.id,
-                        matched=matched,
-                        reason=invariant.reason if matched else None,
-                    )
-                )
-            for rule in applicable:
-                condition_result = evaluate_condition_with_trace(
-                    rule.condition, context
-                )
-                matched = condition_result.matched
-                missing_fields.update(condition_result.missing_fields)
-                rule_decision = rule.decision if matched else None
-                rule_reason = rule.reason if matched else None
-                missing_evidence: list[str] = []
-                if (
-                    matched
-                    and proposal.action_origin.value == "ai_suggested"
-                    and rule.required_evidence
-                ):
-                    missing_evidence = [
-                        class_name
-                        for class_name in rule.required_evidence
-                        if class_name in SUPPORTED_EVIDENCE_CLASSES
-                        and _missing_evidence_for_class(class_name, context)
-                    ]
-                    if missing_evidence:
-                        missing_fields.update(
-                            f"evidence.{class_name}" for class_name in missing_evidence
-                        )
-                        rule_decision = (
-                            rule.missing_evidence_decision or RuleDecision.ESCALATE
-                        )
-                        rule_reason = (
-                            f"{rule.reason} Missing governance evidence: "
-                            + ", ".join(sorted(missing_evidence))
-                            + "."
-                        )
-                evaluated.append(
-                    RuleEvaluationResult(
-                        rule_id=rule.id,
-                        matched=matched,
-                        decision=rule_decision,
-                        inviolable=rule.inviolable,
-                        reason=rule_reason,
-                        required_evidence=list(rule.required_evidence),
-                        missing_evidence=missing_evidence,
-                        condition_matched=condition_result.matched,
-                        condition_missing_fields=sorted(
-                            condition_result.missing_fields
-                        ),
-                    )
-                )
-            precedence_steps.append(
-                PrecedenceResolutionStep(
-                    stage="rule_evaluation",
-                    description=(
-                        "Evaluated all applicable rules and captured matched/non-matched outcomes."
-                    ),
-                    matched_rule_ids=sorted(
-                        result.rule_id for result in evaluated if result.matched
-                    ),
+    @staticmethod
+    def _evaluate_invariants(
+        applicable_invariants: list[PolicyInvariant],
+        context: dict[str, object],
+        missing_fields: set[str],
+    ) -> list[InvariantEvaluationResult]:
+        evaluated_invariants: list[InvariantEvaluationResult] = []
+        for invariant in applicable_invariants:
+            condition_result = evaluate_condition_with_trace(
+                invariant.condition, context
+            )
+            missing_fields.update(condition_result.missing_fields)
+            evaluated_invariants.append(
+                InvariantEvaluationResult(
+                    invariant_id=invariant.id,
+                    matched=condition_result.matched,
+                    reason=invariant.reason if condition_result.matched else None,
                 )
             )
-        else:
-            skip_reason = "pre_evaluation_validation_failed"
-            for rule in applicable:
-                evaluated.append(
-                    RuleEvaluationResult(
-                        rule_id=rule.id,
-                        matched=False,
-                        decision=None,
-                        inviolable=rule.inviolable,
-                        reason=skip_reason,
+        return evaluated_invariants
+
+    def _evaluate_rules(
+        self,
+        *,
+        applicable: list[PolicyRule],
+        proposal: ActionProposal,
+        context: dict[str, object],
+        missing_fields: set[str],
+    ) -> list[RuleEvaluationResult]:
+        evaluated: list[RuleEvaluationResult] = []
+        for rule in applicable:
+            condition_result = evaluate_condition_with_trace(rule.condition, context)
+            matched = condition_result.matched
+            missing_fields.update(condition_result.missing_fields)
+            rule_decision = rule.decision if matched else None
+            rule_reason = rule.reason if matched else None
+            missing_evidence: list[str] = []
+            if (
+                matched
+                and proposal.action_origin.value == "ai_suggested"
+                and rule.required_evidence
+            ):
+                missing_evidence = [
+                    class_name
+                    for class_name in rule.required_evidence
+                    if class_name in SUPPORTED_EVIDENCE_CLASSES
+                    and _missing_evidence_for_class(class_name, context)
+                ]
+                if missing_evidence:
+                    missing_fields.update(
+                        f"evidence.{class_name}" for class_name in missing_evidence
                     )
-                )
-            precedence_steps.append(
-                PrecedenceResolutionStep(
-                    stage="rule_evaluation_skipped",
-                    description=(
-                        "Rule condition evaluation skipped due to deterministic pre-evaluation validation errors."
-                    ),
+                    rule_decision = (
+                        rule.missing_evidence_decision or RuleDecision.ESCALATE
+                    )
+                    rule_reason = (
+                        f"{rule.reason} Missing governance evidence: "
+                        + ", ".join(sorted(missing_evidence))
+                        + "."
+                    )
+            evaluated.append(
+                RuleEvaluationResult(
+                    rule_id=rule.id,
+                    matched=matched,
+                    decision=rule_decision,
+                    inviolable=rule.inviolable,
+                    reason=rule_reason,
+                    required_evidence=list(rule.required_evidence),
+                    missing_evidence=missing_evidence,
+                    condition_matched=condition_result.matched,
+                    condition_missing_fields=sorted(condition_result.missing_fields),
                 )
             )
+        return evaluated
 
+    @staticmethod
+    def _build_skipped_rule_results(
+        applicable: list[PolicyRule], skip_reason: str
+    ) -> list[RuleEvaluationResult]:
+        return [
+            RuleEvaluationResult(
+                rule_id=rule.id,
+                matched=False,
+                decision=None,
+                inviolable=rule.inviolable,
+                reason=skip_reason,
+            )
+            for rule in applicable
+        ]
+
+    def _resolve_precedence(
+        self,
+        *,
+        proposal: ActionProposal,
+        evaluated: list[RuleEvaluationResult],
+        evaluated_invariants: list[InvariantEvaluationResult],
+        schema_errors: list[str],
+        identity_errors: list[str],
+        ai_metadata_errors: list[str],
+        missing_fields: set[str],
+        precedence_steps: list[PrecedenceResolutionStep],
+    ) -> tuple[
+        DecisionOutcome,
+        str,
+        str,
+        list[RuleEvaluationResult],
+        list[InvariantEvaluationResult],
+        list[str],
+    ]:
         matched = [result for result in evaluated if result.matched]
         matched_invariants = [
             result for result in evaluated_invariants if result.matched
@@ -338,7 +346,6 @@ class PolicyEvaluator:
             f"{outcome.value}. No matching policy rules for action "
             f"'{proposal.action_type}'."
         )
-
         if matched_invariants:
             outcome = DecisionOutcome.BLOCKED
             precedence_explanation = (
@@ -423,6 +430,7 @@ class PolicyEvaluator:
                     outcome=outcome,
                 )
             )
+
         if schema_errors:
             outcome = DecisionOutcome.BLOCKED
             precedence_explanation = "Context schema validation failed before policy evaluation; blocked deterministically."
@@ -491,13 +499,11 @@ class PolicyEvaluator:
                     outcome=outcome,
                 )
             )
-
         if not matched and self.config.default_decision != DecisionOutcome.APPROVED:
             summary = (
                 f"{outcome.value} because no matching policy rules "
                 f"were found under {self.config.default_decision.value.lower()}-by-default mode."
             )
-
         if conflicting_rules:
             precedence_explanation = (
                 f"{precedence_explanation} Multiple conflicting rules matched; "
@@ -511,36 +517,29 @@ class PolicyEvaluator:
                     outcome=outcome,
                 )
             )
-
-        decision_timestamp = datetime.now(timezone.utc)
-        baseline_outcome = outcome
-        (
+        return (
             outcome,
-            evaluated_exceptions,
-            applied_exceptions,
-            overlay_note,
-        ) = self._apply_exception_overlay(
-            proposal=proposal,
-            baseline_outcome=baseline_outcome,
-            decision_time=decision_timestamp,
+            precedence_explanation,
+            summary,
+            matched,
+            matched_invariants,
+            conflicting_rules,
         )
-        if overlay_note:
-            precedence_explanation = f"{precedence_explanation} {overlay_note}"
-            summary = (
-                f"{outcome.value}. "
-                f"Baseline was {baseline_outcome.value}."
-            )
-            precedence_steps.append(
-                PrecedenceResolutionStep(
-                    stage="exception_overlay",
-                    description=overlay_note,
-                    matched_rule_ids=sorted(
-                        result.exception_id for result in applied_exceptions
-                    ),
-                    outcome=outcome,
-                )
-            )
 
+    def _assemble_reasoning(
+        self,
+        *,
+        proposal: ActionProposal,
+        outcome: DecisionOutcome,
+        precedence_explanation: str,
+        matched: list[RuleEvaluationResult],
+        matched_invariants: list[InvariantEvaluationResult],
+        schema_errors: list[str],
+        identity_errors: list[str],
+        ai_metadata_errors: list[str],
+        evaluated_exceptions: list[ExceptionEvaluationResult],
+        overlay_note: str | None,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]], dict[str, object], list[str], list[str]]:
         risk_summary = {
             "risk_attributes": proposal.attributes.get("risk_attributes", {}),
             "requested_action": proposal.attributes.get("requested_action"),
@@ -616,6 +615,210 @@ class PolicyEvaluator:
             reviewer_guidance.append(
                 "Treat as control failure until remediating evidence is attached."
             )
+        return (
+            matched_controls,
+            matched_invariant_controls,
+            risk_summary,
+            outcome_rationale,
+            reviewer_guidance,
+        )
+
+    @staticmethod
+    def _assemble_audit_record(
+        *,
+        proposal: ActionProposal,
+        decision_id: str,
+        decision_timestamp: datetime,
+        outcome: DecisionOutcome,
+        policy_bundle: PolicyBundleMetadata,
+        matched: list[RuleEvaluationResult],
+        evaluated: list[RuleEvaluationResult],
+        missing_fields: set[str],
+        precedence_explanation: str,
+        input_fingerprint: str,
+        decision_hash: str,
+        baseline_outcome: DecisionOutcome,
+        applied_exceptions: list[ExceptionEvaluationResult],
+        evaluated_exceptions: list[ExceptionEvaluationResult],
+        canonical_replay_payload: dict[str, object],
+    ) -> tuple[AuditRecord, dict[str, object]]:
+        source_metadata = {
+            key: value
+            for key, value in proposal.attributes.items()
+            if key.startswith("source_")
+            or key.startswith("servicenow_")
+            or key.startswith("jira_")
+        }
+        event_type = str(
+            source_metadata.get("source_event_type") or "decision.evaluated"
+        )
+        operational_metadata = {
+            "decision_id": decision_id,
+            "decision_timestamp": decision_timestamp.isoformat(),
+            "event_type": event_type,
+        }
+        downstream_outcome_raw = proposal.attributes.get("downstream_outcome")
+        downstream_outcome = (
+            str(downstream_outcome_raw).strip().lower()
+            if downstream_outcome_raw is not None
+            else None
+        )
+        if downstream_outcome not in {"success", "failure"}:
+            downstream_outcome = None
+        incident_flag_raw = proposal.attributes.get("incident_flag")
+        incident_flag = incident_flag_raw if isinstance(incident_flag_raw, bool) else None
+
+        audit_record = AuditRecord(
+            decision_id=decision_id,
+            timestamp=decision_timestamp,
+            write_timestamp=None,
+            event_type=event_type,
+            action_type=proposal.action_type,
+            request_id=proposal.request_id,
+            actor_id=proposal.actor_id,
+            actor_role=proposal.actor_role,
+            outcome=outcome,
+            policy_bundle=policy_bundle,
+            matched_rule_ids=[r.rule_id for r in matched],
+            evaluated_rule_ids=[r.rule_id for r in evaluated],
+            missing_fields=sorted(missing_fields),
+            precedence_explanation=precedence_explanation,
+            input_fingerprint=input_fingerprint,
+            decision_hash=decision_hash,
+            baseline_outcome=baseline_outcome,
+            applied_exception_ids=[r.exception_id for r in applied_exceptions],
+            evaluated_exception_ids=[r.exception_id for r in evaluated_exceptions],
+            source_metadata=source_metadata,
+            request_correlation_id=proposal.request_id,
+            evaluator_version=SENA_VERSION,
+            policy_bundle_release_id=policy_bundle.version,
+            downstream_outcome=downstream_outcome,
+            incident_flag=incident_flag,
+            canonical_replay_payload=canonical_replay_payload,
+            operational_metadata=operational_metadata,
+        )
+        return audit_record, operational_metadata
+
+    def evaluate(self, proposal: ActionProposal, facts: dict) -> EvaluationTrace:
+        context = self._build_context(proposal, facts)
+        applicable = [r for r in self.rules if proposal.action_type in r.applies_to]
+        applicable_invariants = [
+            invariant
+            for invariant in self.invariants
+            if proposal.action_type in invariant.applies_to
+        ]
+        evaluated: list[RuleEvaluationResult] = []
+        evaluated_invariants: list[InvariantEvaluationResult] = []
+        precedence_steps: list[PrecedenceResolutionStep] = [
+            PrecedenceResolutionStep(
+                stage="start",
+                description="Started deterministic policy evaluation.",
+            )
+        ]
+        missing_fields: set[str] = set()
+        (
+            schema_errors,
+            identity_errors,
+            ai_metadata_errors,
+        ) = self._run_pre_evaluation_validation(proposal, context)
+
+        if not schema_errors and not identity_errors and not ai_metadata_errors:
+            evaluated_invariants = self._evaluate_invariants(
+                applicable_invariants, context, missing_fields
+            )
+            evaluated = self._evaluate_rules(
+                applicable=applicable,
+                proposal=proposal,
+                context=context,
+                missing_fields=missing_fields,
+            )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="rule_evaluation",
+                    description=(
+                        "Evaluated all applicable rules and captured matched/non-matched outcomes."
+                    ),
+                    matched_rule_ids=sorted(
+                        result.rule_id for result in evaluated if result.matched
+                    ),
+                )
+            )
+        else:
+            evaluated = self._build_skipped_rule_results(
+                applicable, "pre_evaluation_validation_failed"
+            )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="rule_evaluation_skipped",
+                    description=(
+                        "Rule condition evaluation skipped due to deterministic pre-evaluation validation errors."
+                    ),
+                )
+            )
+        (
+            outcome,
+            precedence_explanation,
+            summary,
+            matched,
+            matched_invariants,
+            conflicting_rules,
+        ) = self._resolve_precedence(
+            proposal=proposal,
+            evaluated=evaluated,
+            evaluated_invariants=evaluated_invariants,
+            schema_errors=schema_errors,
+            identity_errors=identity_errors,
+            ai_metadata_errors=ai_metadata_errors,
+            missing_fields=missing_fields,
+            precedence_steps=precedence_steps,
+        )
+
+        decision_timestamp = datetime.now(timezone.utc)
+        baseline_outcome = outcome
+        (
+            outcome,
+            evaluated_exceptions,
+            applied_exceptions,
+            overlay_note,
+        ) = self._apply_exception_overlay(
+            proposal=proposal,
+            baseline_outcome=baseline_outcome,
+            decision_time=decision_timestamp,
+        )
+        if overlay_note:
+            precedence_explanation = f"{precedence_explanation} {overlay_note}"
+            summary = (
+                f"{outcome.value}. "
+                f"Baseline was {baseline_outcome.value}."
+            )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="exception_overlay",
+                    description=overlay_note,
+                    matched_rule_ids=sorted(
+                        result.exception_id for result in applied_exceptions
+                    ),
+                    outcome=outcome,
+                )
+            )
+        (
+            matched_controls,
+            matched_invariant_controls,
+            risk_summary,
+            outcome_rationale,
+            reviewer_guidance,
+        ) = self._assemble_reasoning(
+            proposal=proposal,
+            outcome=outcome,
+            precedence_explanation=precedence_explanation,
+            matched=matched,
+            matched_invariants=matched_invariants,
+            schema_errors=schema_errors,
+            identity_errors=identity_errors,
+            ai_metadata_errors=ai_metadata_errors,
+            evaluated_exceptions=evaluated_exceptions,
+            overlay_note=overlay_note,
+        )
 
         canonical_payload = {
             "proposal": {
@@ -745,64 +948,22 @@ class PolicyEvaluator:
             },
         )
 
-        source_metadata = {
-            key: value
-            for key, value in proposal.attributes.items()
-            if key.startswith("source_")
-            or key.startswith("servicenow_")
-            or key.startswith("jira_")
-        }
-        event_type = str(
-            source_metadata.get("source_event_type") or "decision.evaluated"
-        )
-        operational_metadata = {
-            "decision_id": decision_id,
-            "decision_timestamp": decision_timestamp.isoformat(),
-            "event_type": event_type,
-        }
-        downstream_outcome_raw = proposal.attributes.get("downstream_outcome")
-        downstream_outcome = (
-            str(downstream_outcome_raw).strip().lower()
-            if downstream_outcome_raw is not None
-            else None
-        )
-        if downstream_outcome not in {"success", "failure"}:
-            downstream_outcome = None
-        incident_flag_raw = proposal.attributes.get("incident_flag")
-        incident_flag = (
-            incident_flag_raw
-            if isinstance(incident_flag_raw, bool)
-            else None
-        )
-
-        audit_record = AuditRecord(
+        audit_record, operational_metadata = self._assemble_audit_record(
+            proposal=proposal,
             decision_id=decision_id,
-            timestamp=decision_timestamp,
-            write_timestamp=None,
-            event_type=event_type,
-            action_type=proposal.action_type,
-            request_id=proposal.request_id,
-            actor_id=proposal.actor_id,
-            actor_role=proposal.actor_role,
+            decision_timestamp=decision_timestamp,
             outcome=outcome,
             policy_bundle=self.policy_bundle,
-            matched_rule_ids=[r.rule_id for r in matched],
-            evaluated_rule_ids=[r.rule_id for r in evaluated],
-            missing_fields=sorted(missing_fields),
+            matched=matched,
+            evaluated=evaluated,
+            missing_fields=missing_fields,
             precedence_explanation=precedence_explanation,
             input_fingerprint=input_fingerprint,
             decision_hash=decision_hash,
             baseline_outcome=baseline_outcome,
-            applied_exception_ids=[r.exception_id for r in applied_exceptions],
-            evaluated_exception_ids=[r.exception_id for r in evaluated_exceptions],
-            source_metadata=source_metadata,
-            request_correlation_id=proposal.request_id,
-            evaluator_version=SENA_VERSION,
-            policy_bundle_release_id=self.policy_bundle.version,
-            downstream_outcome=downstream_outcome,
-            incident_flag=incident_flag,
+            applied_exceptions=applied_exceptions,
+            evaluated_exceptions=evaluated_exceptions,
             canonical_replay_payload=canonical_replay_payload,
-            operational_metadata=operational_metadata,
         )
 
         trace = EvaluationTrace(
