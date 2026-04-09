@@ -238,6 +238,31 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             state.dlq_worker.run_once()
         return {"retried": retry_count}
 
+    @router.get("/admin/data-access", summary="List governed data access events")
+    def admin_data_access(limit: int = 100) -> dict:
+        return {"items": state.processing_store.list_data_access_events(limit=limit)}
+
+    @router.get("/admin/data/payloads", summary="List governed payloads by tenant and region")
+    def admin_data_payloads(
+        tenant_id: str,
+        region: str,
+        include_expired: bool = False,
+    ) -> dict:
+        items = state.processing_store.list_governed_payloads(
+            tenant_id=tenant_id,
+            region=region,
+            include_expired=include_expired,
+        )
+        return {"items": items}
+
+    @router.post("/admin/data/payloads/{payload_id}/hold", summary="Apply legal hold to governed payload")
+    def admin_data_payload_hold(payload_id: int, reason: str = "legal_hold") -> dict:
+        updated = state.processing_store.apply_governed_payload_legal_hold(
+            payload_id,
+            reason=reason,
+        )
+        return {"payload_id": payload_id, "held": updated}
+
     @router.post("/admin/audit/config", summary="Update audit verification controls")
     def admin_audit_config(payload: dict[str, bool], request: Request) -> dict:
         role = getattr(request.state, "api_role", "")

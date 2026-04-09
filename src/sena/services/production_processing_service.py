@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from sena.api.data_governance import TenancyContext, scan_and_redact_payload
 from sena.api.schemas import EvaluateRequest, WebhookEvaluateRequest
 from sena.core.enums import DecisionOutcome
 from sena.services.audit_service import AuditService
@@ -24,8 +25,48 @@ class ProductionProcessingService:
             evaluation_service=self._evaluation,
         )
 
+    def _resolve_tenancy_context(
+        self, *, tenant_id: str | None, region: str | None
+    ) -> TenancyContext:
+        resolved_tenant_id = tenant_id or "default"
+        resolved_region = region or self.state.settings.data_default_region
+        if resolved_region not in set(self.state.settings.data_allowed_regions):
+            allowed = sorted(set(self.state.settings.data_allowed_regions))
+            raise ValueError(
+                f"region '{resolved_region}' is not allowed; expected one of {allowed}"
+            )
+        return TenancyContext(tenant_id=resolved_tenant_id, region=resolved_region)
+
+    def _store_governed_payload(
+        self,
+        *,
+        tenancy: TenancyContext,
+        payload_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        pii = scan_and_redact_payload(payload)
+        self.state.processing_store.purge_expired_governed_payloads()
+        self.state.processing_store.store_governed_payload(
+            tenant_id=tenancy.tenant_id,
+            region=tenancy.region,
+            payload_type=payload_type,
+            payload=payload,
+            redacted_payload=pii.redacted_payload,
+            pii_flags=list(pii.flagged_fields),
+            ttl_hours=self.state.settings.payload_retention_ttl_hours,
+        )
+
     def process_evaluate(self, payload: dict[str, Any], *, request_id: str) -> dict[str, Any]:
         req = EvaluateRequest.model_validate(payload)
+        tenancy = self._resolve_tenancy_context(
+            tenant_id=req.tenant_id,
+            region=req.region or str(req.facts.get("region") or ""),
+        )
+        self._store_governed_payload(
+            tenancy=tenancy,
+            payload_type="evaluate_request",
+            payload=req.model_dump(),
+        )
         proposal = req.to_action_proposal(request_id)
         return self._evaluation.evaluate(
             proposal=proposal,
@@ -41,6 +82,15 @@ class ProductionProcessingService:
 
     def process_webhook(self, payload: dict[str, Any], *, request_id: str) -> dict[str, Any]:
         req = WebhookEvaluateRequest.model_validate(payload)
+        tenancy = self._resolve_tenancy_context(
+            tenant_id=req.tenant_id,
+            region=req.region or str(req.facts.get("region") or ""),
+        )
+        self._store_governed_payload(
+            tenancy=tenancy,
+            payload_type="webhook_request",
+            payload=req.model_dump(),
+        )
         return self._integration.handle_webhook_event(
             provider=req.provider,
             event_type=req.event_type,

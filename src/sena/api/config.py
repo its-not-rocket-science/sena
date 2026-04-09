@@ -53,6 +53,9 @@ class ApiSettings:
     promotion_gate_break_glass_enabled: bool = True
     processing_sqlite_path: str = "./.sena_runtime.db"
     idempotency_ttl_hours: int = 24
+    payload_retention_ttl_hours: int = 24
+    data_default_region: str = "us-east-1"
+    data_allowed_regions: tuple[str, ...] = ("us-east-1",)
     jira_write_back: bool = False
     servicenow_write_back: bool = False
     jira_base_url: str | None = None
@@ -206,6 +209,13 @@ def load_settings_from_env() -> ApiSettings:
         ),
         processing_sqlite_path=os.getenv("SENA_PROCESSING_SQLITE_PATH", "./.sena_runtime.db"),
         idempotency_ttl_hours=_parse_int(os.getenv("SENA_IDEMPOTENCY_TTL_HOURS"), default=24),
+        payload_retention_ttl_hours=_parse_int(
+            os.getenv("SENA_PAYLOAD_RETENTION_TTL_HOURS"), default=24
+        ),
+        data_default_region=os.getenv("SENA_DATA_DEFAULT_REGION", "us-east-1"),
+        data_allowed_regions=_parse_csv(
+            os.getenv("SENA_DATA_ALLOWED_REGIONS") or "us-east-1"
+        ),
         jira_write_back=_parse_bool(os.getenv("SENA_JIRA_WRITE_BACK"), default=False),
         servicenow_write_back=_parse_bool(os.getenv("SENA_SERVICENOW_WRITE_BACK"), default=False),
         jira_base_url=os.getenv("SENA_JIRA_BASE_URL"),

@@ -179,6 +179,9 @@ Key endpoints:
 - `POST /v1/audit/verify/tree` (Merkle proof verification for a single decision)
 - `POST /v1/audit/hold/{decision_id}` (apply legal hold)
 - `GET /v1/audit/hold` (list active legal holds)
+- `GET /v1/admin/data-access` (governed data access audit events)
+- `GET /v1/admin/data/payloads?tenant_id=<id>&region=<region>` (tenant+region scoped governed payloads)
+- `POST /v1/admin/data/payloads/{payload_id}/hold` (legal hold for governed payload retention)
 - `GET /v1/decision/{decision_id}/explanation?view=analyst|auditor` (export concise or full decision explanation)
 
 Operational audit durability guidance (local sink + archive/restore drills):
@@ -186,6 +189,7 @@ Operational audit durability guidance (local sink + archive/restore drills):
 - `docs/BACKUP.md`
 - `docs/DEPLOYMENT.md` (production deployment patterns)
 - `docs/COOKBOOK.md` (copy/paste integration examples)
+- `docs/TENANCY_MODEL.md` (tenant + region pinning, PII redaction, retention/legal hold model)
 
 Experimental endpoints:
 - `POST /v1/integrations/webhook`

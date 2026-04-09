@@ -60,6 +60,67 @@ class ProcessingStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS governed_payloads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL,
+                    region TEXT NOT NULL,
+                    payload_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    redacted_payload_json TEXT NOT NULL,
+                    pii_flags_json TEXT NOT NULL,
+                    legal_hold INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS data_access_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    entity_id TEXT,
+                    tenant_id TEXT,
+                    region TEXT,
+                    metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+
+    def record_data_access_event(
+        self,
+        *,
+        event_type: str,
+        entity_type: str,
+        entity_id: str | None = None,
+        tenant_id: str | None = None,
+        region: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO data_access_events(
+                    event_type, entity_type, entity_id, tenant_id, region, metadata_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_type,
+                    entity_type,
+                    entity_id,
+                    tenant_id,
+                    region,
+                    json.dumps(metadata or {}, sort_keys=True),
+                    now,
+                ),
+            )
+            return int(cur.lastrowid)
 
     def get_idempotency_response(self, key: str) -> str | None:
         now = datetime.now(timezone.utc).isoformat()
@@ -72,7 +133,14 @@ class ProcessingStore:
                 """,
                 (key, now),
             ).fetchone()
-            return str(row["response_json"]) if row else None
+        hit = row is not None
+        self.record_data_access_event(
+            event_type="read",
+            entity_type="idempotency_key",
+            entity_id=key,
+            metadata={"cache_hit": hit},
+        )
+        return str(row["response_json"]) if row else None
 
     def store_idempotency_response(
         self, key: str, response_json: str, *, ttl_hours: int
@@ -87,6 +155,12 @@ class ProcessingStore:
                 """,
                 (key, response_json, expires_at, now.isoformat()),
             )
+        self.record_data_access_event(
+            event_type="write",
+            entity_type="idempotency_key",
+            entity_id=key,
+            metadata={"ttl_hours": ttl_hours},
+        )
 
     def enqueue_dead_letter(self, event: dict[str, Any], error: str) -> int:
         now = datetime.now(timezone.utc).isoformat()
@@ -214,6 +288,11 @@ class ProcessingStore:
                 """,
                 (decision_id, json.dumps(explanation, sort_keys=True), now),
             )
+        self.record_data_access_event(
+            event_type="write",
+            entity_type="decision_explanation",
+            entity_id=decision_id,
+        )
 
     def get_decision_explanation(self, decision_id: str) -> dict[str, Any] | None:
         with self._lock, self._conn() as conn:
@@ -225,9 +304,136 @@ class ProcessingStore:
                 """,
                 (decision_id,),
             ).fetchone()
+        self.record_data_access_event(
+            event_type="read",
+            entity_type="decision_explanation",
+            entity_id=decision_id,
+            metadata={"exists": row is not None},
+        )
         if row is None:
             return None
         return json.loads(str(row["explanation_json"]))
+
+    def store_governed_payload(
+        self,
+        *,
+        tenant_id: str,
+        region: str,
+        payload_type: str,
+        payload: dict[str, Any],
+        redacted_payload: dict[str, Any],
+        pii_flags: list[str],
+        ttl_hours: int,
+    ) -> int:
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(hours=ttl_hours)).isoformat()
+        with self._lock, self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO governed_payloads(
+                    tenant_id, region, payload_type, payload_json, redacted_payload_json,
+                    pii_flags_json, legal_hold, created_at, expires_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+                """,
+                (
+                    tenant_id,
+                    region,
+                    payload_type,
+                    json.dumps(payload, sort_keys=True),
+                    json.dumps(redacted_payload, sort_keys=True),
+                    json.dumps(sorted(pii_flags)),
+                    now.isoformat(),
+                    expires_at,
+                ),
+            )
+            payload_id = int(cur.lastrowid)
+        self.record_data_access_event(
+            event_type="write",
+            entity_type="governed_payload",
+            entity_id=str(payload_id),
+            tenant_id=tenant_id,
+            region=region,
+            metadata={"payload_type": payload_type, "pii_flag_count": len(pii_flags)},
+        )
+        return payload_id
+
+    def list_governed_payloads(
+        self, *, tenant_id: str, region: str, include_expired: bool = False
+    ) -> list[dict[str, Any]]:
+        now = datetime.now(timezone.utc).isoformat()
+        query = """
+            SELECT id, tenant_id, region, payload_type, redacted_payload_json, pii_flags_json,
+                   legal_hold, created_at, expires_at
+            FROM governed_payloads
+            WHERE tenant_id = ? AND region = ?
+        """
+        params: list[Any] = [tenant_id, region]
+        if not include_expired:
+            query += " AND expires_at > ?"
+            params.append(now)
+        query += " ORDER BY id DESC"
+        with self._lock, self._conn() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        self.record_data_access_event(
+            event_type="read",
+            entity_type="governed_payload",
+            tenant_id=tenant_id,
+            region=region,
+            metadata={"rows": len(rows), "include_expired": include_expired},
+        )
+        return [dict(row) for row in rows]
+
+    def apply_governed_payload_legal_hold(self, payload_id: int, *, reason: str) -> bool:
+        with self._lock, self._conn() as conn:
+            cur = conn.execute(
+                """
+                UPDATE governed_payloads
+                SET legal_hold = 1
+                WHERE id = ?
+                """,
+                (payload_id,),
+            )
+            updated = int(cur.rowcount) > 0
+        self.record_data_access_event(
+            event_type="legal_hold",
+            entity_type="governed_payload",
+            entity_id=str(payload_id),
+            metadata={"reason": reason, "updated": updated},
+        )
+        return updated
+
+    def purge_expired_governed_payloads(self) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._conn() as conn:
+            cur = conn.execute(
+                """
+                DELETE FROM governed_payloads
+                WHERE expires_at <= ? AND legal_hold = 0
+                """,
+                (now,),
+            )
+            deleted = int(cur.rowcount)
+        if deleted:
+            self.record_data_access_event(
+                event_type="retention_purge",
+                entity_type="governed_payload",
+                metadata={"deleted": deleted},
+            )
+        return deleted
+
+    def list_data_access_events(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        with self._lock, self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, event_type, entity_type, entity_id, tenant_id, region, metadata_json, created_at
+                FROM data_access_events
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
 
 @dataclass
