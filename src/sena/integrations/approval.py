@@ -89,6 +89,15 @@ class NormalizedApprovalEvent(BaseModel):
     escalation_deadline_at: str | None = None
     source_metadata: dict[str, Any] = Field(default_factory=dict)
 
+    def canonical_replay_payload(self) -> dict[str, Any]:
+        """Replay-stable event payload used by deterministic comparison tests."""
+        payload = self.model_dump()
+        payload.pop("event_timestamp", None)
+        return payload
+
+    def operational_metadata(self) -> dict[str, Any]:
+        return {"event_timestamp": self.event_timestamp}
+
 
 class DeliveryRetryError(IntegrationError):
     """Raised when outbound delivery exhausts retry budget."""
@@ -324,6 +333,8 @@ class ApprovalConnectorBase(Connector):
         normalized = self.normalize_event(headers=headers, payload=payload, raw_body=raw_body)
         return {
             "normalized_event": normalized.model_dump(),
+            "canonical_replay_payload": normalized.canonical_replay_payload(),
+            "operational_metadata": normalized.operational_metadata(),
             "action_proposal": self.map_to_proposal(normalized),
         }
 

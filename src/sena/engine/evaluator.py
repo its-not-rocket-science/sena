@@ -110,6 +110,10 @@ class PolicyEvaluator:
                 return False
         return True
 
+    @staticmethod
+    def _stable_summary(text: str) -> str:
+        return " ".join(text.split())
+
     def _apply_exception_overlay(
         self,
         *,
@@ -175,7 +179,6 @@ class PolicyEvaluator:
         return outcome, evaluated, applied, overlay_note
 
     def evaluate(self, proposal: ActionProposal, facts: dict) -> EvaluationTrace:
-        decision_id = f"dec_{uuid.uuid4().hex[:12]}"
         context = {
             "action_type": proposal.action_type,
             "request_id": proposal.request_id,
@@ -331,7 +334,10 @@ class PolicyEvaluator:
             f"No rules matched. Fallback decision is {self.config.default_decision.value} "
             "per evaluator configuration."
         )
-        summary = f"Decision {decision_id}: {outcome.value}. No matching policy rules for action '{proposal.action_type}'."
+        summary = (
+            f"{outcome.value}. No matching policy rules for action "
+            f"'{proposal.action_type}'."
+        )
 
         if matched_invariants:
             outcome = DecisionOutcome.BLOCKED
@@ -340,7 +346,7 @@ class PolicyEvaluator:
                 "safety boundaries and always BLOCK independent of ordinary ALLOW/BLOCK/ESCALATE rules."
             )
             summary = (
-                f"Decision {decision_id}: BLOCKED due to invariant violation(s) "
+                "BLOCKED due to invariant violation(s) "
                 f"({', '.join(result.invariant_id for result in matched_invariants)})."
             )
             precedence_steps.append(
@@ -360,7 +366,7 @@ class PolicyEvaluator:
                 "precedence and overrides all other matches."
             )
             summary = (
-                f"Decision {decision_id}: BLOCKED due to inviolable policy constraints "
+                "BLOCKED due to inviolable policy constraints "
                 f"({', '.join(r.rule_id for r in inviolable_blocks)})."
             )
             precedence_steps.append(
@@ -378,7 +384,7 @@ class PolicyEvaluator:
                 "BLOCK takes precedence over ESCALATE and ALLOW."
             )
             summary = (
-                f"Decision {decision_id}: BLOCKED by policy rule(s) "
+                "BLOCKED by policy rule(s) "
                 f"({', '.join(r.rule_id for r in blocks)})."
             )
             precedence_steps.append(
@@ -396,7 +402,7 @@ class PolicyEvaluator:
                 "so manual review is required before execution."
             )
             summary = (
-                f"Decision {decision_id}: ESCALATE_FOR_HUMAN_REVIEW for "
+                "ESCALATE_FOR_HUMAN_REVIEW for "
                 f"rule(s) ({', '.join(r.rule_id for r in escalations)})."
             )
             precedence_steps.append(
@@ -421,7 +427,7 @@ class PolicyEvaluator:
             outcome = DecisionOutcome.BLOCKED
             precedence_explanation = "Context schema validation failed before policy evaluation; blocked deterministically."
             summary = (
-                f"Decision {decision_id}: BLOCKED due to context schema errors: "
+                "BLOCKED due to context schema errors: "
                 f"{'; '.join(schema_errors)}"
             )
             precedence_steps.append(
@@ -436,7 +442,7 @@ class PolicyEvaluator:
             missing_fields.update(identity_errors)
             precedence_explanation = "Strict mode requires actor identity context fields before policy evaluation."
             summary = (
-                f"Decision {decision_id}: BLOCKED due to missing identity field(s): "
+                "BLOCKED due to missing identity field(s): "
                 f"{', '.join(identity_errors)}"
             )
             precedence_steps.append(
@@ -451,7 +457,7 @@ class PolicyEvaluator:
             missing_fields.update(ai_metadata_errors)
             precedence_explanation = "AI-originated action proposals require deterministic governance metadata before policy evaluation."
             summary = (
-                f"Decision {decision_id}: BLOCKED due to missing AI-governance field(s): "
+                "BLOCKED due to missing AI-governance field(s): "
                 f"{', '.join(ai_metadata_errors)}"
             )
             precedence_steps.append(
@@ -469,13 +475,13 @@ class PolicyEvaluator:
                     "At least one ALLOW rule must match."
                 )
                 summary = (
-                    f"Decision {decision_id}: BLOCKED because no matching policy rules were "
+                    "BLOCKED because no matching policy rules were "
                     "found under strict allow mode."
                 )
             else:
                 precedence_explanation = "Strict allow mode is enabled. Matching rules were found, but none were ALLOW."
                 summary = (
-                    f"Decision {decision_id}: BLOCKED because strict allow mode requires at "
+                    "BLOCKED because strict allow mode requires at "
                     "least one matching ALLOW rule."
                 )
             precedence_steps.append(
@@ -488,7 +494,7 @@ class PolicyEvaluator:
 
         if not matched and self.config.default_decision != DecisionOutcome.APPROVED:
             summary = (
-                f"Decision {decision_id}: {outcome.value} because no matching policy rules "
+                f"{outcome.value} because no matching policy rules "
                 f"were found under {self.config.default_decision.value.lower()}-by-default mode."
             )
 
@@ -521,7 +527,7 @@ class PolicyEvaluator:
         if overlay_note:
             precedence_explanation = f"{precedence_explanation} {overlay_note}"
             summary = (
-                f"Decision {decision_id}: {outcome.value}. "
+                f"{outcome.value}. "
                 f"Baseline was {baseline_outcome.value}."
             )
             precedence_steps.append(
@@ -657,6 +663,61 @@ class PolicyEvaluator:
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
+        canonical_replay_payload = {
+            "schema_version": "1",
+            "input_fingerprint": input_fingerprint,
+            "policy_bundle": {
+                "bundle_name": self.policy_bundle.bundle_name,
+                "version": self.policy_bundle.version,
+                "schema_version": self.policy_bundle.schema_version,
+            },
+            "proposal": canonical_payload["proposal"],
+            "facts": canonical_payload["facts"],
+            "outcome": outcome.value,
+            "baseline_outcome": baseline_outcome.value,
+            "decision_hash": decision_hash,
+            "matched_rule_ids": sorted(r.rule_id for r in matched),
+            "matched_invariant_ids": sorted(
+                r.invariant_id for r in matched_invariants
+            ),
+            "evaluated_exception_ids": sorted(
+                item.exception_id for item in evaluated_exceptions
+            ),
+            "applied_exception_ids": sorted(
+                item.exception_id for item in applied_exceptions
+            ),
+            "missing_fields": sorted(missing_fields),
+            "conflicting_rules": conflicting_rules,
+            "precedence_steps": [
+                {
+                    "stage": step.stage,
+                    "description": self._stable_summary(step.description),
+                    "matched_rule_ids": sorted(step.matched_rule_ids),
+                    "outcome": step.outcome.value if step.outcome else None,
+                }
+                for step in precedence_steps
+            ],
+            "reasoning": {
+                "precedence_explanation": self._stable_summary(
+                    precedence_explanation
+                ),
+                "summary": self._stable_summary(summary),
+                "outcome_rationale": [
+                    self._stable_summary(item) for item in outcome_rationale
+                ],
+                "reviewer_guidance": [
+                    self._stable_summary(item) for item in reviewer_guidance
+                ],
+                "matched_controls": matched_controls,
+                "matched_invariants": matched_invariant_controls,
+                "risk_summary": risk_summary,
+            },
+        }
+        decision_id = (
+            f"dec_{decision_hash[:12]}"
+            if self.config.deterministic_mode
+            else f"dec_{uuid.uuid4().hex[:12]}"
+        )
         reasoning = DecisionReasoning(
             precedence_explanation=precedence_explanation,
             summary=summary,
@@ -694,6 +755,11 @@ class PolicyEvaluator:
         event_type = str(
             source_metadata.get("source_event_type") or "decision.evaluated"
         )
+        operational_metadata = {
+            "decision_id": decision_id,
+            "decision_timestamp": decision_timestamp.isoformat(),
+            "event_type": event_type,
+        }
         downstream_outcome_raw = proposal.attributes.get("downstream_outcome")
         downstream_outcome = (
             str(downstream_outcome_raw).strip().lower()
@@ -735,6 +801,8 @@ class PolicyEvaluator:
             policy_bundle_release_id=self.policy_bundle.version,
             downstream_outcome=downstream_outcome,
             incident_flag=incident_flag,
+            canonical_replay_payload=canonical_replay_payload,
+            operational_metadata=operational_metadata,
         )
 
         trace = EvaluationTrace(
@@ -761,6 +829,8 @@ class PolicyEvaluator:
             missing_fields=sorted(missing_fields),
             context=context,
             audit_record=audit_record,
+            canonical_replay_payload=canonical_replay_payload,
+            operational_metadata=operational_metadata,
         )
         if (
             trace.outcome == DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW

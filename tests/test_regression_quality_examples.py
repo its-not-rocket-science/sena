@@ -100,6 +100,29 @@ def test_evaluator_deterministic_for_semantically_equivalent_input_ordering() ->
     assert first.audit_record.input_fingerprint == second.audit_record.input_fingerprint
 
 
+def test_evaluator_canonical_payload_is_replay_stable() -> None:
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
+    proposal = ActionProposal(
+        action_type="approve_vendor_payment",
+        actor_id="u-1",
+        actor_role="finance_analyst",
+        request_id="req-canonical",
+        attributes={"amount": 10_000, "vendor_verified": True, "source_system": "jira"},
+    )
+    facts = {"geo": "us", "risk_score": 2}
+
+    first = evaluator.evaluate(proposal, facts)
+    second = evaluator.evaluate(proposal, facts)
+
+    assert first.canonical_replay_payload == second.canonical_replay_payload
+    assert first.audit_record is not None and second.audit_record is not None
+    assert (
+        first.audit_record.canonical_replay_payload
+        == second.audit_record.canonical_replay_payload
+    )
+
+
 def test_audit_verification_detects_sequence_reuse_even_with_recomputed_hash(
     tmp_path,
 ) -> None:
@@ -148,3 +171,46 @@ def test_integration_normalization_is_idempotent_for_duplicate_delivery_ids() ->
         assert "duplicate delivery" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected duplicate delivery to be rejected")
+
+
+def test_normalized_event_canonical_payload_is_timestamp_stable() -> None:
+    route = ApprovalEventRoute(
+        action_type="approve_vendor_payment",
+        actor_id_path="actor.id",
+        attributes={"amount": "amount"},
+    )
+    payload = {
+        "actor": {"id": "alice"},
+        "amount": 700,
+    }
+    first = build_normalized_approval_event(
+        payload=payload,
+        route=route,
+        source_event_type="demo.requested",
+        idempotency_key="delivery-1",
+        source_system="demo",
+        default_request_id="REQ-1",
+        default_source_record_id="100",
+        error_cls=_TestIntegrationError,
+        default_source_object_type="demo_object",
+        default_workflow_stage="requested",
+        default_requested_action=route.action_type,
+        default_correlation_key="REQ-1",
+    )
+    second = build_normalized_approval_event(
+        payload=payload,
+        route=route,
+        source_event_type="demo.requested",
+        idempotency_key="delivery-1",
+        source_system="demo",
+        default_request_id="REQ-1",
+        default_source_record_id="100",
+        error_cls=_TestIntegrationError,
+        default_source_object_type="demo_object",
+        default_workflow_stage="requested",
+        default_requested_action=route.action_type,
+        default_correlation_key="REQ-1",
+    )
+
+    assert first.event_timestamp != second.event_timestamp
+    assert first.canonical_replay_payload() == second.canonical_replay_payload()

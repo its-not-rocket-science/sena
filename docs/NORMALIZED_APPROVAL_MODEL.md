@@ -42,6 +42,10 @@ For `ai_suggested`, SENA requires metadata for model/system provenance, prompt/p
 - `attributes`
 - `source_metadata`
 
+Replay-stable normalization uses `NormalizedApprovalEvent.canonical_replay_payload()`,
+which excludes wall-clock `event_timestamp`. Runtime-only time fields are exposed
+through `operational_metadata`.
+
 Required normalized keys are validated before policy evaluation.
 
 ## Deterministic architecture pattern
@@ -97,6 +101,8 @@ This model shifts the product narrative from "we have rules" to:
 - **Portable**: one approval control model across multiple systems.
 - **Auditable**: consistent event lineage (`source_*`, `correlation_key`, `idempotency_key`).
 - **Deterministic**: explicit normalization failures and replay safety.
+- **Deterministic payload boundaries**: canonical replay payloads are stable;
+  operational metadata is intentionally non-stable.
 - **Extensible**: new integrations add route mappings without rewriting evaluator semantics.
 
 In practice, SENA becomes the approval control plane that organizations can standardize on while keeping their existing workflow tools.

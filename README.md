@@ -12,6 +12,19 @@ Teams use SENA to evaluate high-risk actions (for example: change approvals, ven
 - Same normalized policy model across systems
 - Deterministic trace + audit chain for replay and review
 
+## Deterministic replay contract
+
+SENA now separates **canonical replay payloads** from **operational metadata**:
+
+- `canonical_replay_payload`: replay-stable artifact for equality checks across runs.
+- `operational_metadata`: runtime-only values (for example `decision_id`, event/write timestamps).
+
+Deterministic guarantees are explicit:
+
+- **Outcome determinism**: identical normalized input + identical policy bundle version produce identical outcome.
+- **Reasoning determinism (canonical)**: precedence steps, matched controls, and rationale inside `canonical_replay_payload` are replay-stable.
+- **Full raw trace determinism**: **not guaranteed** (operational metadata intentionally varies).
+
 ## Repository truth source
 
 When docs drift, treat these as canonical in this order:
