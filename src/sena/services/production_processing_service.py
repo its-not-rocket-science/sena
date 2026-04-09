@@ -150,7 +150,21 @@ class ProductionProcessingService:
                 raw_body=str(event.get("raw_body") or "").encode("utf-8"),
                 strict_require_allow=bool(event.get("strict_require_allow") or False),
             )
+        if event_type == "integration_outbound_retry":
+            return {
+                "status": "deferred",
+                "reason": "manual retry required for degraded outbound dependency",
+                "dependency": str(event.get("dependency") or "unknown"),
+                "decision_id": str(event.get("decision_id") or ""),
+            }
         raise ValueError(f"unsupported dlq event_type '{event_type}'")
+
+    def enqueue_and_process(self, event: dict[str, Any]) -> dict[str, Any]:
+        reliability = self.state.reliability_service
+        if reliability is None:
+            return self.process_event(event)
+        reliability.enqueue_event(event)
+        return reliability.process_next(self.process_event)
 
     @staticmethod
     def fallback_default_decision() -> DecisionOutcome:

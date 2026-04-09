@@ -15,6 +15,7 @@ from sena.api.schemas import (
 )
 from sena.services.audit_service import AuditService
 from sena.services.evaluation_service import EvaluationService
+from sena.services.reliability_service import QueueOverflowError
 
 ERROR_RESPONSES = {
     400: {"description": "Invalid request or evaluation failure."},
@@ -33,10 +34,15 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
 
     def _evaluate(req: EvaluateRequest, request: Request) -> dict:
         try:
-            return state.processing_service.process_evaluate(
-                req.model_dump(),
-                request_id=request.state.request_id,
+            return state.processing_service.enqueue_and_process(
+                {
+                    "event_type": "evaluate",
+                    "payload": req.model_dump(),
+                    "request_id": request.state.request_id,
+                }
             )
+        except QueueOverflowError as exc:
+            raise_api_error("rate_limited", details={"reason": str(exc)})
         except Exception as exc:  # pragma: no cover
             state.processing_store.enqueue_dead_letter(
                 {

@@ -15,6 +15,7 @@ from sena.integrations.servicenow import ServiceNowIntegrationError
 from sena.integrations.slack import SlackIntegrationError
 from sena.integrations.webhook import WebhookMappingError
 from sena.services.integration_service import IntegrationService
+from sena.services.reliability_service import QueueOverflowError
 
 
 def create_integrations_router(state: EngineState) -> APIRouter:
@@ -36,12 +37,17 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         if state.webhook_mapper is None:
             raise_api_error("webhook_mapping_not_configured")
         try:
-            result = state.processing_service.process_webhook(
-                req.model_dump(),
-                request_id=request.state.request_id,
+            result = state.processing_service.enqueue_and_process(
+                {
+                    "event_type": "webhook",
+                    "payload": req.model_dump(),
+                    "request_id": request.state.request_id,
+                }
             )
             persist_idempotency_response(request, result)
             return result
+        except QueueOverflowError as exc:
+            raise_api_error("rate_limited", details={"reason": str(exc)})
         except WebhookMappingError as exc:
             state.processing_store.enqueue_dead_letter(
                 {
@@ -81,13 +87,18 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             )
 
         try:
-            result = state.processing_service.process_jira_webhook(
-                headers=dict(request.headers.items()),
-                payload=payload,
-                raw_body=raw_body,
+            result = state.processing_service.enqueue_and_process(
+                {
+                    "event_type": "jira_webhook",
+                    "headers": dict(request.headers.items()),
+                    "payload": payload,
+                    "raw_body": raw_body.decode("utf-8"),
+                }
             )
             persist_idempotency_response(request, result)
             return result
+        except QueueOverflowError as exc:
+            raise_api_error("rate_limited", details={"reason": str(exc)})
         except LookupError as exc:
             raise_api_error(
                 "jira_policy_bundle_not_found",
@@ -161,14 +172,19 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             )
 
         try:
-            result = state.processing_service.process_servicenow_webhook(
-                headers=dict(request.headers.items()),
-                payload=payload,
-                raw_body=raw_body,
-                strict_require_allow=strict_require_allow,
+            result = state.processing_service.enqueue_and_process(
+                {
+                    "event_type": "servicenow_webhook",
+                    "headers": dict(request.headers.items()),
+                    "payload": payload,
+                    "raw_body": raw_body.decode("utf-8"),
+                    "strict_require_allow": strict_require_allow,
+                }
             )
             persist_idempotency_response(request, result)
             return result
+        except QueueOverflowError as exc:
+            raise_api_error("rate_limited", details={"reason": str(exc)})
         except LookupError as exc:
             raise_api_error(
                 "servicenow_policy_bundle_not_found",
@@ -241,6 +257,13 @@ def create_integrations_router(state: EngineState) -> APIRouter:
     @router.get("/admin/data-access", summary="List governed data access events")
     def admin_data_access(limit: int = 100) -> dict:
         return {"items": state.processing_store.list_data_access_events(limit=limit)}
+
+    @router.get("/admin/slo", summary="Production SLO targets")
+    def admin_slo() -> dict:
+        reliability = state.reliability_service
+        if reliability is None:
+            return {"slo_definitions": []}
+        return reliability.slo_payload()
 
     @router.get("/admin/data/payloads", summary="List governed payloads by tenant and region")
     def admin_data_payloads(
