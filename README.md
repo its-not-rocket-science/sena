@@ -93,6 +93,10 @@ Not yet pilot-ready by default:
 
 Legacy modules under `src/sena/legacy/*` are out of supported scope.
 
+## Docs consistency report
+
+See `docs/DOCS_CONSISTENCY_REPORT.md` for a summary of strategy-language alignment updates.
+
 ## Version
 
 Current package/API version: `0.3.0` (single source: `src/sena/__init__.py`).
@@ -265,9 +269,11 @@ callbacks = [SenaApprovalCallback("http://localhost:8000", "enterprise-demo:acti
 
 See `examples/langchain_demo/refund_agent.py` and `examples/langchain_demo/verify_refund_audit.py` for an end-to-end audit-proof workflow.
 
-## Investor Kubernetes admission demo
+## Kubernetes admission demo (experimental)
 
-Run the end-to-end investor demo (AI suggestion -> SENA block -> Merkle verification):
+Run the end-to-end demo (AI suggestion -> SENA block -> Merkle verification).
+
+> Strategy note: this demo is an experimental surface and not the primary supported integration story.
 
 ```bash
 make demo-k8s
@@ -281,7 +287,7 @@ Demo assets live in `examples/k8s_admission_demo/`:
 - `DEMO_SCRIPT.md`
 - `INVESTOR_DECK.md`
 
-## Investor monitoring demo (Prometheus + Grafana)
+## Monitoring demo (Prometheus + Grafana, experimental packaging)
 
 Run the monitoring stack and start continuous demo traffic:
 
