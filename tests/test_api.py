@@ -115,6 +115,50 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     assert "explanation" in body
 
 
+def test_evaluate_tracks_downstream_outcome_and_incident(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    app = create_app(_settings(audit_sink_jsonl=str(audit_path)))
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"amount": 15000, "vendor_verified": False},
+            "facts": {},
+            "downstream_outcome": "failure",
+            "incident_flag": True,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["audit_record"]["downstream_outcome"] == "failure"
+    assert body["audit_record"]["incident_flag"] is True
+
+
+def test_policy_efficacy_endpoint(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    app = create_app(_settings(audit_sink_jsonl=str(audit_path)))
+    client = TestClient(app)
+    evaluated = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+            "downstream_outcome": "success",
+            "incident_flag": False,
+        },
+    )
+    assert evaluated.status_code == 200
+
+    response = client.get("/v1/analytics/policy-efficacy")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["generated_from_records"] >= 1
+    assert payload["totals"]["downstream_success"] >= 1
+    assert "dashboard_example" in payload
+
+
 def test_evaluate_dry_run_skips_audit_and_marks_response(tmp_path) -> None:
     audit_path = tmp_path / "audit.jsonl"
     app = create_app(_settings(audit_sink_jsonl=str(audit_path)))

@@ -78,6 +78,8 @@ class ProductionProcessingService:
             append_audit=not req.dry_run,
             replay_input=req.to_replay_input(request_id),
             simulate_exceptions=req.simulate_exceptions,
+            downstream_outcome=req.downstream_outcome,
+            incident_flag=req.incident_flag,
         )
 
     def process_webhook(self, payload: dict[str, Any], *, request_id: str) -> dict[str, Any]:

@@ -39,6 +39,8 @@ class WebhookEvaluateRequest(BaseModel):
         "APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"
     ] = "APPROVED"
     strict_require_allow: bool = False
+    downstream_outcome: Literal["success", "failure"] | None = None
+    incident_flag: bool | None = None
 
 
 class BatchEvaluateRequest(BaseModel):

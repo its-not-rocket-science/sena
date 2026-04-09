@@ -195,6 +195,7 @@ Key endpoints:
 - `POST /v1/audit/verify/tree` (Merkle proof verification for a single decision)
 - `POST /v1/audit/hold/{decision_id}` (apply legal hold)
 - `GET /v1/audit/hold` (list active legal holds)
+- `GET /v1/analytics/policy-efficacy` (policy efficacy metrics from downstream outcomes/incidents)
 - `GET /v1/admin/data-access` (governed data access audit events)
 - `GET /v1/admin/slo` (SLO targets for latency, availability, and durability)
 - `GET /v1/admin/data/payloads?tenant_id=<id>&region=<region>` (tenant+region scoped governed payloads)
@@ -218,6 +219,8 @@ Experimental endpoints:
 
 `POST /v1/evaluate` also supports `simulate_exceptions: true` to return an explicit
 comparison between baseline deterministic evaluation and exception-overlay results.
+The same request may include optional `downstream_outcome` (`success` or `failure`)
+and `incident_flag` fields for post-decision outcome tracking and analytics.
 
 ## Production reliability hardening
 
