@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from sena.audit.chain import append_audit_record
 from sena.audit.sinks import JsonlFileAuditSink
+from sena.audit.sqlite_sink import SQLiteAppendOnlyAuditSink
 
 
 class AuditStorageError(RuntimeError):
@@ -53,6 +54,40 @@ class LocalFileStorage(AuditStorage):
     def verify_immutable(self) -> bool:
         # Local JSONL development sink is append-focused but not WORM-enforced.
         return False
+
+
+@dataclass
+class SQLiteAppendOnlyStorage(AuditStorage):
+    sqlite_path: str
+    table_name: str = "audit_log"
+
+    def _sink(self) -> SQLiteAppendOnlyAuditSink:
+        return SQLiteAppendOnlyAuditSink(sqlite_path=self.sqlite_path, table_name=self.table_name)
+
+    def append(self, entry: dict[str, Any]) -> str:
+        payload = dict(entry)
+        payload.setdefault("storage_entry_id", payload.get("decision_id") or f"sqlite-{uuid4().hex}")
+        persisted = append_audit_record(self._sink(), payload)
+        return str(
+            persisted.get("storage_entry_id")
+            or persisted.get("decision_id")
+            or persisted.get("chain_hash")
+        )
+
+    def read(self, entry_id: str) -> dict[str, Any]:
+        for row in self._sink().load_records():
+            keys = (
+                str(row.get("storage_entry_id") or ""),
+                str(row.get("decision_id") or ""),
+                str(row.get("chain_hash") or ""),
+            )
+            if entry_id in keys:
+                return row
+        raise KeyError(f"audit entry not found: {entry_id}")
+
+    def verify_immutable(self) -> bool:
+        # SQLite triggers reject UPDATE/DELETE operations for append-only chain table.
+        return True
 
 
 @dataclass
@@ -168,6 +203,12 @@ def storage_from_env(audit_sink_jsonl: str | None) -> AuditStorage | None:
             )
         Path(audit_sink_jsonl).parent.mkdir(parents=True, exist_ok=True)
         return LocalFileStorage(path=audit_sink_jsonl)
+    if backend == "sqlite_append_only":
+        sqlite_path = os.getenv("SENA_AUDIT_SQLITE_PATH")
+        table_name = os.getenv("SENA_AUDIT_SQLITE_TABLE", "audit_log")
+        if not sqlite_path:
+            raise AuditStorageError("SENA_AUDIT_SQLITE_PATH is required")
+        return SQLiteAppendOnlyStorage(sqlite_path=sqlite_path, table_name=table_name)
     if backend == "s3_object_lock":
         bucket = os.getenv("SENA_AUDIT_S3_BUCKET")
         prefix = os.getenv("SENA_AUDIT_S3_PREFIX", "sena/audit")

@@ -1,0 +1,25 @@
+{
+  "schema_version": "1",
+  "decision_id": "dec-example-001",
+  "input_payload": {
+    "action": "approve_vendor_payment",
+    "amount": 175000,
+    "vendor_verified": false
+  },
+  "policy_version": "2026.04",
+  "decision_output": "BLOCKED",
+  "signature": {
+    "value": "xX3x2fTz7m9X3Edk5fI/GfWQJqJAHGGq4j4eIlYAb4g=",
+    "signer_identity": "security-auditor@corp",
+    "signing_key_id": "audit-k1"
+  },
+  "timestamp": {
+    "rfc3339": "2026-04-09T00:00:00Z",
+    "signed_timestamp_hash": "c13ee97f6cf2fffa285790e2fd825f07239f2b77ea98b633a49dbfcf4042f0e7"
+  },
+  "hash_chain_proof": {
+    "storage_sequence_number": 52,
+    "previous_chain_hash": "3518613c2367a2c44f9f83158d4f099834dbf350f5f98667d98e38191f8efbe9",
+    "chain_hash": "f08c40abbe17d3f7550f7de87f2e2e9a06f2f8b42d2590c92671f707c3190448"
+  }
+}

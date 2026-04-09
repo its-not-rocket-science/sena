@@ -231,3 +231,11 @@ make demo-monitoring
 This starts SENA, Prometheus, and Grafana via `docker-compose-monitoring.yml`, and
 generates traffic with `scripts/generate_traffic.py` (10 decisions/second with random
 Merkle proof verification attempts).
+
+
+## Evidentiary-grade audit verification
+
+```bash
+python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl verify-evidence --keyring configs/audit-keyring.json
+python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl export-evidence-bundle dec_123 --output artifacts/evidence/dec_123.json
+```

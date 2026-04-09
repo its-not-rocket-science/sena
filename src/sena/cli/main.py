@@ -17,6 +17,11 @@ from sena.audit.archive import (
     restore_audit_archive,
     verify_audit_archive,
 )
+from sena.audit.evidentiary import (
+    AuditRecordVerifier,
+    export_evidence_bundle,
+    load_signer_from_keyring_file,
+)
 from sena.api.config import load_settings_from_env
 from sena.api.production_check import run_production_readiness_check
 from sena.core.enums import DecisionOutcome
@@ -868,6 +873,22 @@ def _run_audit_restore_archive(args: argparse.Namespace) -> None:
         raise SystemExit("Restored audit chain failed verification")
 
 
+def _run_audit_verify_evidence(args: argparse.Namespace) -> None:
+    signer = load_signer_from_keyring_file(args.keyring)
+    verifier = AuditRecordVerifier.from_signer(signer)
+    result = verify_audit_chain(str(args.audit_path), verifier=verifier)
+    print(json.dumps(result, indent=2))
+    if not result.get("valid", False):
+        raise SystemExit("Audit evidentiary verification failed")
+
+
+def _run_audit_export_bundle(args: argparse.Namespace) -> None:
+    bundle = export_evidence_bundle(str(args.audit_path), args.decision_id)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(bundle, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps({"status": "ok", "output": str(args.output)}, indent=2))
+
+
 def _run_production_check(args: argparse.Namespace) -> None:
     settings = load_settings_from_env()
     report = run_production_readiness_check(settings)
@@ -1321,6 +1342,21 @@ def _build_audit_parser() -> argparse.ArgumentParser:
     restore_archive.add_argument("--restore-audit-path", type=Path, required=True)
     restore_archive.add_argument("--verify-after-restore", action="store_true")
     restore_archive.set_defaults(handler=_run_audit_restore_archive)
+
+    verify_evidence = sub.add_parser(
+        "verify-evidence",
+        help="Verify chain integrity plus per-record signatures and trusted timestamp hashes",
+    )
+    verify_evidence.add_argument("--keyring", type=Path, required=True)
+    verify_evidence.set_defaults(handler=_run_audit_verify_evidence)
+
+    export_bundle = sub.add_parser(
+        "export-evidence-bundle",
+        help="Export evidentiary bundle JSON for one decision",
+    )
+    export_bundle.add_argument("decision_id")
+    export_bundle.add_argument("--output", type=Path, required=True)
+    export_bundle.set_defaults(handler=_run_audit_export_bundle)
     return parser
 
 
