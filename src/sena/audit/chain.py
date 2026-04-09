@@ -5,6 +5,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from sena.audit.evidentiary import (
+    AuditRecordSigner,
+    AuditRecordVerifier,
+    attach_evidentiary_fields,
+    verify_signature,
+)
 from sena.audit.sinks import AuditSink, JsonlFileAuditSink
 
 
@@ -27,26 +33,33 @@ def _resolve_sink(path_or_sink: str | AuditSink) -> AuditSink:
 
 
 def append_audit_record(
-    path_or_sink: str | AuditSink, record: dict[str, Any]
+    path_or_sink: str | AuditSink,
+    record: dict[str, Any],
+    signer: AuditRecordSigner | None = None,
 ) -> dict[str, Any]:
     sink = _resolve_sink(path_or_sink)
 
+    payload = dict(record)
+    if signer is not None:
+        payload = attach_evidentiary_fields(payload, signer)
+
     if hasattr(sink, "append_chained"):
-        return sink.append_chained(record, compute_chain_hash)
+        return sink.append_chained(payload, compute_chain_hash)
 
     previous_chain_hash = None
     records = sink.load_records()
     if records:
         previous_chain_hash = records[-1]["chain_hash"]
 
-    payload = dict(record)
     payload["previous_chain_hash"] = previous_chain_hash
     payload["chain_hash"] = compute_chain_hash(payload, previous_chain_hash)
     sink.append(payload)
     return payload
 
 
-def verify_audit_chain(path_or_sink: str | AuditSink) -> dict[str, Any]:
+def verify_audit_chain(
+    path_or_sink: str | AuditSink, verifier: AuditRecordVerifier | None = None
+) -> dict[str, Any]:
     sink = _resolve_sink(path_or_sink)
     details: dict[str, Any] | None = None
     if hasattr(sink, "load_records_detailed"):
@@ -106,6 +119,28 @@ def verify_audit_chain(path_or_sink: str | AuditSink) -> dict[str, Any]:
                     f"record {count} ({location}): duplicate decision_id ({decision_id})"
                 )
             seen_decision_ids.add(decision_id)
+
+
+        has_signature_fields = any(
+            key in row
+            for key in (
+                "signature",
+                "signing_key_id",
+                "signed_timestamp_hash",
+                "signer_identity",
+            )
+        )
+        if has_signature_fields:
+            if verifier is None:
+                errors.append(
+                    f"record {count} ({location}): signature_present_but_no_verifier"
+                )
+            else:
+                signature_ok, signature_error = verify_signature(row, verifier)
+                if not signature_ok:
+                    errors.append(
+                        f"record {count} ({location}): signature_verification_failed:{signature_error}"
+                    )
 
         current_hash = row.get("chain_hash")
         record = {k: v for k, v in row.items() if k not in {"chain_hash"}}
