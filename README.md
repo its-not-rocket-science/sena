@@ -179,6 +179,7 @@ Key endpoints:
 - `POST /v1/audit/verify/tree` (Merkle proof verification for a single decision)
 - `POST /v1/audit/hold/{decision_id}` (apply legal hold)
 - `GET /v1/audit/hold` (list active legal holds)
+- `GET /v1/decision/{decision_id}/explanation?view=analyst|auditor` (export concise or full decision explanation)
 
 Operational audit durability guidance (local sink + archive/restore drills):
 - `docs/AUDIT_DURABILITY.md`

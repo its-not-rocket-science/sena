@@ -112,6 +112,7 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     assert body["decision_id"].startswith("dec_")
     assert body["policy_bundle"]["version"] == "2026.03"
     assert "decision_hash" in body
+    assert "explanation" in body
 
 
 def test_evaluate_dry_run_skips_audit_and_marks_response(tmp_path) -> None:
@@ -130,6 +131,38 @@ def test_evaluate_dry_run_skips_audit_and_marks_response(tmp_path) -> None:
     body = response.json()
     assert body["dry_run"] is True
     assert not audit_path.exists()
+
+
+def test_decision_explanation_export_endpoint_supports_view_modes() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    evaluate = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False, "amount": 1000},
+        },
+    )
+    assert evaluate.status_code == 200
+    decision_id = evaluate.json()["decision_id"]
+
+    analyst = client.get(f"/v1/decision/{decision_id}/explanation?view=analyst")
+    assert analyst.status_code == 200
+    assert analyst.json()["view"] == "analyst"
+    assert "analyst_summary" in analyst.json()
+
+    auditor = client.get(f"/v1/decision/{decision_id}/explanation?view=auditor")
+    assert auditor.status_code == 200
+    assert auditor.json()["view"] == "auditor"
+    assert "auditor_trace" in auditor.json()
+
+
+def test_decision_explanation_export_endpoint_returns_not_found() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    response = client.get("/v1/decision/dec_missing/explanation")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "http_not_found"
 
 
 def test_audit_verify_tree_endpoint(tmp_path) -> None:

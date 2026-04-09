@@ -21,6 +21,7 @@ from sena.core.models import (
     PolicyBundleMetadata,
     PolicyInvariant,
     PolicyRule,
+    PrecedenceResolutionStep,
     RuleEvaluationResult,
 )
 from sena.policy.interpreter import evaluate_condition_with_trace
@@ -196,6 +197,12 @@ class PolicyEvaluator:
         ]
         evaluated: list[RuleEvaluationResult] = []
         evaluated_invariants: list[InvariantEvaluationResult] = []
+        precedence_steps: list[PrecedenceResolutionStep] = [
+            PrecedenceResolutionStep(
+                stage="start",
+                description="Started deterministic policy evaluation.",
+            )
+        ]
         missing_fields: set[str] = set()
         schema_errors: list[str] = []
         identity_errors: list[str] = []
@@ -264,8 +271,43 @@ class PolicyEvaluator:
                         reason=rule_reason,
                         required_evidence=list(rule.required_evidence),
                         missing_evidence=missing_evidence,
+                        condition_matched=condition_result.matched,
+                        condition_missing_fields=sorted(
+                            condition_result.missing_fields
+                        ),
                     )
                 )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="rule_evaluation",
+                    description=(
+                        "Evaluated all applicable rules and captured matched/non-matched outcomes."
+                    ),
+                    matched_rule_ids=sorted(
+                        result.rule_id for result in evaluated if result.matched
+                    ),
+                )
+            )
+        else:
+            skip_reason = "pre_evaluation_validation_failed"
+            for rule in applicable:
+                evaluated.append(
+                    RuleEvaluationResult(
+                        rule_id=rule.id,
+                        matched=False,
+                        decision=None,
+                        inviolable=rule.inviolable,
+                        reason=skip_reason,
+                    )
+                )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="rule_evaluation_skipped",
+                    description=(
+                        "Rule condition evaluation skipped due to deterministic pre-evaluation validation errors."
+                    ),
+                )
+            )
 
         matched = [result for result in evaluated if result.matched]
         matched_invariants = [
@@ -301,6 +343,16 @@ class PolicyEvaluator:
                 f"Decision {decision_id}: BLOCKED due to invariant violation(s) "
                 f"({', '.join(result.invariant_id for result in matched_invariants)})."
             )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="invariant_precedence",
+                    description="Invariant violations force a BLOCKED outcome.",
+                    matched_rule_ids=sorted(
+                        result.invariant_id for result in matched_invariants
+                    ),
+                    outcome=outcome,
+                )
+            )
         elif inviolable_blocks:
             outcome = DecisionOutcome.BLOCKED
             precedence_explanation = (
@@ -310,6 +362,14 @@ class PolicyEvaluator:
             summary = (
                 f"Decision {decision_id}: BLOCKED due to inviolable policy constraints "
                 f"({', '.join(r.rule_id for r in inviolable_blocks)})."
+            )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="inviolable_block_precedence",
+                    description="Matched inviolable BLOCK rules override all other rule decisions.",
+                    matched_rule_ids=sorted(r.rule_id for r in inviolable_blocks),
+                    outcome=outcome,
+                )
             )
         elif blocks:
             outcome = DecisionOutcome.BLOCKED
@@ -321,6 +381,14 @@ class PolicyEvaluator:
                 f"Decision {decision_id}: BLOCKED by policy rule(s) "
                 f"({', '.join(r.rule_id for r in blocks)})."
             )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="block_precedence",
+                    description="BLOCK rules take precedence over ESCALATE and ALLOW.",
+                    matched_rule_ids=sorted(r.rule_id for r in blocks),
+                    outcome=outcome,
+                )
+            )
         elif escalations:
             outcome = DecisionOutcome.ESCALATE_FOR_HUMAN_REVIEW
             precedence_explanation = (
@@ -331,12 +399,37 @@ class PolicyEvaluator:
                 f"Decision {decision_id}: ESCALATE_FOR_HUMAN_REVIEW for "
                 f"rule(s) ({', '.join(r.rule_id for r in escalations)})."
             )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="escalate_precedence",
+                    description="No BLOCK rules matched; ESCALATE rules require manual review.",
+                    matched_rule_ids=sorted(r.rule_id for r in escalations),
+                    outcome=outcome,
+                )
+            )
+        else:
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="default_precedence",
+                    description=(
+                        "No higher-precedence rule class matched. Applied configured default decision."
+                    ),
+                    outcome=outcome,
+                )
+            )
         if schema_errors:
             outcome = DecisionOutcome.BLOCKED
             precedence_explanation = "Context schema validation failed before policy evaluation; blocked deterministically."
             summary = (
                 f"Decision {decision_id}: BLOCKED due to context schema errors: "
                 f"{'; '.join(schema_errors)}"
+            )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="schema_validation_guardrail",
+                    description="Schema validation failed; forcing BLOCKED outcome.",
+                    outcome=outcome,
+                )
             )
         if identity_errors:
             outcome = DecisionOutcome.BLOCKED
@@ -346,6 +439,13 @@ class PolicyEvaluator:
                 f"Decision {decision_id}: BLOCKED due to missing identity field(s): "
                 f"{', '.join(identity_errors)}"
             )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="identity_validation_guardrail",
+                    description="Strict identity validation failed; forcing BLOCKED outcome.",
+                    outcome=outcome,
+                )
+            )
         if ai_metadata_errors:
             outcome = DecisionOutcome.BLOCKED
             missing_fields.update(ai_metadata_errors)
@@ -353,6 +453,13 @@ class PolicyEvaluator:
             summary = (
                 f"Decision {decision_id}: BLOCKED due to missing AI-governance field(s): "
                 f"{', '.join(ai_metadata_errors)}"
+            )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="ai_metadata_validation_guardrail",
+                    description="AI-governance metadata validation failed; forcing BLOCKED outcome.",
+                    outcome=outcome,
+                )
             )
         if self.config.require_allow_match and not allows and not matched_invariants:
             outcome = DecisionOutcome.BLOCKED
@@ -371,6 +478,13 @@ class PolicyEvaluator:
                     f"Decision {decision_id}: BLOCKED because strict allow mode requires at "
                     "least one matching ALLOW rule."
                 )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="strict_allow_guardrail",
+                    description="Strict allow mode enforced and no ALLOW rule matched.",
+                    outcome=outcome,
+                )
+            )
 
         if not matched and self.config.default_decision != DecisionOutcome.APPROVED:
             summary = (
@@ -382,6 +496,14 @@ class PolicyEvaluator:
             precedence_explanation = (
                 f"{precedence_explanation} Multiple conflicting rules matched; "
                 "BLOCK takes precedence over ESCALATE and ALLOW."
+            )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="conflict_resolution",
+                    description="Resolved conflicting rule decisions via deterministic precedence.",
+                    matched_rule_ids=conflicting_rules,
+                    outcome=outcome,
+                )
             )
 
         decision_timestamp = datetime.now(timezone.utc)
@@ -401,6 +523,16 @@ class PolicyEvaluator:
             summary = (
                 f"Decision {decision_id}: {outcome.value}. "
                 f"Baseline was {baseline_outcome.value}."
+            )
+            precedence_steps.append(
+                PrecedenceResolutionStep(
+                    stage="exception_overlay",
+                    description=overlay_note,
+                    matched_rule_ids=sorted(
+                        result.exception_id for result in applied_exceptions
+                    ),
+                    outcome=outcome,
+                )
             )
 
         risk_summary = {
@@ -601,6 +733,7 @@ class PolicyEvaluator:
             evaluated_exceptions=evaluated_exceptions,
             applied_exceptions=applied_exceptions,
             conflicting_rules=conflicting_rules,
+            precedence_steps=precedence_steps,
             missing_fields=sorted(missing_fields),
             context=context,
             audit_record=audit_record,
