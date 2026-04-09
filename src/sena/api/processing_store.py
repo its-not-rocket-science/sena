@@ -62,6 +62,21 @@ class ProcessingStore:
             )
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS decision_attestations (
+                    attestation_id TEXT PRIMARY KEY,
+                    decision_id TEXT NOT NULL,
+                    decision_hash TEXT NOT NULL,
+                    signer_id TEXT NOT NULL,
+                    signer_role TEXT NOT NULL,
+                    key_id TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    signed_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS governed_payloads (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     tenant_id TEXT NOT NULL,
@@ -313,6 +328,71 @@ class ProcessingStore:
         if row is None:
             return None
         return json.loads(str(row["explanation_json"]))
+
+    def get_decision_hash(self, decision_id: str) -> str | None:
+        explanation = self.get_decision_explanation(decision_id)
+        if not explanation:
+            return None
+        auditor = explanation.get("auditor", {})
+        if not isinstance(auditor, dict):
+            return None
+        trace = auditor.get("auditor_trace", {})
+        if not isinstance(trace, dict):
+            return None
+        decision_hash = trace.get("decision_hash")
+        if not isinstance(decision_hash, str) or not decision_hash:
+            return None
+        return decision_hash
+
+    def store_decision_attestation(self, attestation: dict[str, str]) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO decision_attestations(
+                    attestation_id, decision_id, decision_hash, signer_id, signer_role,
+                    key_id, signature, signed_at, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    attestation["attestation_id"],
+                    attestation["decision_id"],
+                    attestation["decision_hash"],
+                    attestation["signer_id"],
+                    attestation["signer_role"],
+                    attestation["key_id"],
+                    attestation["signature"],
+                    attestation["signed_at"],
+                    now,
+                ),
+            )
+        self.record_data_access_event(
+            event_type="write",
+            entity_type="decision_attestation",
+            entity_id=attestation["attestation_id"],
+            metadata={"decision_id": attestation["decision_id"]},
+        )
+
+    def list_decision_attestations(self, decision_id: str) -> list[dict[str, Any]]:
+        with self._lock, self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT attestation_id, decision_id, decision_hash, signer_id, signer_role,
+                       key_id, signature, signed_at, created_at
+                FROM decision_attestations
+                WHERE decision_id = ?
+                ORDER BY signed_at ASC, attestation_id ASC
+                """,
+                (decision_id,),
+            ).fetchall()
+        self.record_data_access_event(
+            event_type="read",
+            entity_type="decision_attestation",
+            entity_id=decision_id,
+            metadata={"count": len(rows)},
+        )
+        return [dict(row) for row in rows]
 
     def store_governed_payload(
         self,

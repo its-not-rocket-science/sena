@@ -406,6 +406,112 @@ def test_api_key_role_policy_author_cannot_evaluate() -> None:
     assert response.json()["error"]["code"] == "forbidden"
 
 
+def test_decision_attestation_sign_and_list_supports_multiple_signatures() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    evaluate = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
+    )
+    assert evaluate.status_code == 200
+    decision_id = evaluate.json()["decision_id"]
+
+    first = client.post(
+        f"/v1/decision/{decision_id}/attestations/sign",
+        json={
+            "signer_id": "third-party-a",
+            "signer_role": "verifier",
+            "signing_key": "shared-secret-a",
+            "key_id": "vendor-a",
+        },
+    )
+    second = client.post(
+        f"/v1/decision/{decision_id}/attestations/sign",
+        json={
+            "signer_id": "third-party-b",
+            "signer_role": "verifier",
+            "signing_key": "shared-secret-b",
+            "key_id": "vendor-b",
+        },
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["verified"] is True
+    assert second.json()["verified"] is True
+
+    listed = client.get(f"/v1/decision/{decision_id}/attestations")
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["decision_id"] == decision_id
+    assert len(body["attestations"]) == 2
+    assert all(item["verified"] is True for item in body["attestations"])
+
+
+def test_decision_attestation_sign_rejects_non_verifier_role() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    evaluate = client.post(
+        "/v1/evaluate",
+        json={"action_type": "approve_vendor_payment"},
+    )
+    assert evaluate.status_code == 200
+    decision_id = evaluate.json()["decision_id"]
+
+    response = client.post(
+        f"/v1/decision/{decision_id}/attestations/sign",
+        json={
+            "signer_id": "not-allowed",
+            "signer_role": "reviewer",
+            "signing_key": "shared-secret",
+            "key_id": "external",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_api_key_role_verifier_can_sign_and_list_attestations() -> None:
+    app = create_app(
+        _settings(
+            enable_api_key_auth=True,
+            api_keys=(("admin-key", "admin"), ("verify-key", "verifier")),
+        )
+    )
+    client = TestClient(app)
+
+    evaluate = client.post(
+        "/v1/evaluate",
+        headers={"x-api-key": "admin-key"},
+        json={"action_type": "approve_vendor_payment"},
+    )
+    assert evaluate.status_code == 200
+    decision_id = evaluate.json()["decision_id"]
+
+    signed = client.post(
+        f"/v1/decision/{decision_id}/attestations/sign",
+        headers={"x-api-key": "verify-key"},
+        json={
+            "signer_id": "independent-auditor",
+            "signer_role": "verifier",
+            "signing_key": "third-party-shared-key",
+            "key_id": "auditor",
+        },
+    )
+    assert signed.status_code == 200
+    assert signed.json()["verified"] is True
+
+    listed = client.get(
+        f"/v1/decision/{decision_id}/attestations",
+        headers={"x-api-key": "verify-key"},
+    )
+    assert listed.status_code == 200
+    assert len(listed.json()["attestations"]) == 1
+
+
 def test_policy_author_cannot_promote_bundle_due_to_separation_of_duties() -> None:
     app = create_app(
         _settings(enable_api_key_auth=True, api_keys=(("author-key", "policy_author"),))

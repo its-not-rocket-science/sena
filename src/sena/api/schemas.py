@@ -197,3 +197,27 @@ class AuditTreeVerifyRequest(BaseModel):
     decision_id: NonEmptyStr
     merkle_proof: list[NonEmptyStr]
     expected_root: NonEmptyStr
+
+
+class DecisionAttestationSignRequest(BaseModel):
+    signer_id: NonEmptyStr
+    signer_role: Literal["verifier"] = "verifier"
+    signing_key: NonEmptyStr
+    key_id: NonEmptyStr = "third_party_verifier"
+
+
+class DecisionAttestationResponse(BaseModel):
+    attestation_id: str
+    decision_id: str
+    decision_hash: str
+    signer_id: str
+    signer_role: str
+    key_id: str
+    signature: str
+    signed_at: str
+    verified: bool
+
+
+class DecisionAttestationsResponse(BaseModel):
+    decision_id: str
+    attestations: list[DecisionAttestationResponse] = Field(default_factory=list)

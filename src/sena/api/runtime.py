@@ -25,6 +25,7 @@ VALID_API_ROLES = {
     "reviewer",
     "deployer",
     "auditor",
+    "verifier",
 }
 VALID_RUNTIME_MODES = {"development", "pilot", "production"}
 VALID_POLICY_STORE_BACKENDS = {"filesystem", "sqlite"}
@@ -66,6 +67,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("GET", "/v1/analytics/policy-efficacy"),
         ("GET", "/v1/audit/verify"),
         ("GET", "/v1/decision/{decision_id}/explanation"),
+        ("GET", "/v1/decision/{decision_id}/attestations"),
         ("POST", "/v1/audit/verify/tree"),
         ("GET", "/v1/audit/hold"),
         ("GET", "/v1/admin/dlq"),
@@ -75,6 +77,10 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("POST", "/v1/admin/data/payloads/{payload_id}/hold"),
         ("POST", "/v1/admin/audit/config"),
     },
+    "verifier": {
+        ("GET", "/v1/decision/{decision_id}/attestations"),
+        ("POST", "/v1/decision/{decision_id}/attestations/sign"),
+    },
 }
 
 ROLE_ALLOWED_ENVIRONMENTS: dict[str, set[str]] = {
@@ -82,6 +88,7 @@ ROLE_ALLOWED_ENVIRONMENTS: dict[str, set[str]] = {
     "reviewer": {"development", "pilot", "production"},
     "deployer": {"pilot", "production"},
     "auditor": {"development", "pilot", "production"},
+    "verifier": {"development", "pilot", "production"},
 }
 
 ROLE_ACTION_TYPE_DENYLIST: dict[str, set[str]] = {
@@ -481,7 +488,22 @@ def build_api_key_roles(settings: ApiSettings) -> dict[str, str]:
 def is_role_allowed(role: str, method: str, path: str) -> bool:
     if role == "admin":
         return True
-    return (method, path) in ROLE_ALLOWED_ENDPOINTS.get(role, set())
+    allowed = ROLE_ALLOWED_ENDPOINTS.get(role, set())
+    if (method, path) in allowed:
+        return True
+    path_parts = path.strip("/").split("/")
+    for allowed_method, allowed_path in allowed:
+        if allowed_method != method:
+            continue
+        template_parts = allowed_path.strip("/").split("/")
+        if len(template_parts) != len(path_parts):
+            continue
+        if all(
+            template.startswith("{") and template.endswith("}") or template == actual
+            for template, actual in zip(template_parts, path_parts)
+        ):
+            return True
+    return False
 
 
 def evaluate_abac_policy(
