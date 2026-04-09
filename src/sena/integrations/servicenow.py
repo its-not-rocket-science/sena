@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 from sena.integrations.approval import (
@@ -10,8 +11,8 @@ from sena.integrations.approval import (
     ApprovalConnectorConfig,
     ApprovalEventRoute,
     DeliveryRetryError,
-    InMemoryDeliveryIdempotencyStore,
     InMemoryDeadLetterQueue,
+    InMemoryDeliveryIdempotencyStore,
     InMemoryDeliveryExecutionStore,
     MinimalApprovalEventContract,
     NormalizedApprovalEvent,
@@ -22,6 +23,7 @@ from sena.integrations.approval import (
     resolve_path,
 )
 from sena.integrations.base import DecisionPayload, IntegrationError
+from sena.policy.integration_persistence import SQLiteIntegrationReliabilityStore
 
 
 class ServiceNowIntegrationError(IntegrationError):
@@ -122,20 +124,27 @@ class ServiceNowConnector(ApprovalConnectorBase):
         *,
         config: ServiceNowMappingConfig,
         idempotency_store: ServiceNowIdempotencyStore | None = None,
+        reliability_store: SQLiteIntegrationReliabilityStore | None = None,
+        reliability_db_path: str | None = None,
         delivery_client: ServiceNowDeliveryClient | None = None,
         verifier: ServiceNowWebhookVerifier | None = None,
     ) -> None:
+        durable_store = reliability_store
+        if durable_store is None and reliability_db_path:
+            durable_store = SQLiteIntegrationReliabilityStore(str(Path(reliability_db_path)))
         super().__init__(
             config=ApprovalConnectorConfig(routes=config.routes),
             verifier=verifier or AllowAllServiceNowWebhookVerifier(),
-            idempotency_store=idempotency_store or InMemoryServiceNowIdempotencyStore(),
+            idempotency_store=idempotency_store
+            or durable_store
+            or InMemoryServiceNowIdempotencyStore(),
         )
         self._config = config
         self._delivery_client = delivery_client or NullServiceNowDeliveryClient()
         self._delivery_executor = ReliableDeliveryExecutor(
             max_attempts=config.outbound.max_attempts,
-            completion_store=InMemoryDeliveryExecutionStore(),
-            dlq=InMemoryDeadLetterQueue(),
+            completion_store=durable_store or InMemoryDeliveryExecutionStore(),
+            dlq=durable_store or InMemoryDeadLetterQueue(),
         )
 
     def dead_letter_items(self) -> list[dict[str, Any]]:
