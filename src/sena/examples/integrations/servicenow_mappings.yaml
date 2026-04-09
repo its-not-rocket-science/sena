@@ -8,6 +8,26 @@ routes:
     static_source_object_type: change_request
     static_workflow_stage: requested
     static_requested_action: approve_vendor_payment
+    external_state_path: event_type
+    external_to_internal_state:
+      change_approval.requested: requested
+      requested: requested
+      in_review: in_review
+      approved: approved
+      rejected: rejected
+    internal_to_external_state:
+      blocked: rejected
+      allowed: approved
+      approved: approved
+      rejected: rejected
+    allowed_state_transitions:
+      requested:
+        - in_review
+        - approved
+        - rejected
+      in_review:
+        - approved
+        - rejected
     correlation_key_path: change_request.number
     required_fields:
       - change_request.number
@@ -32,6 +52,17 @@ routes:
       cab_review_missing: cab_review_missing
       requested_start: schedule.start
       requested_end: schedule.end
+    context_fields:
+      normalized_environment: environment
+      normalized_classification: classification
+    metadata_fields:
+      fixture_version: fixture_version
+      source_table: table
+    required_metadata_fields:
+      - fixture_version
+      - source_table
+    sla_deadline_path: schedule.end
+    escalation_deadline_path: schedule.start
     risk_attributes:
       risk_level: risk.level
       emergency_change: flags.emergency
@@ -44,3 +75,4 @@ routes:
     policy_bundle: enterprise-demo
 outbound:
   mode: callback
+  max_attempts: 3

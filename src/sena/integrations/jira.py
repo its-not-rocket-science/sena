@@ -9,9 +9,13 @@ from sena.integrations.approval import (
     ApprovalConnectorBase,
     ApprovalConnectorConfig,
     ApprovalEventRoute,
+    DeliveryRetryError,
     InMemoryDeliveryIdempotencyStore,
+    InMemoryDeadLetterQueue,
+    InMemoryDeliveryExecutionStore,
     MinimalApprovalEventContract,
     NormalizedApprovalEvent,
+    ReliableDeliveryExecutor,
     build_normalized_approval_event,
     load_mapping_document,
     parse_approval_routes,
@@ -30,6 +34,7 @@ JiraEventRoute = ApprovalEventRoute
 @dataclass(frozen=True)
 class JiraOutboundConfig:
     mode: str = "comment"
+    max_attempts: int = 1
 
 
 @dataclass(frozen=True)
@@ -94,11 +99,15 @@ def load_jira_mapping_config(path: str) -> JiraMappingConfig:
     routes = parse_approval_routes(raw, error_cls=JiraIntegrationError, config_name="Jira")
     outbound_raw = raw.get("outbound", {}) or {}
     mode = str(outbound_raw.get("mode", "comment"))
+    max_attempts = int(outbound_raw.get("max_attempts", 1))
     if mode not in {"comment", "status", "both", "none"}:
         raise JiraIntegrationError(
             "Jira outbound.mode must be one of: comment,status,both,none"
         )
-    return JiraMappingConfig(routes=routes, outbound=JiraOutboundConfig(mode=mode))
+    return JiraMappingConfig(
+        routes=routes,
+        outbound=JiraOutboundConfig(mode=mode, max_attempts=max_attempts),
+    )
 
 
 class JiraDeliveryClient(Protocol):
@@ -136,6 +145,14 @@ class JiraConnector(ApprovalConnectorBase):
         )
         self._config = config
         self._delivery_client = delivery_client or NullJiraDeliveryClient()
+        self._delivery_executor = ReliableDeliveryExecutor(
+            max_attempts=config.outbound.max_attempts,
+            completion_store=InMemoryDeliveryExecutionStore(),
+            dlq=InMemoryDeadLetterQueue(),
+        )
+
+    def dead_letter_items(self) -> list[dict[str, Any]]:
+        return [item.__dict__.copy() for item in self._delivery_executor.dlq.items()]
 
     def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:
         issue_key = payload.request_id or "unknown"
@@ -148,23 +165,52 @@ class JiraConnector(ApprovalConnectorBase):
         errors: list[str] = []
         if mode in {"comment", "both"}:
             try:
-                results.append(self._delivery_client.publish_comment(issue_key, message))
-            except Exception as exc:  # pragma: no cover
+                results.append(
+                    self._delivery_executor.deliver(
+                        operation_key=f"{payload.decision_id}:comment:{issue_key}",
+                        target="comment",
+                        payload={"issue_key": issue_key, "message": message},
+                        delivery_fn=lambda: self._delivery_client.publish_comment(
+                            issue_key, message
+                        ),
+                    )
+                )
+            except DeliveryRetryError as exc:
                 errors.append(f"comment:{exc}")
         if mode in {"status", "both"}:
+            decision_state = payload.summary.lower()
+            route = next(iter(self._config.routes.values()), None)
+            external_state = (
+                route.internal_to_external_state.get(decision_state, decision_state)
+                if route
+                else decision_state
+            )
             try:
                 results.append(
-                    self._delivery_client.publish_status(
-                        issue_key,
-                        {
+                    self._delivery_executor.deliver(
+                        operation_key=f"{payload.decision_id}:status:{issue_key}",
+                        target="status",
+                        payload={
+                            "issue_key": issue_key,
                             "decision_id": payload.decision_id,
                             "action_type": payload.action_type,
                             "matched_rule_ids": payload.matched_rule_ids,
                             "summary": payload.summary,
+                            "external_state": external_state,
                         },
+                        delivery_fn=lambda: self._delivery_client.publish_status(
+                            issue_key,
+                            {
+                                "decision_id": payload.decision_id,
+                                "action_type": payload.action_type,
+                                "matched_rule_ids": payload.matched_rule_ids,
+                                "summary": payload.summary,
+                                "external_state": external_state,
+                            },
+                        ),
                     )
                 )
-            except Exception as exc:  # pragma: no cover
+            except DeliveryRetryError as exc:
                 errors.append(f"status:{exc}")
         if errors:
             return {"status": "partial_failure", "results": results, "errors": errors}

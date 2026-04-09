@@ -167,3 +167,44 @@ def test_servicenow_send_decision_returns_deterministic_callback_shape() -> None
     assert response["status"] == "delivered"
     assert response["payload"]["source_system"] == "servicenow"
     assert response["payload"]["deterministic"] is True
+
+
+def test_servicenow_send_decision_is_idempotent_for_duplicate_retry() -> None:
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    connector = ServiceNowConnector(config=cfg)
+    payload = DecisionPayload(
+        decision_id="dec_sn_dupe",
+        request_id="CHG0092001",
+        action_type="approve_vendor_payment",
+        matched_rule_ids=["RULE-1"],
+        summary="ALLOWED",
+    )
+    first = connector.send_decision(payload)
+    second = connector.send_decision(payload)
+    assert first["status"] == "delivered"
+    assert second["delivery"]["status"] == "duplicate_suppressed"
+
+
+def test_servicenow_send_decision_writes_dlq_after_retry_exhaustion() -> None:
+    class _FailingCallbackClient:
+        def publish_callback(self, payload: dict) -> dict:
+            del payload
+            raise RuntimeError("callback timeout")
+
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    connector = ServiceNowConnector(config=cfg, delivery_client=_FailingCallbackClient())
+    response = connector.send_decision(
+        DecisionPayload(
+            decision_id="dec_sn_fail",
+            request_id="CHG0092002",
+            action_type="approve_vendor_payment",
+            matched_rule_ids=["RULE-1"],
+            summary="BLOCKED",
+        )
+    )
+    assert response["status"] == "delivery_failed"
+    assert len(connector.dead_letter_items()) == 1

@@ -23,6 +23,14 @@ def _payload(actor: str = "acct-1") -> dict:
                 "customfield_approval_amount": 12000,
                 "customfield_requester_role": "finance_analyst",
                 "customfield_vendor_verified": False,
+                "customfield_tenant_id": "tenant-finance",
+                "customfield_workflow_id": "wf-ap-01",
+                "customfield_sla_deadline_at": "2026-04-11T00:00:00Z",
+                "customfield_escalation_deadline_at": "2026-04-10T18:00:00Z",
+                "customfield_business_unit": "finance",
+                "status": {"name": "Pending Approval"},
+                "previous_status": {"name": "In Review"},
+                "priority": {"name": "P2"},
             },
         },
         "user": {"accountId": actor},
@@ -165,3 +173,48 @@ def test_jira_send_decision_returns_stable_payload() -> None:
     )
     assert response["status"] == "delivered"
     assert len(response["results"]) == 2
+
+
+def test_jira_send_decision_is_idempotent_for_retries() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+    payload = DecisionPayload(
+        decision_id="dec_dupe_1",
+        request_id="RISK-11",
+        action_type="approve_vendor_payment",
+        matched_rule_ids=["RULE-1"],
+        summary="ALLOWED",
+    )
+    first = connector.send_decision(payload)
+    second = connector.send_decision(payload)
+    assert first["status"] == "delivered"
+    assert all(item["status"] == "duplicate_suppressed" for item in second["results"])
+
+
+def test_jira_send_decision_writes_dlq_after_retry_exhaustion() -> None:
+    class _FailingClient:
+        def publish_comment(self, issue_key: str, message: str) -> dict:
+            del issue_key, message
+            raise RuntimeError("comment endpoint unavailable")
+
+        def publish_status(self, issue_key: str, payload: dict) -> dict:
+            del issue_key, payload
+            raise RuntimeError("status endpoint unavailable")
+
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(
+        config=cfg,
+        verifier=AllowAllJiraWebhookVerifier(),
+        delivery_client=_FailingClient(),
+    )
+    response = connector.send_decision(
+        DecisionPayload(
+            decision_id="dec_fail_1",
+            request_id="RISK-12",
+            action_type="approve_vendor_payment",
+            matched_rule_ids=["RULE-1"],
+            summary="BLOCKED",
+        )
+    )
+    assert response["status"] == "partial_failure"
+    assert len(connector.dead_letter_items()) == 2
