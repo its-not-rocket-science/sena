@@ -238,6 +238,38 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             state.dlq_worker.run_once()
         return {"retried": retry_count}
 
+    @router.post("/admin/audit/config", summary="Update audit verification controls")
+    def admin_audit_config(payload: dict[str, bool], request: Request) -> dict:
+        role = getattr(request.state, "api_role", "")
+        if role in {"policy_author", "deployer"}:
+            raise_api_error(
+                "forbidden",
+                details={
+                    "reason": "separation_of_duties: only reviewer or auditor may change audit configuration"
+                },
+            )
+        if role and not request.headers.get("x-step-up-auth"):
+            raise_api_error(
+                "forbidden",
+                details={
+                    "reason": "step_up_auth_required",
+                    "required_header": "x-step-up-auth",
+                },
+            )
+        if role and not request.headers.get("x-secondary-approver-id"):
+            raise_api_error(
+                "forbidden",
+                details={
+                    "reason": "secondary_approval_required",
+                    "required_header": "x-secondary-approver-id",
+                },
+            )
+        return {
+            "status": "accepted",
+            "requested_changes": payload,
+            "requires_restart": True,
+        }
+
     @router.post("/integrations/slack/interactions", summary="Handle Slack interactive callbacks")
     async def slack_interactions(request: Request, response: Response) -> dict:
         response.headers["x-sena-surface-stage"] = "experimental"

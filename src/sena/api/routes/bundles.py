@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, verify_bundle_signature
@@ -25,7 +25,13 @@ def create_bundles_router(state: EngineState) -> APIRouter:
     )
 
     @router.post("/bundle/register", summary="Register policy bundle")
-    def register_bundle(payload: BundleRegisterRequest) -> dict[str, Any]:
+    def register_bundle(payload: BundleRegisterRequest, request: Request) -> dict[str, Any]:
+        role = getattr(request.state, "api_role", "")
+        if role == "deployer":
+            raise_api_error(
+                "forbidden",
+                details={"reason": "separation_of_duties: deployer cannot author bundles"},
+            )
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
         try:
@@ -41,7 +47,41 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             raise_api_error("http_bad_request", details={"reason": str(exc)})
 
     @router.post("/bundle/promote", summary="Promote policy bundle lifecycle")
-    def promote_bundle(payload: BundlePromoteRequest) -> dict[str, Any]:
+    def promote_bundle(payload: BundlePromoteRequest, request: Request) -> dict[str, Any]:
+        role = getattr(request.state, "api_role", "")
+        if role == "policy_author":
+            raise_api_error(
+                "forbidden",
+                details={"reason": "separation_of_duties: policy_author cannot approve or deploy"},
+            )
+        if role == "reviewer":
+            raise_api_error(
+                "forbidden",
+                details={"reason": "separation_of_duties: reviewer cannot deploy"},
+            )
+        if role and not request.headers.get("x-step-up-auth"):
+            raise_api_error(
+                "forbidden",
+                details={
+                    "reason": "step_up_auth_required",
+                    "required_header": "x-step-up-auth",
+                },
+            )
+        primary_approver = request.headers.get("x-approver-id")
+        secondary_approver = request.headers.get("x-secondary-approver-id")
+        if role and (not primary_approver or not secondary_approver):
+            raise_api_error(
+                "forbidden",
+                details={
+                    "reason": "dual_approval_required",
+                    "required_headers": ["x-approver-id", "x-secondary-approver-id"],
+                },
+            )
+        if role and len({primary_approver, secondary_approver}) != 2:
+            raise_api_error(
+                "forbidden",
+                details={"reason": "dual_approval_requires_distinct_approvers"},
+            )
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
         try:

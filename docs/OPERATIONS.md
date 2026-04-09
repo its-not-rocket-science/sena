@@ -67,7 +67,8 @@ sena production-check --format both
 - `SENA_API_KEY_ENABLED`: enable API key auth
 - `SENA_API_KEY`: single admin key mode
 - `SENA_API_KEYS`: `key:role,key2:role2` mode
-  - roles: `admin`, `policy_author`, `evaluator`
+  - roles: `admin`, `policy_author`, `reviewer`, `deployer`, `auditor`
+  - enforced ABAC attributes: `environment`, `bundle_name`, `action_type`
 
 ### Request safety controls
 
