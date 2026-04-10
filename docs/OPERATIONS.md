@@ -142,6 +142,43 @@ See `docs/DEPLOYMENT_PROFILES.md` for full deployment profiles and copy-paste ex
 - enterprise pilot
 - stricter production-like mode
 
+## 7.1) Supported integration operator runbooks (Jira + ServiceNow)
+
+Use this checklist for the supported integration paths only:
+- `POST /v1/integrations/jira/webhook`
+- `POST /v1/integrations/servicenow/webhook`
+
+### Bring-up checklist
+
+1. Set connector mapping + secret env vars:
+   - Jira: `SENA_JIRA_MAPPING_CONFIG`, `SENA_JIRA_WEBHOOK_SECRET`
+   - ServiceNow: `SENA_SERVICENOW_MAPPING_CONFIG`, `SENA_SERVICENOW_WEBHOOK_SECRET`
+2. Set `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` to durable storage.
+3. Run `sena production-check --format both` and confirm pass.
+4. Verify readiness at `GET /v1/ready` and a known-good webhook fixture in non-production.
+
+### Live incident triage checklist
+
+1. Confirm request authenticity failures via `error.code`:
+   - `jira_authentication_failed`
+   - `servicenow_authentication_failed`
+2. Check mapping issues via `error.code`:
+   - `jira_invalid_mapping` / `jira_missing_required_fields`
+   - `servicenow_invalid_mapping` / `servicenow_missing_required_fields`
+3. Inspect outbound reliability state:
+   - `GET /v1/integrations/{connector}/admin/outbound/completions`
+   - `GET /v1/integrations/{connector}/admin/outbound/dead-letter`
+   - `GET /v1/integrations/{connector}/admin/outbound/duplicates/summary`
+4. Replay only explicit dead-letter IDs after root-cause fix:
+   - `POST /v1/integrations/{connector}/admin/outbound/dead-letter/replay`
+
+### Recovery decision rules
+
+- Prefer replay over manual redrive whenever the connector can safely retry.
+- Use manual redrive only with an operator note:
+  - `POST /v1/integrations/{connector}/admin/outbound/dead-letter/manual-redrive?note=...`
+- Keep API response contracts machine-readable: route by `error.code`, not by message text.
+
 ## 8) API surface reminders
 
 - versioned API endpoints under `/v1/*`

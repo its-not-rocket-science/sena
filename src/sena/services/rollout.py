@@ -72,6 +72,8 @@ class RolloutConfig:
 
 
 _ALLOWED_MODES = {"legacy", "sena", "parallel"}
+_DEFAULT_MODE = "sena"
+_DEFAULT_BUNDLE = "sena:stable"
 
 
 def _validate_mode(value: object) -> str:
@@ -103,8 +105,8 @@ def load_rollout_config(path: str | Path) -> RolloutConfig:
     if not isinstance(payload, dict):
         raise RolloutConfigError("rollout config must be an object")
 
-    default_mode = _validate_mode(payload.get("default_mode", "legacy"))
-    default_bundle = str(payload.get("default_policy_bundle") or "legacy:stable")
+    default_mode = _validate_mode(payload.get("default_mode", _DEFAULT_MODE))
+    default_bundle = str(payload.get("default_policy_bundle") or _DEFAULT_BUNDLE)
     default_parallel = payload.get("default_parallel_candidate_bundle")
     if default_parallel is not None:
         default_parallel = str(default_parallel)
