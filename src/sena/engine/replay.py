@@ -118,6 +118,7 @@ def export_canonical_replay_artifact(trace: EvaluationTrace) -> dict[str, Any]:
     ).hexdigest()
     return {
         "artifact_schema": "sena.canonical_replay_artifact.v1",
+        "determinism_scope": "canonical_replay_payload_only",
         "canonical_replay_payload": canonical_payload,
         "canonical_replay_payload_hash": payload_hash,
         "provenance": {

@@ -139,6 +139,11 @@ class EvaluationService:
             endpoint=endpoint,
         )
         payload = trace.to_dict()
+        payload["determinism_contract"] = {
+            "scope": "canonical_replay_payload_only",
+            "canonical_replay_payload_hash": trace.decision_hash,
+            "volatile_fields": ["decision_id", "decision_timestamp", "operational_metadata"],
+        }
         explanation_bundle = {
             "analyst": build_explanation(trace, view="analyst"),
             "auditor": build_explanation(trace, view="auditor"),

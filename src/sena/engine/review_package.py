@@ -181,5 +181,10 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
             if trace.audit_record
             else None,
         },
+        "determinism_contract": {
+            "scope": "canonical_replay_payload_only",
+            "canonical_replay_payload": trace.canonical_replay_payload,
+            "operational_metadata": trace.operational_metadata,
+        },
         "normalized_source_system_references": _normalize_source_references(trace),
     }

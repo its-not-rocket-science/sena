@@ -28,6 +28,7 @@ When `SENA_AUDIT_SINK_JSONL` is configured to a local path:
    - Audit records preserve `canonical_replay_payload` separately from operational metadata.
    - Only the canonical replay payload is expected to be stable for replay/verification
      comparisons; full emitted response records include intentionally volatile runtime fields.
+   - Cross-surface contract reference: `docs/CANONICAL_ARTIFACT_CONTRACT.md`.
 
 ## What SENA does not guarantee by itself
 

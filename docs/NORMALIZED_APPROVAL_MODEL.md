@@ -45,6 +45,7 @@ For `ai_suggested`, SENA requires metadata for model/system provenance, prompt/p
 Replay-stable normalization uses `NormalizedApprovalEvent.canonical_replay_payload()`,
 which excludes wall-clock `event_timestamp`. Runtime-only time fields are exposed
 through `operational_metadata`.
+Shared contract definition: `docs/CANONICAL_ARTIFACT_CONTRACT.md`.
 
 Required normalized keys are validated before policy evaluation.
 
