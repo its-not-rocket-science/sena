@@ -1,10 +1,16 @@
 # SENA Architecture (Supported vs Legacy)
 
-## Coherent product narrative anchor
+## Architecture anchor: Jira + ServiceNow first
 
-- **Primary wedge:** deterministic policy decisioning for Jira + ServiceNow approval workflows.
-- **Supported integration story:** normalized events from Jira and ServiceNow feed a shared deterministic evaluator and shared evidence pipeline.
-- **Experimental bucket:** generic webhook, Slack, LangChain callback, and Kubernetes demo code are non-contractual surfaces.
+The supported architecture is built around **deterministic decisioning for Jira + ServiceNow approval workflows**.
+
+Supported flow:
+1. Receive Jira/ServiceNow event payloads.
+2. Normalize into a shared policy context.
+3. Evaluate through the shared deterministic evaluator.
+4. Emit deterministic decision artifacts and audit evidence.
+
+This is the contract-backed path. Broader applicability (generic webhook, Slack, LangChain callback, Kubernetes demo assets) is secondary and non-contractual in the current phase.
 
 ## Supported architecture (source of truth)
 

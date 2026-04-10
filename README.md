@@ -1,20 +1,22 @@
 # SENA
 
-SENA is the first deterministic audit trail for AI agent decisions. When an AI approves a refund, modifies infrastructure, or grants access, SENA provides a cryptographically verifiable, replayable record of WHY. No other tool offers Merkle tree proofs for AI actions.
+SENA is an **alpha policy decision layer for Jira + ServiceNow approval events**.
+
+The supported product today is specific and implementation-backed: normalize Jira/ServiceNow approval payloads, evaluate them against versioned policy bundles, and return deterministic decisions with replayable audit evidence.
+
+- Decision outcomes: `APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`
+- One normalized policy model across Jira and ServiceNow
+- Deterministic replay contract + hash-linked audit chain
 
 ## Primary wedge (what to remember)
 
-SENA’s product wedge is simple: **one normalized policy decision layer for Jira + ServiceNow approval events**.
+SENA’s wedge is **one normalized policy decision layer for Jira + ServiceNow** for high-risk approvals (for example: change approvals, vendor payments, sensitive exports).
 
-Teams use SENA to evaluate high-risk actions (for example: change approvals, vendor payments, sensitive exports) against versioned policy bundles and get deterministic outcomes with machine-readable evidence.
-
-- Decision outcomes: `APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`
-- Same normalized policy model across systems
-- Deterministic trace + audit chain for replay and review
+Broader applicability exists, but it is secondary to this supported wedge in the current phase.
 
 ## Deterministic replay contract
 
-SENA now separates **canonical replay payloads** from **operational metadata**:
+SENA separates **canonical replay payloads** from **operational metadata**:
 
 - `canonical_replay_payload`: replay-stable artifact for equality checks across runs.
 - `operational_metadata`: runtime-only values (for example `decision_id`, event/write timestamps).
@@ -218,92 +220,3 @@ Key endpoints:
 - `POST /v1/audit/hold/{decision_id}` (apply legal hold)
 - `GET /v1/audit/hold` (list active legal holds)
 - `GET /v1/analytics/policy-efficacy` (policy efficacy metrics from downstream outcomes/incidents)
-- `GET /v1/admin/data-access` (governed data access audit events)
-- `GET /v1/admin/slo` (SLO targets for latency, availability, and durability)
-- `GET /v1/admin/data/payloads?tenant_id=<id>&region=<region>` (tenant+region scoped governed payloads)
-- `POST /v1/admin/data/payloads/{payload_id}/hold` (legal hold for governed payload retention)
-- `GET /v1/decision/{decision_id}/explanation?view=analyst|auditor` (export concise or full decision explanation)
-
-Webhook signature verification (production-focused behavior):
-- Jira (`POST /v1/integrations/jira/webhook`)
-  - Supported signature headers:
-    - `x-sena-signature` (hex digest)
-    - `x-hub-signature-256` (`sha256=<hex-digest>` or raw hex digest)
-  - Supported algorithm: `HMAC-SHA256` over the raw request body bytes.
-  - Secret rotation: when both `SENA_JIRA_WEBHOOK_SECRET` and `SENA_JIRA_WEBHOOK_SECRET_PREVIOUS` are configured, either secret is accepted.
-  - Fail-closed behavior when secret verification is enabled: missing signature and invalid signature both return `401` with error code `jira_authentication_failed`.
-- ServiceNow (`POST /v1/integrations/servicenow/webhook`)
-  - Supported signature headers:
-    - `x-sena-signature` (hex digest)
-    - `x-servicenow-signature` (`sha256=<hex-digest>` or raw hex digest)
-  - Supported algorithm: `HMAC-SHA256` over the raw request body bytes.
-  - Secret rotation: when both `SENA_SERVICENOW_WEBHOOK_SECRET` and `SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS` are configured, either secret is accepted.
-  - Fail-closed behavior when secret verification is enabled: missing signature and invalid signature both return `401` with error code `servicenow_authentication_failed`.
-
-Operational audit durability guidance (local sink + archive/restore drills):
-- `docs/AUDIT_DURABILITY.md`
-- `docs/BACKUP.md`
-- `docs/DEPLOYMENT.md` (production deployment patterns)
-- `docs/COOKBOOK.md` (copy/paste integration examples)
-- `docs/TENANCY_MODEL.md` (tenant + region pinning, PII redaction, retention/legal hold model)
-- `docs/SECURITY_DATA_FLOW_AND_THREAT_MODEL.md` (enterprise DFD + STRIDE threat model)
-- `docs/INCIDENT_RESPONSE_AND_BREACH_NOTIFICATION.md` (incident response + breach notification process)
-- `docs/VULNERABILITY_MANAGEMENT_AND_SUBPROCESSORS.md` (dependency scanning, patch cadence, subprocessors register)
-- `docs/SECURITY_CHECKLIST.md` (release/readiness security checklist)
-
-Experimental endpoints:
-- `POST /v1/integrations/webhook`
-- `POST /v1/integrations/slack/interactions`
-
-`POST /v1/evaluate` also supports `simulate_exceptions: true` to return an explicit
-comparison between baseline deterministic evaluation and exception-overlay results.
-The same request may include optional `downstream_outcome` (`success` or `failure`)
-and `incident_flag` fields for post-decision outcome tracking and analytics.
-
-## Production reliability hardening
-
-SENA now includes a reliability layer for production hardening:
-- queue-based ingestion buffering (`memory` default, optional `redis` backend),
-- circuit breakers for integration dependencies (Jira / ServiceNow / webhook),
-- graceful degradation with deterministic `degraded` fallback payloads and DLQ retry records,
-- explicit SLO target definitions via `GET /v1/admin/slo`.
-
-Configuration knobs:
-- `SENA_INGESTION_QUEUE_BACKEND=memory|redis`
-- `SENA_INGESTION_QUEUE_MAX_SIZE=1000`
-- `SENA_INGESTION_QUEUE_REDIS_URL=redis://...` (required for `redis` backend)
-- `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH=/var/lib/sena/integration_reliability.db`
-- `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true` (development/demo only; never production)
-
-Supported Jira and ServiceNow connector paths are wired for durable reliability by default:
-- In `SENA_RUNTIME_MODE=production`, startup now fails unless `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` is explicitly configured when Jira or ServiceNow integration is enabled.
-- In non-production modes, SENA defaults connector reliability state to durable SQLite (falling back to `SENA_PROCESSING_SQLITE_PATH` when a dedicated reliability DB path is not set).
-- Process-local in-memory reliability is only used when explicitly enabled with `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true` (recommended only for tests/demos).
-- Durable connector reliability state is implemented in `src/sena/integrations/persistence.py` to keep integration runtime concerns out of policy modules.
-
-Load test harness:
-
-```bash
-python scripts/load_test.py --url http://127.0.0.1:8000/v1/evaluate --requests 500 --concurrency 50
-```
-
-
-## Experimental and lab assets
-
-Experimental integrations and demo-only assets are not part of the supported product path.
-
-- Experimental API surfaces: generic webhook, Slack interactions, LangChain callback integration.
-- Demo packages: Kubernetes admission demo and monitoring demo workflows.
-- Investor/fundraising collateral: kept outside the core product narrative.
-
-Use `docs/LABS.md` as the single index for all of the above.
-
-## Evidentiary-grade audit verification
-
-```bash
-python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl verify-evidence --keyring configs/audit-keyring.json
-python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl export-evidence-bundle dec_123 --output artifacts/evidence/dec_123.json
-python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl export-control-mapping --policy-dir policies/active --output artifacts/evidence/control-mapping.json
-python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl export-evidence-vault --policy-dir policies/active --output artifacts/evidence/evidence-vault.json
-python -m sena.cli.main audit --audit-path artifacts/audit/audit.jsonl export-control-package --policy-dir policies/active --control-id SOC2:CC7.2 --output artifacts/evidence/soc2-cc7-2-package.json
-```
