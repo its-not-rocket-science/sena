@@ -28,6 +28,7 @@ def _normalize(package: dict) -> dict:
     loaded_from = normalized.get("policy_bundle_metadata", {}).get("loaded_from")
     if loaded_from is not None:
         normalized["policy_bundle_metadata"]["loaded_from"] = "<loaded_from>"
+    normalized.pop("determinism_contract", None)
     return normalized
 
 
@@ -59,6 +60,8 @@ def test_review_package_snapshot_for_blocked_decision() -> None:
 
     assert trace.outcome == DecisionOutcome.BLOCKED
     package = build_decision_review_package(trace)
+    assert package["determinism_contract"]["scope"] == "canonical_replay_payload_only"
+    assert package["determinism_contract"]["canonical_replay_payload"]["decision_hash"]
     assert _normalize(package) == _load_json(
         "tests/fixtures/golden/review_packages/blocked_vendor_payment.json"
     )

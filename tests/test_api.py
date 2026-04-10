@@ -124,6 +124,9 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     assert body["policy_bundle"]["version"] == "2026.03"
     assert "decision_hash" in body
     assert "explanation" in body
+    assert body["determinism_contract"]["scope"] == "canonical_replay_payload_only"
+    assert body["canonical_replay_payload"]["decision_hash"] == body["decision_hash"]
+    assert "decision_timestamp" in body["operational_metadata"]
 
 
 def test_evaluate_tracks_downstream_outcome_and_incident(tmp_path) -> None:
@@ -353,6 +356,8 @@ def test_evaluate_review_package_endpoint_returns_durable_artifact() -> None:
     assert body["decision_summary"]["outcome"] == "BLOCKED"
     assert body["precedence"]["explanation"]
     assert body["policy_bundle_metadata"]["bundle_name"] == "enterprise-demo"
+    assert body["determinism_contract"]["scope"] == "canonical_replay_payload_only"
+    assert "decision_timestamp" in body["determinism_contract"]["operational_metadata"]
 
 
 def test_api_key_auth_blocks_unauthorized_request() -> None:
@@ -1234,6 +1239,9 @@ def test_jira_webhook_happy_path_returns_machine_readable_payload() -> None:
     assert body["status"] == "evaluated"
     assert body["mapped_action_proposal"]["request_id"] == "RISK-9"
     assert body["decision"]["decision_id"].startswith("dec_")
+    assert body["normalization"]["determinism_scope"] == "canonical_replay_payload_only"
+    assert "event_timestamp" in body["normalization"]["operational_metadata"]
+    assert "event_timestamp" not in body["normalization"]["canonical_replay_payload"]
 
 
 def test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response() -> None:

@@ -34,6 +34,12 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
+        normalization = {
+            "normalized_event": normalized,
+            "canonical_replay_payload": mapped.get("canonical_replay_payload", {}),
+            "operational_metadata": mapped.get("operational_metadata", {}),
+            "determinism_scope": "canonical_replay_payload_only",
+        }
         decision = self.evaluation_service.evaluate(
             proposal=proposal,
             facts=facts,
@@ -46,6 +52,7 @@ class IntegrationService:
         return {
             "provider": provider,
             "event_type": event_type,
+            "normalization": normalization,
             "normalized_event": normalized,
             "mapped_action_proposal": {
                 "action_type": proposal.action_type,
@@ -72,6 +79,12 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
+        normalization = {
+            "normalized_event": normalized,
+            "canonical_replay_payload": mapped.get("canonical_replay_payload", {}),
+            "operational_metadata": mapped.get("operational_metadata", {}),
+            "determinism_scope": "canonical_replay_payload_only",
+        }
         event_route = self.state.jira_connector.route_for_event_type(
             normalized["source_event_type"]
         )
@@ -116,6 +129,7 @@ class IntegrationService:
             )
         return {
             "status": "evaluated",
+            "normalization": normalization,
             "normalized_event": normalized,
             "mapped_action_proposal": {
                 "action_type": proposal.action_type,
@@ -144,6 +158,12 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
+        normalization = {
+            "normalized_event": normalized,
+            "canonical_replay_payload": mapped.get("canonical_replay_payload", {}),
+            "operational_metadata": mapped.get("operational_metadata", {}),
+            "determinism_scope": "canonical_replay_payload_only",
+        }
         event_route = self.state.servicenow_connector.route_for_event_type(
             normalized["source_event_type"]
         )
@@ -188,6 +208,7 @@ class IntegrationService:
             )
         return {
             "status": "evaluated",
+            "normalization": normalization,
             "normalized_event": normalized,
             "mapped_action_proposal": {
                 "action_type": proposal.action_type,

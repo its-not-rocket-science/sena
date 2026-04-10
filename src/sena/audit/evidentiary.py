@@ -163,6 +163,12 @@ def export_evidence_bundle(path_or_sink: str | AuditSink, decision_id: str) -> d
     for row in records:
         if str(row.get("decision_id")) != decision_id:
             continue
+        canonical_replay_payload = row.get("canonical_replay_payload")
+        if not isinstance(canonical_replay_payload, dict):
+            canonical_replay_payload = {}
+        operational_metadata = row.get("operational_metadata")
+        if not isinstance(operational_metadata, dict):
+            operational_metadata = {}
         return {
             "schema_version": "1",
             "decision_id": decision_id,
@@ -183,6 +189,11 @@ def export_evidence_bundle(path_or_sink: str | AuditSink, decision_id: str) -> d
                 "storage_sequence_number": row.get("storage_sequence_number"),
                 "previous_chain_hash": row.get("previous_chain_hash"),
                 "chain_hash": row.get("chain_hash"),
+            },
+            "determinism_contract": {
+                "scope": "canonical_replay_payload_only",
+                "canonical_replay_payload": canonical_replay_payload,
+                "operational_metadata": operational_metadata,
             },
         }
     raise KeyError(f"decision not found: {decision_id}")

@@ -68,6 +68,8 @@ def test_export_evidence_bundle_includes_required_fields(tmp_path: Path) -> None
             "outcome": "ESCALATE",
             "input_payload": {"action": "export_data"},
             "policy_version": "2026.04",
+            "canonical_replay_payload": {"decision_hash": "abc123"},
+            "operational_metadata": {"decision_timestamp": "2026-04-10T00:00:00Z"},
         },
         signer=signer,
     )
@@ -78,6 +80,8 @@ def test_export_evidence_bundle_includes_required_fields(tmp_path: Path) -> None
     assert bundle["signature"]["value"]
     assert bundle["timestamp"]["rfc3339"]
     assert bundle["hash_chain_proof"]["chain_hash"]
+    assert bundle["determinism_contract"]["scope"] == "canonical_replay_payload_only"
+    assert bundle["determinism_contract"]["canonical_replay_payload"]["decision_hash"] == "abc123"
 
 
 def test_sqlite_append_only_table_blocks_update_delete(tmp_path: Path) -> None:
