@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 hypothesis = pytest.importorskip("hypothesis")
-from hypothesis import given, settings  # noqa: E402
+from hypothesis import HealthCheck, given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
 from sena.core.enums import DecisionOutcome, RuleDecision, Severity  # noqa: E402
@@ -26,7 +26,12 @@ from sena.policy.interpreter import evaluate_condition_with_trace  # noqa: E402
 from sena.policy.parser import PolicyParseError, parse_policy_file  # noqa: E402
 
 
-SAFE_HYPOTHESIS_SETTINGS = settings(max_examples=120, derandomize=True, deadline=None)
+SAFE_HYPOTHESIS_SETTINGS = settings(
+    max_examples=120,
+    derandomize=True,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 
 
 def _valid_rule_payload(condition: dict[str, object]) -> dict[str, object]:
