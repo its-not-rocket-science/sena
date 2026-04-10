@@ -15,7 +15,7 @@ Application versioning: package and FastAPI app version are sourced from `sena._
 |---|---|---|
 | `development` | local dev and tests | permissive defaults, optional auth and integrations |
 | `pilot` | enterprise pilot pre-prod | same code-path as prod candidates, recommended strict auth/signing/audit |
-| `production` | hardened runtime | mandatory auth, audit sink, strict signature verification, keyring, Jira secret when Jira webhook enabled |
+| `production` | hardened runtime | mandatory auth, audit sink, strict signature verification + keyring, and fail-closed Jira/ServiceNow integration guardrails (mapping + webhook secret + durable reliability store) |
 
 ## 3) Startup validation (fail-fast)
 
@@ -35,7 +35,9 @@ SENA startup now fails for the following classes of misconfiguration:
   - `SENA_AUDIT_SINK_JSONL`
   - `SENA_BUNDLE_SIGNATURE_STRICT=true`
   - `SENA_BUNDLE_SIGNATURE_KEYRING_DIR` existing directory
-  - `SENA_JIRA_WEBHOOK_SECRET` when Jira mapping is enabled
+  - `SENA_JIRA_MAPPING_CONFIG` + `SENA_JIRA_WEBHOOK_SECRET` (or previous secret) when Jira integration is enabled
+  - `SENA_SERVICENOW_MAPPING_CONFIG` + `SENA_SERVICENOW_WEBHOOK_SECRET` (or previous secret) when ServiceNow integration is enabled
+  - `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` when Jira or ServiceNow integration is enabled
 
 ### Mandatory pre-deploy gate
 
@@ -104,7 +106,11 @@ Break-glass promotions must set `break_glass=true` **and** provide `break_glass_
 - `SENA_WEBHOOK_MAPPING_CONFIG`
 - `SENA_JIRA_MAPPING_CONFIG`
 - `SENA_JIRA_WEBHOOK_SECRET`
+- `SENA_JIRA_WEBHOOK_SECRET_PREVIOUS`
 - `SENA_SERVICENOW_MAPPING_CONFIG`
+- `SENA_SERVICENOW_WEBHOOK_SECRET`
+- `SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS`
+- `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH`
 - `SENA_SLACK_BOT_TOKEN`
 - `SENA_SLACK_CHANNEL`
 

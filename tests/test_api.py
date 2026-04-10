@@ -1931,6 +1931,100 @@ def test_startup_fails_in_production_without_jira_secret(tmp_path) -> None:
         )
 
 
+def test_startup_fails_in_production_when_jira_enabled_without_mapping_config(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(RuntimeError, match="requires SENA_JIRA_MAPPING_CONFIG"):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                jira_webhook_secret="prod-secret",
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+            )
+        )
+
+
+def test_startup_fails_in_production_when_servicenow_enabled_without_mapping_config(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(
+        RuntimeError, match="requires SENA_SERVICENOW_MAPPING_CONFIG"
+    ):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                servicenow_webhook_secret="sn-prod-secret",
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+            )
+        )
+
+
+def test_startup_fails_in_production_when_servicenow_mapping_invalid(tmp_path) -> None:
+    mapping_path = tmp_path / "servicenow-mapping.yaml"
+    mapping_path.write_text(
+        "routes:\n  change_approval.requested:\n    actor_id_path: requested_by.sys_id\n",
+        encoding="utf-8",
+    )
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(
+        RuntimeError, match="SENA_SERVICENOW_MAPPING_CONFIG is invalid for production startup"
+    ):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                servicenow_mapping_config_path=str(mapping_path),
+                servicenow_webhook_secret="sn-prod-secret",
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+            )
+        )
+
+
+def test_startup_fails_in_production_when_jira_mapping_invalid(tmp_path) -> None:
+    mapping_path = tmp_path / "jira-mapping.yaml"
+    mapping_path.write_text(
+        "routes:\n  jira:issue_updated:\n    actor_id_path: user.accountId\n",
+        encoding="utf-8",
+    )
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(
+        RuntimeError, match="SENA_JIRA_MAPPING_CONFIG is invalid for production startup"
+    ):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                jira_mapping_config_path=str(mapping_path),
+                jira_webhook_secret="prod-secret",
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+            )
+        )
+
+
 def test_startup_fails_in_production_without_integration_reliability_db_path(
     tmp_path,
 ) -> None:
