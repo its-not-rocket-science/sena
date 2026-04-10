@@ -176,6 +176,8 @@ python -m sena.cli.main \
   - `python -m sena.cli.main policy import-legacy --source ./legacy_policies.yaml --output-dir ./bundle --bundle-name enterprise-controls --bundle-version 2026.04`
 - Run legacy vs. new bundles in parallel and emit discrepancy report JSON:
   - `python -m sena.cli.main replay parallel-run --replay-file ./replay_cases.json --old-policy-dir ./legacy_bundle --new-policy-dir ./candidate_bundle`
+- Export canonical replay artifact (stable hashes + provenance, volatile fields excluded):
+  - `python -m sena.cli.main replay export-canonical ./scenario.json --policy-dir ./policies/active --output ./canonical-artifact.json`
 - Resolve phased rollout mode by business unit and region:
   - `python -m sena.cli.main rollout resolve --config ./rollout.yaml --business-unit finance --region us-east-1`
 
