@@ -579,6 +579,10 @@ class PolicyEvaluator:
             }
             for result in matched
         ]
+        matched_controls = sorted(
+            matched_controls,
+            key=lambda control: str(control.get("rule_id", "")),
+        )
         matched_invariant_controls = [
             {
                 "invariant_id": result.invariant_id,
@@ -586,6 +590,10 @@ class PolicyEvaluator:
             }
             for result in matched_invariants
         ]
+        matched_invariant_controls = sorted(
+            matched_invariant_controls,
+            key=lambda control: str(control.get("invariant_id", "")),
+        )
         outcome_rationale = [
             f"Outcome resolved to {outcome.value} using deterministic precedence.",
             precedence_explanation,
