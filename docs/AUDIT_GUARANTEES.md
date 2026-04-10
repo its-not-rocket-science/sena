@@ -24,6 +24,10 @@ When `SENA_AUDIT_SINK_JSONL` is configured to a local path:
 5. **Operational verification reporting**
    - Verification reports malformed records, missing segments, sequence gaps,
      and inconsistent chain links.
+6. **Canonical replay boundary**
+   - Audit records preserve `canonical_replay_payload` separately from operational metadata.
+   - Only the canonical replay payload is expected to be stable for replay/verification
+     comparisons; full emitted response records include intentionally volatile runtime fields.
 
 ## What SENA does not guarantee by itself
 

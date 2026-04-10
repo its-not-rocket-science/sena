@@ -35,6 +35,7 @@ from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.replay import (
     build_drift_report,
     evaluate_replay_cases,
+    export_canonical_replay_artifact,
     load_replay_cases,
 )
 from sena.engine.parallel import run_parallel_mode
@@ -1036,6 +1037,34 @@ def _run_replay_parallel(args: argparse.Namespace) -> None:
     print(json.dumps(report, indent=2))
 
 
+def _run_replay_export_canonical(args: argparse.Namespace) -> None:
+    payload = _load_json_file(args.scenario, "scenario")
+    cli_request = EvaluatePayload.model_validate(payload)
+    proposal = cli_request.to_action_proposal(
+        cli_request.request_id or payload.get("request_id") or "req-cli-canonical"
+    )
+    rules, metadata = load_policy_bundle(
+        args.policy_dir,
+        bundle_name=args.policy_bundle_name,
+        version=args.bundle_version,
+    )
+    evaluator = PolicyEvaluator(
+        rules,
+        policy_bundle=metadata,
+        config=EvaluatorConfig(
+            default_decision=cli_request.to_default_decision(),
+            require_allow_match=cli_request.strict_require_allow,
+        ),
+    )
+    trace = evaluator.evaluate(proposal, cli_request.facts)
+    artifact = export_canonical_replay_artifact(trace)
+    serialized = json.dumps(artifact, indent=2, default=str)
+    if args.output:
+        args.output.write_text(serialized + "\n", encoding="utf-8")
+    else:
+        print(serialized)
+
+
 def _run_rollout_resolve(args: argparse.Namespace) -> None:
     try:
         config = load_rollout_config(args.config)
@@ -1574,6 +1603,26 @@ def main() -> None:
         parallel.add_argument("--mapping-mode", choices=["jira", "servicenow", "webhook"])
         parallel.add_argument("--mapping-config-path", type=Path)
         parallel.set_defaults(handler=_run_replay_parallel)
+        export = sub.add_parser("export-canonical")
+        export.add_argument("scenario", type=Path, help="Path to JSON scenario payload")
+        export.add_argument(
+            "--policy-dir",
+            type=Path,
+            default=DEFAULT_POLICY_DIR,
+            help="Directory containing YAML policy files",
+        )
+        export.add_argument(
+            "--policy-bundle-name",
+            default="enterprise-compliance-controls",
+            help="Name for the policy bundle metadata in output",
+        )
+        export.add_argument(
+            "--bundle-version",
+            default="2026.03",
+            help="Version string for the policy bundle metadata in output",
+        )
+        export.add_argument("--output", type=Path)
+        export.set_defaults(handler=_run_replay_export_canonical)
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return

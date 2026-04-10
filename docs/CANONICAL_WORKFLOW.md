@@ -125,10 +125,18 @@ PYTHONPATH=src python examples/design_partner_reference/run_reference.py
 
 - `replay-report-stable.json` (expected no outcome drift for same inputs/policy).
 - `replay-report-policy-update.json` (explicitly surfaces policy-induced outcome drift).
+- `sena replay export-canonical` output (canonical replay artifact for external verification).
 
 **Evidence generated**
 
 - Determinism proof and policy drift delta report.
+- Canonical replay artifact containing stable hashes/provenance and replay-safe payload only.
+
+**Stability boundary**
+
+- `canonical_replay_payload` is replay-stable and intended for equality checks.
+- Full response payloads are **not** guaranteed stable across runs because operational fields
+  (for example `decision_id`, timestamps, chain/write metadata) are intentionally volatile.
 
 **What user cares about**
 

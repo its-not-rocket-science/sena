@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any
 
+from sena import __version__ as SENA_VERSION
 from sena.core.enums import ActionOrigin
 from sena.core.models import (
     AIActionMetadata,
     ActionProposal,
     AutonomousToolMetadata,
+    EvaluationTrace,
     EvaluatorConfig,
     PolicyBundleMetadata,
     PolicyRule,
@@ -33,6 +37,12 @@ _CONTEXT_KEYS = {
     "action_origin",
     "ai_metadata",
     "autonomous_metadata",
+}
+
+_VOLATILE_TRACE_FIELDS = {
+    "decision_id",
+    "decision_timestamp",
+    "operational_metadata",
 }
 
 
@@ -74,6 +84,51 @@ class ReplayDriftChange:
 
 class ReplayInputError(ValueError):
     """Raised when replay fixtures are malformed."""
+
+
+def export_canonical_replay_artifact(trace: EvaluationTrace) -> dict[str, Any]:
+    canonical_payload = dict(trace.canonical_replay_payload or {})
+    if not canonical_payload:
+        raise ReplayInputError("trace does not contain canonical_replay_payload")
+    if "decision_hash" not in canonical_payload:
+        raise ReplayInputError(
+            "canonical_replay_payload must include decision_hash for verification"
+        )
+    if "input_fingerprint" not in canonical_payload:
+        raise ReplayInputError(
+            "canonical_replay_payload must include input_fingerprint for verification"
+        )
+
+    normalized_trace = trace.to_dict()
+    for field in _VOLATILE_TRACE_FIELDS:
+        normalized_trace.pop(field, None)
+    if isinstance(normalized_trace.get("audit_record"), dict):
+        normalized_trace["audit_record"].pop("decision_id", None)
+        normalized_trace["audit_record"].pop("timestamp", None)
+        normalized_trace["audit_record"].pop("write_timestamp", None)
+        normalized_trace["audit_record"].pop("chain_hash", None)
+        normalized_trace["audit_record"].pop("previous_chain_hash", None)
+        normalized_trace["audit_record"].pop("operational_metadata", None)
+    normalized_trace.pop("canonical_replay_payload", None)
+
+    payload_hash = hashlib.sha256(
+        json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    return {
+        "artifact_schema": "sena.canonical_replay_artifact.v1",
+        "canonical_replay_payload": canonical_payload,
+        "canonical_replay_payload_hash": payload_hash,
+        "provenance": {
+            "evaluator_version": SENA_VERSION,
+            "policy_bundle": canonical_payload.get("policy_bundle"),
+            "decision_hash": canonical_payload["decision_hash"],
+            "input_fingerprint": canonical_payload["input_fingerprint"],
+        },
+        "excluded_volatile_fields": sorted(_VOLATILE_TRACE_FIELDS),
+        "operational_response_payload": normalized_trace,
+    }
 
 
 def _normalize_action_origin(raw: str | None) -> ActionOrigin:

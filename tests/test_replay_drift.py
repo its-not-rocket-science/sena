@@ -8,6 +8,7 @@ from sena.engine.replay import (
     ReplayInputError,
     build_drift_report,
     evaluate_replay_cases,
+    export_canonical_replay_artifact,
     load_replay_cases,
 )
 from sena.policy.parser import load_policy_bundle
@@ -157,3 +158,29 @@ def test_replay_load_rejects_trace_without_action_type() -> None:
         ReplayInputError, match="trace payload must include action_type"
     ):
         load_replay_cases({"cases": [{"case_id": "trace-1", "trace": {"context": {}}}]})
+
+
+def test_export_canonical_replay_artifact_is_stable_and_excludes_volatile() -> None:
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    evaluator = PolicyEvaluator(rules, policy_bundle=metadata)
+    proposal = ActionProposal(
+        action_type="approve_vendor_payment",
+        request_id="req-canonical",
+        actor_id="actor-1",
+        actor_role="finance_analyst",
+        attributes={"amount": 20000, "vendor_verified": True, "source_system": "jira"},
+    )
+
+    first_trace = evaluator.evaluate(proposal, {})
+    second_trace = evaluator.evaluate(proposal, {})
+
+    first_artifact = export_canonical_replay_artifact(first_trace)
+    second_artifact = export_canonical_replay_artifact(second_trace)
+
+    assert first_artifact == second_artifact
+    assert "decision_id" not in first_artifact["operational_response_payload"]
+    assert "decision_timestamp" not in first_artifact["operational_response_payload"]
+    assert (
+        first_artifact["canonical_replay_payload_hash"]
+        == second_artifact["canonical_replay_payload_hash"]
+    )

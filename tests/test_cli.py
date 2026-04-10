@@ -768,6 +768,50 @@ def test_replay_drift_command(tmp_path) -> None:
     assert payload["changed_outcomes"] == 0
 
 
+def test_replay_export_canonical_command_is_stable(tmp_path) -> None:
+    scenario = tmp_path / "scenario.json"
+    scenario.write_text(
+        json.dumps(
+            {
+                "action_type": "approve_vendor_payment",
+                "request_id": "req-canonical-cli",
+                "actor_id": "user-1",
+                "actor_role": "finance_analyst",
+                "attributes": {
+                    "amount": 500,
+                    "vendor_verified": True,
+                    "source_system": "jira",
+                },
+                "facts": {},
+            }
+        )
+    )
+    first = _run_cli(
+        [
+            "replay",
+            "export-canonical",
+            str(scenario),
+            "--policy-dir",
+            "src/sena/examples/policies",
+        ]
+    )
+    second = _run_cli(
+        [
+            "replay",
+            "export-canonical",
+            str(scenario),
+            "--policy-dir",
+            "src/sena/examples/policies",
+        ]
+    )
+    first.check_returncode()
+    second.check_returncode()
+    first_payload = json.loads(first.stdout)
+    second_payload = json.loads(second.stdout)
+    assert first_payload == second_payload
+    assert first_payload["artifact_schema"] == "sena.canonical_replay_artifact.v1"
+
+
 def test_policy_schema_migration_commands(tmp_path) -> None:
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
