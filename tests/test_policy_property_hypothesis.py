@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -50,15 +52,16 @@ def _valid_rule_payload(condition: dict[str, object]) -> dict[str, object]:
     value=st.one_of(st.integers(), st.text(max_size=20), st.booleans(), st.none()),
 )
 def test_policy_parser_same_input_yields_same_canonical_outcome(
-    tmp_path, field: str, value: int | str | bool | None
+    field: str, value: int | str | bool | None
 ) -> None:
-    policy_file = tmp_path / "rules.yaml"
-    policy_file.write_text(
-        json.dumps([_valid_rule_payload({"field": field, "eq": value})])
-    )
+    with TemporaryDirectory() as temp_dir:
+        policy_file = Path(temp_dir) / "rules.yaml"
+        policy_file.write_text(
+            json.dumps([_valid_rule_payload({"field": field, "eq": value})])
+        )
 
-    first = parse_policy_file(policy_file)
-    second = parse_policy_file(policy_file)
+        first = parse_policy_file(policy_file)
+        second = parse_policy_file(policy_file)
 
     assert [asdict(rule) for rule in first] == [asdict(rule) for rule in second]
 
@@ -101,16 +104,17 @@ def test_interpreter_missing_fields_never_crash(
     ).filter(lambda name: name not in {"field", "eq", "and", "or", "not"}),
 )
 def test_unsupported_conditions_fail_safely_in_parser_and_interpreter(
-    tmp_path, unknown_operator: str
+    unknown_operator: str,
 ) -> None:
-    policy_file = tmp_path / "invalid_rules.yaml"
+    with TemporaryDirectory() as temp_dir:
+        policy_file = Path(temp_dir) / "invalid_rules.yaml"
 
-    policy_file.write_text(
-        json.dumps([_valid_rule_payload({"field": "amount", unknown_operator: 10})])
-    )
+        policy_file.write_text(
+            json.dumps([_valid_rule_payload({"field": "amount", unknown_operator: 10})])
+        )
 
-    with pytest.raises(PolicyParseError):
-        parse_policy_file(policy_file)
+        with pytest.raises(PolicyParseError):
+            parse_policy_file(policy_file)
 
     interpreter_result = evaluate_condition_with_trace(
         {"field": "amount", unknown_operator: 10},
