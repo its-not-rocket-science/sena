@@ -67,13 +67,10 @@ Fixtures are provided for:
 
 All are under `tests/fixtures/integrations/servicenow/`.
 
-## Failure behavior matrix
-- Unsupported event type → `servicenow_unsupported_event_type`
-- Missing required fields / actor identity → `servicenow_missing_required_fields`
-- Duplicate deliveries → stable `duplicate_ignored` response (`servicenow_duplicate_delivery`)
-- Mapping/payload mismatch → `servicenow_invalid_mapping`
-- Policy bundle mismatch/not found → `servicenow_policy_bundle_not_found`
-- Other evaluation exceptions → `servicenow_evaluation_error`
+## Release/readiness confidence artifact
+The authoritative, machine-generated confidence matrix (supported event types, signature verification modes, duplicate behavior, required metadata/field failures, and known unsupported cases) is published at `docs/artifacts/integrations/jira_servicenow_confidence_matrix.json`.
+
+It is generated from committed mappings (`src/sena/examples/integrations/*_mappings.yaml`), committed fixtures, and test-backed assertions in `tests/fixtures/integrations/confidence_assertions.json`, and CI fails on drift via `scripts/generate_integration_confidence_matrix.py --check`.
 
 ## Reliability storage requirements
 - Configure `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` to persist duplicate-suppression and outbound retry/dead-letter state.

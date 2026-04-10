@@ -1,0 +1,119 @@
+{
+  "generated_from": {
+    "assertions": "tests/fixtures/integrations/confidence_assertions.json",
+    "jira_mapping": "src/sena/examples/integrations/jira_mappings.yaml",
+    "servicenow_mapping": "src/sena/examples/integrations/servicenow_mappings.yaml"
+  },
+  "integrations": {
+    "jira": {
+      "duplicate_delivery_behavior": {
+        "error_code": "jira_duplicate_delivery",
+        "status": "duplicate_ignored",
+        "verified_by": "tests/test_api.py::test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response"
+      },
+      "known_unsupported_cases": [
+        {
+          "case": "webhookEvent=jira:comment_created",
+          "error_code": "jira_unsupported_event_type",
+          "verified_by": "tests/test_api.py::test_jira_webhook_unsupported_event_returns_deterministic_error"
+        }
+      ],
+      "required_metadata_failure_cases": [
+        {
+          "case": "missing_actor_identity",
+          "error_code": "jira_missing_required_fields",
+          "verified_by": "tests/test_api.py::test_jira_webhook_missing_actor_identity_returns_deterministic_error"
+        }
+      ],
+      "signature_verification_modes": [
+        {
+          "fixtures": [
+            "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+          ],
+          "mode": "hmac_sha256_current_secret",
+          "verified_by": "tests/test_api.py::test_jira_webhook_signature_verification_accepts_current_and_previous_secret"
+        },
+        {
+          "fixtures": [
+            "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+          ],
+          "mode": "hmac_sha256_previous_secret",
+          "verified_by": "tests/test_api.py::test_jira_webhook_signature_verification_accepts_current_and_previous_secret"
+        },
+        {
+          "fixtures": [
+            "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+          ],
+          "mode": "missing_signature_rejected",
+          "verified_by": "tests/test_api.py::test_jira_webhook_signature_verification_rejects_missing_signature_when_secret_configured"
+        },
+        {
+          "fixtures": [
+            "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+          ],
+          "mode": "invalid_signature_rejected",
+          "verified_by": "tests/test_api.py::test_jira_webhook_signature_verification_rejects_invalid_signature"
+        }
+      ],
+      "supported_event_types": [
+        "jira:issue_created",
+        "jira:issue_updated"
+      ]
+    },
+    "servicenow": {
+      "duplicate_delivery_behavior": {
+        "error_code": "servicenow_duplicate_delivery",
+        "status": "duplicate_ignored",
+        "verified_by": "tests/test_api.py::test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response"
+      },
+      "known_unsupported_cases": [
+        {
+          "case": "event_type=change_approval.completed",
+          "error_code": "servicenow_unsupported_event_type",
+          "verified_by": "tests/test_integration_confidence_matrix_api.py::test_servicenow_unsupported_event_is_rejected"
+        }
+      ],
+      "required_metadata_failure_cases": [
+        {
+          "case": "missing_actor_identity",
+          "error_code": "servicenow_missing_required_fields",
+          "verified_by": "tests/test_api.py::test_servicenow_webhook_missing_actor_identity_returns_deterministic_error"
+        }
+      ],
+      "signature_verification_modes": [
+        {
+          "fixtures": [
+            "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+          ],
+          "mode": "hmac_sha256_current_secret",
+          "verified_by": "tests/test_api.py::test_servicenow_webhook_signature_verification_accepts_current_and_previous_secret"
+        },
+        {
+          "fixtures": [
+            "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+          ],
+          "mode": "hmac_sha256_previous_secret",
+          "verified_by": "tests/test_api.py::test_servicenow_webhook_signature_verification_accepts_current_and_previous_secret"
+        },
+        {
+          "fixtures": [
+            "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+          ],
+          "mode": "missing_signature_rejected",
+          "verified_by": "tests/test_api.py::test_servicenow_webhook_signature_verification_rejects_missing_signature_when_secret_configured"
+        },
+        {
+          "fixtures": [
+            "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+          ],
+          "mode": "invalid_signature_rejected",
+          "verified_by": "tests/test_api.py::test_servicenow_webhook_signature_verification_rejects_invalid_signature"
+        }
+      ],
+      "supported_event_types": [
+        "change_approval.requested"
+      ]
+    }
+  },
+  "schema_version": "2"
+}

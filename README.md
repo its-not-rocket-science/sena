@@ -145,7 +145,7 @@ Define and verify "good enough for pilot" using:
 | Area | Coverage status | Details |
 |---|---|---|
 | Deterministic governance failure modes | Expanded | See `docs/FAILURE_MODE_MATRIX.md` for tested vs not-yet-tested classes and stable error contracts. |
-| Jira + ServiceNow integration confidence | Enforced in CI | See `tests/fixtures/integrations/confidence_matrix.json` (generated from committed mappings + test-backed assertions). |
+| Jira + ServiceNow integration confidence | Enforced in CI | See `docs/artifacts/integrations/jira_servicenow_confidence_matrix.json` (generated from committed mappings + fixtures + test-backed assertions via `scripts/generate_integration_confidence_matrix.py`). |
 
 ## Canonical workflow definition
 

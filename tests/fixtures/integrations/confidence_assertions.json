@@ -1,0 +1,106 @@
+{
+  "integrations": {
+    "jira": {
+      "signature_verification_modes": [
+        {
+          "mode": "hmac_sha256_current_secret",
+          "verified_by": "tests/test_api.py::test_jira_webhook_signature_verification_accepts_current_and_previous_secret",
+          "fixtures": [
+            "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+          ]
+        },
+        {
+          "mode": "hmac_sha256_previous_secret",
+          "verified_by": "tests/test_api.py::test_jira_webhook_signature_verification_accepts_current_and_previous_secret",
+          "fixtures": [
+            "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+          ]
+        },
+        {
+          "mode": "missing_signature_rejected",
+          "verified_by": "tests/test_api.py::test_jira_webhook_signature_verification_rejects_missing_signature_when_secret_configured",
+          "fixtures": [
+            "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+          ]
+        },
+        {
+          "mode": "invalid_signature_rejected",
+          "verified_by": "tests/test_api.py::test_jira_webhook_signature_verification_rejects_invalid_signature",
+          "fixtures": [
+            "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+          ]
+        }
+      ],
+      "duplicate_delivery_behavior": {
+        "status": "duplicate_ignored",
+        "error_code": "jira_duplicate_delivery",
+        "verified_by": "tests/test_api.py::test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response"
+      },
+      "required_metadata_failure_cases": [
+        {
+          "case": "missing_actor_identity",
+          "error_code": "jira_missing_required_fields",
+          "verified_by": "tests/test_api.py::test_jira_webhook_missing_actor_identity_returns_deterministic_error"
+        }
+      ],
+      "known_unsupported_cases": [
+        {
+          "case": "webhookEvent=jira:comment_created",
+          "error_code": "jira_unsupported_event_type",
+          "verified_by": "tests/test_api.py::test_jira_webhook_unsupported_event_returns_deterministic_error"
+        }
+      ]
+    },
+    "servicenow": {
+      "signature_verification_modes": [
+        {
+          "mode": "hmac_sha256_current_secret",
+          "verified_by": "tests/test_api.py::test_servicenow_webhook_signature_verification_accepts_current_and_previous_secret",
+          "fixtures": [
+            "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+          ]
+        },
+        {
+          "mode": "hmac_sha256_previous_secret",
+          "verified_by": "tests/test_api.py::test_servicenow_webhook_signature_verification_accepts_current_and_previous_secret",
+          "fixtures": [
+            "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+          ]
+        },
+        {
+          "mode": "missing_signature_rejected",
+          "verified_by": "tests/test_api.py::test_servicenow_webhook_signature_verification_rejects_missing_signature_when_secret_configured",
+          "fixtures": [
+            "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+          ]
+        },
+        {
+          "mode": "invalid_signature_rejected",
+          "verified_by": "tests/test_api.py::test_servicenow_webhook_signature_verification_rejects_invalid_signature",
+          "fixtures": [
+            "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+          ]
+        }
+      ],
+      "duplicate_delivery_behavior": {
+        "status": "duplicate_ignored",
+        "error_code": "servicenow_duplicate_delivery",
+        "verified_by": "tests/test_api.py::test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response"
+      },
+      "required_metadata_failure_cases": [
+        {
+          "case": "missing_actor_identity",
+          "error_code": "servicenow_missing_required_fields",
+          "verified_by": "tests/test_api.py::test_servicenow_webhook_missing_actor_identity_returns_deterministic_error"
+        }
+      ],
+      "known_unsupported_cases": [
+        {
+          "case": "event_type=change_approval.completed",
+          "error_code": "servicenow_unsupported_event_type",
+          "verified_by": "tests/test_integration_confidence_matrix_api.py::test_servicenow_unsupported_event_is_rejected"
+        }
+      ]
+    }
+  }
+}
