@@ -98,9 +98,27 @@ ROLE_ACTION_TYPE_DENYLIST: dict[str, set[str]] = {
 }
 
 
-def _supported_reliability_integrations_enabled(settings: ApiSettings) -> bool:
+def _jira_integration_enabled(settings: ApiSettings) -> bool:
     return bool(
-        settings.jira_mapping_config_path or settings.servicenow_mapping_config_path
+        settings.jira_mapping_config_path
+        or settings.jira_webhook_secret
+        or settings.jira_webhook_secret_previous
+        or settings.jira_write_back
+    )
+
+
+def _servicenow_integration_enabled(settings: ApiSettings) -> bool:
+    return bool(
+        settings.servicenow_mapping_config_path
+        or settings.servicenow_webhook_secret
+        or settings.servicenow_webhook_secret_previous
+        or settings.servicenow_write_back
+    )
+
+
+def _supported_reliability_integrations_enabled(settings: ApiSettings) -> bool:
+    return _jira_integration_enabled(settings) or _servicenow_integration_enabled(
+        settings
     )
 
 
@@ -308,20 +326,6 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
                 f"{runtime_settings.integration_reliability_sqlite_path}"
             )
     if runtime_settings.runtime_mode == "production":
-        if runtime_settings.integration_reliability_allow_inmemory:
-            raise RuntimeError(
-                "SENA_RUNTIME_MODE=production forbids "
-                "SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true"
-            )
-        if _supported_reliability_integrations_enabled(runtime_settings) and not (
-            runtime_settings.integration_reliability_sqlite_path
-        ):
-            raise RuntimeError(
-                "SENA_RUNTIME_MODE=production requires "
-                "SENA_INTEGRATION_RELIABILITY_SQLITE_PATH when Jira or ServiceNow integration is enabled"
-            )
-
-    if runtime_settings.runtime_mode == "production":
         if not runtime_settings.audit_sink_jsonl:
             raise RuntimeError(
                 "SENA_RUNTIME_MODE=production requires SENA_AUDIT_SINK_JSONL"
@@ -340,20 +344,72 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
                 "SENA_BUNDLE_SIGNATURE_KEYRING_DIR must point to an existing directory: "
                 f"{runtime_settings.bundle_signature_keyring_dir}"
             )
-        if runtime_settings.jira_mapping_config_path and not (
+        if runtime_settings.integration_reliability_allow_inmemory:
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production forbids "
+                "SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true"
+            )
+        if _supported_reliability_integrations_enabled(runtime_settings) and not (
+            runtime_settings.integration_reliability_sqlite_path
+        ):
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production requires "
+                "SENA_INTEGRATION_RELIABILITY_SQLITE_PATH when Jira or ServiceNow integration is enabled"
+            )
+        if _jira_integration_enabled(runtime_settings) and not (
+            runtime_settings.jira_mapping_config_path
+        ):
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production requires SENA_JIRA_MAPPING_CONFIG when Jira integration is enabled"
+            )
+        if _servicenow_integration_enabled(runtime_settings) and not (
+            runtime_settings.servicenow_mapping_config_path
+        ):
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production requires SENA_SERVICENOW_MAPPING_CONFIG when ServiceNow integration is enabled"
+            )
+        if _jira_integration_enabled(runtime_settings) and not (
             runtime_settings.jira_webhook_secret
             or runtime_settings.jira_webhook_secret_previous
         ):
             raise RuntimeError(
                 "SENA_RUNTIME_MODE=production requires SENA_JIRA_WEBHOOK_SECRET (or SENA_JIRA_WEBHOOK_SECRET_PREVIOUS) when Jira integration is enabled"
             )
-        if runtime_settings.servicenow_mapping_config_path and not (
+        if _servicenow_integration_enabled(runtime_settings) and not (
             runtime_settings.servicenow_webhook_secret
             or runtime_settings.servicenow_webhook_secret_previous
         ):
             raise RuntimeError(
                 "SENA_RUNTIME_MODE=production requires SENA_SERVICENOW_WEBHOOK_SECRET (or SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS) when ServiceNow integration is enabled"
             )
+        if runtime_settings.jira_mapping_config_path:
+            from sena.integrations.jira import (
+                JiraIntegrationError,
+                load_jira_mapping_config,
+            )
+
+            try:
+                load_jira_mapping_config(runtime_settings.jira_mapping_config_path)
+            except JiraIntegrationError as exc:
+                raise RuntimeError(
+                    "SENA_JIRA_MAPPING_CONFIG is invalid for production startup: "
+                    f"{exc}"
+                ) from exc
+        if runtime_settings.servicenow_mapping_config_path:
+            from sena.integrations.servicenow import (
+                ServiceNowIntegrationError,
+                load_servicenow_mapping_config,
+            )
+
+            try:
+                load_servicenow_mapping_config(
+                    runtime_settings.servicenow_mapping_config_path
+                )
+            except ServiceNowIntegrationError as exc:
+                raise RuntimeError(
+                    "SENA_SERVICENOW_MAPPING_CONFIG is invalid for production startup: "
+                    f"{exc}"
+                ) from exc
     if (
         runtime_settings.audit_verify_on_startup_strict
         and not runtime_settings.audit_sink_jsonl
