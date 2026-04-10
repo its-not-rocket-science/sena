@@ -105,6 +105,7 @@ checkpoints/
 
 # (optional: keep tracked examples)
 !examples/*.json
+!tests/fixtures/integrations/confidence_matrix.json
 
 # =========================
 # 🐳 Docker
