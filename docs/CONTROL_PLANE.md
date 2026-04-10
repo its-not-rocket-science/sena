@@ -1,10 +1,16 @@
 # SENA Control Plane (Alpha)
 
-## Coherent product narrative
+## Supported product (current scope)
 
-- **Primary wedge:** one normalized policy decision layer for Jira + ServiceNow approval events.
-- **Supported integration story:** one policy bundle can be evaluated consistently across Jira and ServiceNow with deterministic outcomes (`APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`) and audit evidence.
-- **Experimental bucket:** generic webhook, Slack interactions, LangChain callback, and Kubernetes demo surfaces are evaluation-only.
+SENA is an **alpha control-plane core for Jira + ServiceNow approval decisioning**.
+
+The supported path is concrete and implemented: ingest Jira/ServiceNow approval events, normalize them into one policy context, evaluate deterministically against versioned bundles, and return machine-actionable outcomes with replayable evidence.
+
+- Outcomes: `APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`
+- Same policy semantics across Jira and ServiceNow
+- Deterministic replay artifacts + hash-linked audit verification
+
+Broader connector applicability exists, but it is not the primary supported product claim in this phase.
 
 ## Implemented capabilities
 
@@ -28,7 +34,7 @@ Not yet complete as built-in platform controls:
 ## Non-goals (current phase)
 
 - Broad connector marketplace expansion before Jira + ServiceNow depth hardening.
-- Generalized AI safety positioning.
+- Generalized AI safety positioning as the primary product narrative.
 - Formal verification claims.
 
 ## Strategy conflict marker
