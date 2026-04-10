@@ -2,12 +2,11 @@
 
 ## Why this abstraction exists
 
-SENA started with a SQLite-backed policy registry optimized for local development and alpha use.
-To support enterprise relational storage (PostgreSQL) without rewriting policy lifecycle logic, the persistence layer now has:
+SENA ships a SQLite-backed policy registry optimized for local development and alpha use.
+The persistence layer intentionally exposes only what is implemented today:
 
 - A repository contract (`PolicyBundleRepository`) that captures bundle lifecycle operations.
-- A SQLite adapter that is the current production-ready backend.
-- A Postgres adapter skeleton that shares the contract and migration expectations.
+- A SQLite adapter (`SQLitePolicyBundleRepository`) that is the only supported backend.
 - Explicit schema migration versioning with checksums for determinism.
 
 ## Current guarantees
@@ -33,7 +32,7 @@ The SQLite repository guarantees:
 
 ## Schema evolution model
 
-SQLite migrations are now managed with explicit versions and checksums:
+SQLite migrations are managed with explicit versions and checksums:
 
 - Migration sources remain in `scripts/migrations/*.sql` with numeric prefixes (`001_...`, `002_...`).
 - The `schema_migrations` table stores:
@@ -43,7 +42,7 @@ SQLite migrations are now managed with explicit versions and checksums:
   - `applied_at`
 - `initialize()` applies only unapplied versions in ascending order.
 
-This model is intentionally portable: the same version/checksum metadata can be reused by a future Postgres migrator.
+This model prioritizes deterministic upgrades for the supported SQLite runtime.
 
 ## Domain vs persistence models
 
@@ -52,22 +51,17 @@ The persistence layer separates representation concerns:
 - **Domain model**: `PolicyRule`, `PolicyBundleMetadata`, and `StoredBundle`.
 - **Persistence models**: `BundleRow`, `BundleHistoryRow` used for DB row mapping and write payloads.
 
-This makes it easier to map backend-specific SQL rows into stable domain objects without leaking schema details into business logic.
+This makes it easier to map SQL rows into stable domain objects without leaking schema details into business logic.
 
-## Postgres path
+## Extension seam (explicitly unsupported by default)
 
-`PostgresPolicyBundleRepository` is added as an adapter skeleton to make the contract concrete for enterprise backends.
-It is intentionally not partially functional yet because shipping an untested mixed-mode backend would increase operational risk.
+`PolicyBundleRepository` is a narrow protocol seam for internal testing and future adapters.
+SENA does **not** currently ship or support any non-SQLite repository implementation.
 
-Planned implementation path:
-
-1. Implement shared SQL-friendly repository tests against an adapter fixture.
-2. Add Postgres DDL migrations aligned to SQLite schema semantics.
-3. Preserve lifecycle and error-semantics parity (transaction boundaries, conflict behavior, invariant checks) in the Postgres implementation.
-4. Validate behavior parity via contract tests run on both backends.
+If a new backend is introduced later, it should only be documented and exported after behavior parity is verified against the repository contract tests.
 
 ## Design constraints
 
 - Keep supported (`src/sena/*`) and legacy (`src/sena/legacy/*`) codepaths separate.
-- Prefer explicit failures (`NotImplementedError` for unfinished backend) over silent fallback.
-- Avoid overbuilding: SQLite remains the default backend while interfaces and migration scaffolding enable growth.
+- Prefer explicit failure over implicit fallback behavior.
+- Avoid overbuilding: only advertise backends that are implemented and tested.

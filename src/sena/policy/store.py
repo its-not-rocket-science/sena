@@ -738,17 +738,3 @@ class SQLitePolicyBundleRepository:
         canonical = json.dumps(hashes, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-class PostgresPolicyBundleRepository:
-    """Architecture placeholder for enterprise relational persistence.
-
-    This class intentionally shares the policy repository contract while
-    leaving query implementation for a future psycopg/SQLAlchemy rollout.
-    """
-
-    def __init__(self, dsn: str):
-        self.dsn = dsn
-
-    def initialize(self) -> None:
-        raise NotImplementedError(
-            "Postgres adapter not implemented yet; use SQLitePolicyBundleRepository"
-        )

@@ -3,15 +3,10 @@ from pathlib import Path
 
 import sqlite3
 
-import pytest
-
 from sena.core.models import PolicyBundleMetadata
 from sena.policy.migrations import SQLiteMigrationManager
 from sena.policy.parser import load_policy_bundle
-from sena.policy.store import (
-    PostgresPolicyBundleRepository,
-    SQLitePolicyBundleRepository,
-)
+from sena.policy.store import SQLitePolicyBundleRepository
 
 
 def _sqlite_repo(tmp_path):
@@ -92,7 +87,7 @@ def test_repository_contract_register_promote_and_history(tmp_path) -> None:
     assert history[0]["to_lifecycle"] in {"active", "deprecated"}
 
 
-def test_postgres_adapter_is_explicit_about_unimplemented_backend() -> None:
-    repo = PostgresPolicyBundleRepository("postgresql://localhost/sena")
-    with pytest.raises(NotImplementedError, match="not implemented"):
-        repo.initialize()
+def test_policy_repository_public_surface_is_sqlite_only() -> None:
+    import sena.policy as policy
+
+    assert "PostgresPolicyBundleRepository" not in policy.__all__
