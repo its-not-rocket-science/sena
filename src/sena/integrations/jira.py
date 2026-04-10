@@ -173,6 +173,7 @@ class JiraConnector(ApprovalConnectorBase):
             or InMemoryJiraIdempotencyStore(),
         )
         self._config = config
+        self._reliability_store = durable_store
         self._delivery_client = delivery_client or NullJiraDeliveryClient()
         self._delivery_executor = ReliableDeliveryExecutor(
             max_attempts=config.outbound.max_attempts,
@@ -182,6 +183,64 @@ class JiraConnector(ApprovalConnectorBase):
 
     def dead_letter_items(self) -> list[dict[str, Any]]:
         return [item.__dict__.copy() for item in self._delivery_executor.dlq.items()]
+
+    def outbound_completion_records(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        if self._reliability_store is None:
+            return []
+        return [record.__dict__.copy() for record in self._reliability_store.list_completion_records(limit=limit)]
+
+    def outbound_dead_letter_records(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        if self._reliability_store is None:
+            return []
+        return [record.__dict__.copy() for record in self._reliability_store.list_dead_letter_records(limit=limit)]
+
+    def outbound_duplicate_suppression_summary(self) -> dict[str, Any]:
+        if self._reliability_store is None:
+            return {"inbound": {}, "outbound": {}}
+        return self._reliability_store.duplicate_suppression_summary()
+
+    def replay_dead_letter(self, dead_letter_id: int) -> dict[str, Any]:
+        if self._reliability_store is None:
+            raise JiraIntegrationError("durable reliability storage is not configured")
+        record = self._reliability_store.get_dead_letter_record(dead_letter_id)
+        if record is None:
+            raise JiraIntegrationError(f"dead-letter record not found: {dead_letter_id}")
+        if record.target == "comment":
+            issue_key = str(record.payload.get("issue_key") or "")
+            message = str(record.payload.get("message") or "")
+            result = self._delivery_client.publish_comment(issue_key, message)
+        elif record.target == "status":
+            issue_key = str(record.payload.get("issue_key") or "")
+            result = self._delivery_client.publish_status(issue_key, record.payload)
+        else:
+            raise JiraIntegrationError(f"unsupported dead-letter target: {record.target}")
+        self._reliability_store.mark_completed(
+            record.operation_key,
+            target=record.target,
+            payload=record.payload,
+            result=result if isinstance(result, dict) else {"value": result},
+            attempts=record.attempts,
+            max_attempts=record.max_attempts or self._config.outbound.max_attempts,
+        )
+        self._reliability_store.delete_dead_letter_record(dead_letter_id)
+        return {"dead_letter_id": dead_letter_id, "status": "replayed", "result": result}
+
+    def manual_redrive_dead_letter(self, dead_letter_id: int, *, note: str) -> dict[str, Any]:
+        if self._reliability_store is None:
+            raise JiraIntegrationError("durable reliability storage is not configured")
+        record = self._reliability_store.get_dead_letter_record(dead_letter_id)
+        if record is None:
+            raise JiraIntegrationError(f"dead-letter record not found: {dead_letter_id}")
+        self._reliability_store.mark_completed(
+            record.operation_key,
+            target=record.target,
+            payload=record.payload,
+            result={"status": "manually_redriven", "note": note},
+            attempts=record.attempts,
+            max_attempts=record.max_attempts or self._config.outbound.max_attempts,
+        )
+        self._reliability_store.delete_dead_letter_record(dead_letter_id)
+        return {"dead_letter_id": dead_letter_id, "status": "manually_redriven"}
 
     def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:
         issue_key = payload.request_id or "unknown"

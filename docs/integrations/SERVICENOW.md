@@ -76,3 +76,19 @@ It is generated from committed mappings (`src/sena/examples/integrations/*_mappi
 - Configure `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` to persist duplicate-suppression and outbound retry/dead-letter state.
 - In production mode, ServiceNow integration startup fails unless durable reliability storage is explicitly configured.
 - In-memory reliability mode is for explicit development/demo usage only (`SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true`).
+
+## Outbound reliability operator commands
+- List outbound completion records:
+  - API: `GET /v1/integrations/servicenow/admin/outbound/completions?limit=100`
+  - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> completions`
+- List outbound dead-letter records:
+  - API: `GET /v1/integrations/servicenow/admin/outbound/dead-letter?limit=100`
+  - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> dead-letter`
+- Replay dead-letter records through configured ServiceNow callback client:
+  - API: `POST /v1/integrations/servicenow/admin/outbound/dead-letter/replay` with JSON body `[<dead_letter_id>, ...]`
+- Manually mark dead-letter records as redriven after operator remediation:
+  - API: `POST /v1/integrations/servicenow/admin/outbound/dead-letter/manual-redrive?note=<note>` with JSON body `[<dead_letter_id>, ...]`
+  - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> manual-redrive --id <dead_letter_id> --note "<note>"`
+- Summarize duplicate suppression counters:
+  - API: `GET /v1/integrations/servicenow/admin/outbound/duplicates/summary`
+  - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> duplicates-summary`

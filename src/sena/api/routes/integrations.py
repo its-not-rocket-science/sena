@@ -24,6 +24,16 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         state=state, evaluation_service=state.processing_service._evaluation
     )
 
+    def _supported_connector(name: str):
+        if name == "jira":
+            return state.jira_connector
+        if name == "servicenow":
+            return state.servicenow_connector
+        raise_api_error(
+            "validation_error",
+            details={"reason": "connector must be one of: jira, servicenow"},
+        )
+
     @router.post("/integrations/webhook", summary="Generic webhook policy evaluation")
     def integrations_webhook(
         req: WebhookEvaluateRequest,
@@ -271,6 +281,81 @@ def create_integrations_router(state: EngineState) -> APIRouter:
     @router.get("/admin/data-access", summary="List governed data access events")
     def admin_data_access(limit: int = 100) -> dict:
         return {"items": state.processing_store.list_data_access_events(limit=limit)}
+
+    @router.get(
+        "/integrations/{connector}/admin/outbound/completions",
+        summary="List outbound delivery completion records",
+    )
+    def admin_outbound_completions(connector: str, limit: int = 100) -> dict:
+        selected = _supported_connector(connector)
+        if selected is None:
+            raise_api_error(
+                "validation_error",
+                details={"reason": f"{connector} connector is not configured"},
+            )
+        return {"items": selected.outbound_completion_records(limit=limit)}
+
+    @router.get(
+        "/integrations/{connector}/admin/outbound/dead-letter",
+        summary="List outbound delivery dead-letter records",
+    )
+    def admin_outbound_dead_letter(connector: str, limit: int = 100) -> dict:
+        selected = _supported_connector(connector)
+        if selected is None:
+            raise_api_error(
+                "validation_error",
+                details={"reason": f"{connector} connector is not configured"},
+            )
+        return {"items": selected.outbound_dead_letter_records(limit=limit)}
+
+    @router.post(
+        "/integrations/{connector}/admin/outbound/dead-letter/replay",
+        summary="Replay outbound dead-letter records",
+    )
+    def admin_outbound_dead_letter_replay(connector: str, ids: list[int]) -> dict:
+        selected = _supported_connector(connector)
+        if selected is None:
+            raise_api_error(
+                "validation_error",
+                details={"reason": f"{connector} connector is not configured"},
+            )
+        items: list[dict] = []
+        for dead_letter_id in ids:
+            items.append(selected.replay_dead_letter(int(dead_letter_id)))
+        return {"items": items}
+
+    @router.post(
+        "/integrations/{connector}/admin/outbound/dead-letter/manual-redrive",
+        summary="Manually mark outbound dead-letter records as redriven",
+    )
+    def admin_outbound_dead_letter_manual_redrive(
+        connector: str, ids: list[int], note: str = "manually redriven"
+    ) -> dict:
+        selected = _supported_connector(connector)
+        if selected is None:
+            raise_api_error(
+                "validation_error",
+                details={"reason": f"{connector} connector is not configured"},
+            )
+        items: list[dict] = []
+        for dead_letter_id in ids:
+            items.append(
+                selected.manual_redrive_dead_letter(int(dead_letter_id), note=note)
+            )
+        return {"items": items, "note": note}
+
+    @router.get(
+        "/integrations/{connector}/admin/outbound/duplicates/summary",
+        summary="Summarize duplicate suppression counts",
+    )
+    def admin_outbound_duplicate_summary(connector: str) -> dict:
+        selected = _supported_connector(connector)
+        if selected is None:
+            raise_api_error(
+                "validation_error",
+                details={"reason": f"{connector} connector is not configured"},
+            )
+        return selected.outbound_duplicate_suppression_summary()
 
     @router.get("/admin/slo", summary="Production SLO targets")
     def admin_slo() -> dict:

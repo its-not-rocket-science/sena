@@ -76,6 +76,11 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("GET", "/v1/admin/data/payloads"),
         ("POST", "/v1/admin/data/payloads/{payload_id}/hold"),
         ("POST", "/v1/admin/audit/config"),
+        ("GET", "/v1/integrations/{connector}/admin/outbound/completions"),
+        ("GET", "/v1/integrations/{connector}/admin/outbound/dead-letter"),
+        ("POST", "/v1/integrations/{connector}/admin/outbound/dead-letter/replay"),
+        ("POST", "/v1/integrations/{connector}/admin/outbound/dead-letter/manual-redrive"),
+        ("GET", "/v1/integrations/{connector}/admin/outbound/duplicates/summary"),
     },
     "verifier": {
         ("GET", "/v1/decision/{decision_id}/attestations"),

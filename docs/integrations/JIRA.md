@@ -64,4 +64,20 @@ This lets `approve_vendor_payment` rules evaluate Jira-native approval requests 
 - In production mode, Jira integration startup fails unless durable reliability storage is explicitly configured.
 - In-memory connector reliability is development/demo-only (`SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true`).
 - Pin Jira webhook routes to explicit event types and required fields.
+
+## Outbound reliability operator commands
+- List outbound completion records:
+  - API: `GET /v1/integrations/jira/admin/outbound/completions?limit=100`
+  - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> completions`
+- List outbound dead-letter records:
+  - API: `GET /v1/integrations/jira/admin/outbound/dead-letter?limit=100`
+  - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> dead-letter`
+- Replay dead-letter records through configured Jira outbound client:
+  - API: `POST /v1/integrations/jira/admin/outbound/dead-letter/replay` with JSON body `[<dead_letter_id>, ...]`
+- Manually mark dead-letter records as redriven after external operator action:
+  - API: `POST /v1/integrations/jira/admin/outbound/dead-letter/manual-redrive?note=<note>` with JSON body `[<dead_letter_id>, ...]`
+  - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> manual-redrive --id <dead_letter_id> --note "<note>"`
+- Summarize duplicate suppression counters:
+  - API: `GET /v1/integrations/jira/admin/outbound/duplicates/summary`
+  - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> duplicates-summary`
 - Keep bundle naming aligned with route `policy_bundle` values.
