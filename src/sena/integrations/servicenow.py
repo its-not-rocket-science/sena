@@ -23,7 +23,7 @@ from sena.integrations.approval import (
     resolve_path,
 )
 from sena.integrations.base import DecisionPayload, IntegrationError
-from sena.policy.integration_persistence import SQLiteIntegrationReliabilityStore
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
 
 class ServiceNowIntegrationError(IntegrationError):

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from sena.integrations.base import DecisionPayload
+from sena.integrations.approval import DeadLetterItem
 from sena.integrations.jira import (
     AllowAllJiraWebhookVerifier,
     JiraConnector,
@@ -17,7 +18,7 @@ from sena.integrations.servicenow import (
     ServiceNowIntegrationError,
     load_servicenow_mapping_config,
 )
-from sena.policy.integration_persistence import SQLiteIntegrationReliabilityStore
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 from sena.services.integration_service import IntegrationService
 from sena.services.reliability_service import InMemoryIngestionQueue, ReliabilityService
 
@@ -262,3 +263,47 @@ def test_supported_connectors_can_require_durable_reliability() -> None:
             config=servicenow_cfg,
             require_durable_reliability=True,
         )
+
+
+def test_sqlite_reliability_store_persists_idempotency_completion_and_dlq_across_restarts(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "integration_reliability.db"
+    first = SQLiteIntegrationReliabilityStore(str(db_path))
+
+    assert first.mark_if_new("delivery-1") is True
+    assert first.mark_if_new("delivery-1") is False
+
+    first.mark_completed(
+        "op-1",
+        target="comment",
+        payload={"issue_key": "RISK-1"},
+        result={"status": "ok"},
+        attempts=1,
+        max_attempts=3,
+    )
+    first.push(
+        DeadLetterItem(
+            operation_key="op-2",
+            target="status",
+            error="timeout",
+            attempts=3,
+            payload={"issue_key": "RISK-2"},
+            max_attempts=3,
+            first_failed_at="2026-04-10T00:00:00+00:00",
+            last_failed_at="2026-04-10T00:00:10+00:00",
+        )
+    )
+
+    after_restart = SQLiteIntegrationReliabilityStore(str(db_path))
+    assert after_restart.mark_if_new("delivery-1") is False
+    completion = after_restart.get_completion("op-1")
+    assert completion is not None
+    assert completion.target == "comment"
+    assert completion.payload == {"issue_key": "RISK-1"}
+    assert completion.result == {"status": "ok"}
+
+    dlq_entries = after_restart.items()
+    assert len(dlq_entries) == 1
+    assert dlq_entries[0].operation_key == "op-2"
+    assert dlq_entries[0].attempts == 3

@@ -91,6 +91,7 @@ Not yet pilot-ready by default:
 - Deterministic evaluator: `src/sena/engine/*`
 - API and CLI: `src/sena/api/*`, `src/sena/cli/*`
 - Integrations (supported depth): `src/sena/integrations/jira.py`, `src/sena/integrations/servicenow.py`
+- Connector reliability persistence: `src/sena/integrations/persistence.py`
 
 Legacy modules under `src/sena/legacy/*` are out of supported scope.
 
@@ -278,6 +279,7 @@ Supported Jira and ServiceNow connector paths are wired for durable reliability 
 - In `SENA_RUNTIME_MODE=production`, startup now fails unless `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` is explicitly configured when Jira or ServiceNow integration is enabled.
 - In non-production modes, SENA defaults connector reliability state to durable SQLite (falling back to `SENA_PROCESSING_SQLITE_PATH` when a dedicated reliability DB path is not set).
 - Process-local in-memory reliability is only used when explicitly enabled with `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true` (recommended only for tests/demos).
+- Durable connector reliability state is implemented in `src/sena/integrations/persistence.py` to keep integration runtime concerns out of policy modules.
 
 Load test harness:
 
