@@ -169,13 +169,34 @@ def export_evidence_bundle(path_or_sink: str | AuditSink, decision_id: str) -> d
         operational_metadata = row.get("operational_metadata")
         if not isinstance(operational_metadata, dict):
             operational_metadata = {}
+        decision_hash = row.get("decision_hash")
+        if decision_hash is None and canonical_replay_payload:
+            decision_hash = canonical_replay_payload.get("decision_hash")
+        input_fingerprint = row.get("input_fingerprint")
+        if input_fingerprint is None and canonical_replay_payload:
+            input_fingerprint = canonical_replay_payload.get("input_fingerprint")
+        policy_bundle_provenance = canonical_replay_payload.get("policy_bundle")
+        if not isinstance(policy_bundle_provenance, dict):
+            policy_bundle_provenance = {
+                "version": row.get("policy_version")
+                or row.get("policy_bundle_release_id")
+            }
+        canonical_artifacts = {
+            "decision_hash": decision_hash,
+            "input_fingerprint": input_fingerprint,
+            "policy_bundle_provenance": policy_bundle_provenance,
+            "canonical_replay_payload": canonical_replay_payload,
+        }
         return {
             "schema_version": "1",
+            "artifact_schema": "sena.evidence_bundle.v1",
             "decision_id": decision_id,
             "input_payload": row.get("input_payload") or row.get("action") or {},
             "policy_version": row.get("policy_version")
             or row.get("policy_bundle_release_id"),
             "decision_output": row.get("decision") or row.get("outcome"),
+            "canonical_artifacts": canonical_artifacts,
+            "operational_metadata": operational_metadata,
             "signature": {
                 "value": row.get("signature"),
                 "signer_identity": row.get("signer_identity"),
@@ -192,6 +213,7 @@ def export_evidence_bundle(path_or_sink: str | AuditSink, decision_id: str) -> d
             },
             "determinism_contract": {
                 "scope": "canonical_replay_payload_only",
+                "canonical_artifacts": canonical_artifacts,
                 "canonical_replay_payload": canonical_replay_payload,
                 "operational_metadata": operational_metadata,
             },

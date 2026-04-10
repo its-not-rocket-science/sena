@@ -85,6 +85,29 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
         }
     )
 
+    input_fingerprint = (
+        trace.audit_record.input_fingerprint if trace.audit_record else None
+    )
+    canonical_artifacts = {
+        "decision_hash": trace.decision_hash,
+        "input_fingerprint": input_fingerprint,
+        "policy_bundle_provenance": {
+            "bundle_name": trace.policy_bundle.bundle_name
+            if trace.policy_bundle
+            else None,
+            "version": trace.policy_bundle.version if trace.policy_bundle else None,
+            "schema_version": trace.policy_bundle.schema_version
+            if trace.policy_bundle
+            else None,
+            "integrity_sha256": trace.policy_bundle.integrity_sha256
+            if trace.policy_bundle
+            else None,
+            "lifecycle": trace.policy_bundle.lifecycle if trace.policy_bundle else None,
+        },
+        "canonical_replay_payload": trace.canonical_replay_payload,
+    }
+    operational_metadata = dict(trace.operational_metadata or {})
+
     return {
         "package_schema_version": REVIEW_PACKAGE_SCHEMA_VERSION,
         "package_type": "sena.decision_review_package",
@@ -170,9 +193,7 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
         "audit_identifiers": {
             "request_id": trace.request_id,
             "decision_hash": trace.decision_hash,
-            "input_fingerprint": trace.audit_record.input_fingerprint
-            if trace.audit_record
-            else None,
+            "input_fingerprint": input_fingerprint,
             "chain_hash": trace.audit_record.chain_hash if trace.audit_record else None,
             "previous_chain_hash": trace.audit_record.previous_chain_hash
             if trace.audit_record
@@ -181,10 +202,13 @@ def build_decision_review_package(trace: EvaluationTrace) -> dict[str, Any]:
             if trace.audit_record
             else None,
         },
+        "canonical_artifacts": canonical_artifacts,
+        "operational_metadata": operational_metadata,
         "determinism_contract": {
             "scope": "canonical_replay_payload_only",
+            "canonical_artifacts": canonical_artifacts,
+            "operational_metadata": operational_metadata,
             "canonical_replay_payload": trace.canonical_replay_payload,
-            "operational_metadata": trace.operational_metadata,
         },
         "normalized_source_system_references": _normalize_source_references(trace),
     }

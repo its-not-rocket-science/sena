@@ -75,8 +75,10 @@ def test_export_evidence_bundle_includes_required_fields(tmp_path: Path) -> None
     )
 
     bundle = export_evidence_bundle(str(audit_path), "dec-bundle")
+    assert bundle["artifact_schema"] == "sena.evidence_bundle.v1"
     assert bundle["input_payload"] == {"action": "export_data"}
     assert bundle["policy_version"] == "2026.04"
+    assert bundle["canonical_artifacts"]["decision_hash"] == "abc123"
     assert bundle["signature"]["value"]
     assert bundle["timestamp"]["rfc3339"]
     assert bundle["hash_chain_proof"]["chain_hash"]
@@ -210,8 +212,52 @@ def test_control_mapping_vault_and_audit_package(tmp_path: Path) -> None:
     assert soc2["decision_count"] == 2
 
     package = export_control_audit_package(str(audit_path), rules, "SOC2:CC7.2")
+    assert package["artifact_schema"] == "sena.control_audit_package.v1"
     assert package["control"]["control_id"] == "SOC2:CC7.2"
     assert len(package["evidence_bundles"]) == 2
+
+
+def test_export_evidence_bundle_round_trip_canonical_comparison(tmp_path: Path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    signer = _signer()
+    canonical_payload = {
+        "decision_hash": "hash-123",
+        "input_fingerprint": "fingerprint-123",
+        "policy_bundle": {"bundle_name": "enterprise", "version": "2026.04"},
+        "proposal": {"action_type": "approve_vendor_payment"},
+        "facts": {"risk": "low"},
+    }
+    append_audit_record(
+        str(audit_path),
+        {
+            "decision_id": "dec-rt-1",
+            "outcome": "APPROVED",
+            "policy_version": "2026.04",
+            "canonical_replay_payload": canonical_payload,
+            "operational_metadata": {"decision_timestamp": "2026-04-10T00:00:00Z"},
+        },
+        signer=signer,
+    )
+    append_audit_record(
+        str(audit_path),
+        {
+            "decision_id": "dec-rt-2",
+            "outcome": "APPROVED",
+            "policy_version": "2026.04",
+            "canonical_replay_payload": canonical_payload,
+            "operational_metadata": {"decision_timestamp": "2026-04-11T00:00:00Z"},
+        },
+        signer=signer,
+    )
+
+    first = export_evidence_bundle(str(audit_path), "dec-rt-1")
+    second = export_evidence_bundle(str(audit_path), "dec-rt-2")
+
+    assert first["canonical_artifacts"] == second["canonical_artifacts"]
+    assert (
+        first["determinism_contract"]["canonical_artifacts"]
+        == first["canonical_artifacts"]
+    )
 
 
 def test_cli_export_control_mapping_vault_and_package(tmp_path: Path) -> None:

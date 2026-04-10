@@ -137,6 +137,7 @@ def export_control_audit_package(
 
     return {
         "schema_version": "1",
+        "artifact_schema": "sena.control_audit_package.v1",
         "generated_at": datetime.now(timezone.utc)
         .replace(microsecond=0)
         .isoformat()
