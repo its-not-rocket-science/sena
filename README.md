@@ -219,6 +219,22 @@ Key endpoints:
 - `POST /v1/admin/data/payloads/{payload_id}/hold` (legal hold for governed payload retention)
 - `GET /v1/decision/{decision_id}/explanation?view=analyst|auditor` (export concise or full decision explanation)
 
+Webhook signature verification (production-focused behavior):
+- Jira (`POST /v1/integrations/jira/webhook`)
+  - Supported signature headers:
+    - `x-sena-signature` (hex digest)
+    - `x-hub-signature-256` (`sha256=<hex-digest>` or raw hex digest)
+  - Supported algorithm: `HMAC-SHA256` over the raw request body bytes.
+  - Secret rotation: when both `SENA_JIRA_WEBHOOK_SECRET` and `SENA_JIRA_WEBHOOK_SECRET_PREVIOUS` are configured, either secret is accepted.
+  - Fail-closed behavior when secret verification is enabled: missing signature and invalid signature both return `401` with error code `jira_authentication_failed`.
+- ServiceNow (`POST /v1/integrations/servicenow/webhook`)
+  - Supported signature headers:
+    - `x-sena-signature` (hex digest)
+    - `x-servicenow-signature` (`sha256=<hex-digest>` or raw hex digest)
+  - Supported algorithm: `HMAC-SHA256` over the raw request body bytes.
+  - Secret rotation: when both `SENA_SERVICENOW_WEBHOOK_SECRET` and `SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS` are configured, either secret is accepted.
+  - Fail-closed behavior when secret verification is enabled: missing signature and invalid signature both return `401` with error code `servicenow_authentication_failed`.
+
 Operational audit durability guidance (local sink + archive/restore drills):
 - `docs/AUDIT_DURABILITY.md`
 - `docs/BACKUP.md`

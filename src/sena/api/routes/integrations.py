@@ -128,8 +128,15 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     "jira_missing_required_fields", details={"reason": reason}
                 )
             if "signature" in reason:
+                signature_error = (
+                    "missing_signature" if "missing webhook signature" in reason else "invalid_signature"
+                )
                 raise_api_error(
-                    "jira_authentication_failed", details={"reason": reason}
+                    "jira_authentication_failed",
+                    details={
+                        "reason": reason,
+                        "signature_error": signature_error,
+                    },
                 )
             state.processing_store.enqueue_dead_letter(
                 {
@@ -216,8 +223,15 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     "servicenow_missing_required_fields", details={"reason": reason}
                 )
             if "signature" in reason:
+                signature_error = (
+                    "missing_signature" if "missing webhook signature" in reason else "invalid_signature"
+                )
                 raise_api_error(
-                    "servicenow_authentication_failed", details={"reason": reason}
+                    "servicenow_authentication_failed",
+                    details={
+                        "reason": reason,
+                        "signature_error": signature_error,
+                    },
                 )
             state.processing_store.enqueue_dead_letter(
                 {

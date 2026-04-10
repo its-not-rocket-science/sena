@@ -1,0 +1,24 @@
+{
+  "webhookEvent": "jira:issue_updated",
+  "timestamp": 1711982000,
+  "issue": {
+    "id": "10001",
+    "key": "RISK-9",
+    "fields": {
+      "customfield_approval_amount": 25000,
+      "customfield_requester_role": "finance_analyst",
+      "customfield_vendor_verified": false
+    }
+  },
+  "user": {
+    "accountId": "acct-99"
+  },
+  "changelog": {
+    "items": [
+      {
+        "field": "status",
+        "toString": "Pending Approval"
+      }
+    ]
+  }
+}

@@ -62,14 +62,30 @@ class RotatingSharedSecretServiceNowWebhookVerifier:
         self._signature_header = signature_header.lower()
 
     def verify(self, *, headers: dict[str, str], raw_body: bytes) -> None:
-        provided = headers.get(self._signature_header, "")
+        provided = _extract_servicenow_signature(
+            headers=headers, signature_header=self._signature_header
+        )
         if not provided:
-            raise ServiceNowIntegrationError("missing webhook signature")
+            raise ServiceNowIntegrationError(
+                "missing webhook signature (expected header: x-sena-signature or x-servicenow-signature)"
+            )
         for secret in self._secrets:
             expected = hmac.new(secret, raw_body, hashlib.sha256).hexdigest()
             if hmac.compare_digest(provided, expected):
                 return
         raise ServiceNowIntegrationError("invalid webhook signature")
+
+
+def _extract_servicenow_signature(
+    *, headers: dict[str, str], signature_header: str
+) -> str:
+    direct = str(headers.get(signature_header, "")).strip()
+    if direct:
+        return direct
+    prefixed = str(headers.get("x-servicenow-signature", "")).strip()
+    if prefixed.lower().startswith("sha256="):
+        return prefixed.split("=", 1)[1].strip()
+    return prefixed
 
 
 class ServiceNowIdempotencyStore(Protocol):

@@ -1,4 +1,6 @@
 import json
+import hashlib
+import hmac
 from pathlib import Path
 
 import pytest
@@ -40,6 +42,14 @@ def _settings(**kwargs):
 def _servicenow_fixture(name: str) -> dict:
     fixture_path = Path("tests/fixtures/integrations/servicenow") / f"{name}.json"
     return json.loads(fixture_path.read_text(encoding="utf-8"))
+
+
+def _raw_fixture_bytes(path: str) -> bytes:
+    return Path(path).read_bytes()
+
+
+def _hmac_sha256_hex(secret: str, payload: bytes) -> str:
+    return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
 
 def test_health_endpoint() -> None:
@@ -1311,6 +1321,102 @@ def test_jira_webhook_unsupported_event_returns_deterministic_error() -> None:
     assert response.json()["error"]["code"] == "jira_unsupported_event_type"
 
 
+def test_jira_webhook_signature_verification_accepts_current_and_previous_secret() -> None:
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret="current-secret",
+            jira_webhook_secret_previous="old-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+    )
+
+    current_signature = _hmac_sha256_hex("current-secret", raw_payload)
+    previous_signature = _hmac_sha256_hex("old-secret", raw_payload)
+
+    current_response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-atlassian-webhook-identifier": "jira-sig-current",
+            "x-sena-signature": current_signature,
+        },
+    )
+    previous_response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-atlassian-webhook-identifier": "jira-sig-previous",
+            "x-hub-signature-256": f"sha256={previous_signature}",
+        },
+    )
+
+    assert current_response.status_code == 200
+    assert previous_response.status_code == 200
+
+
+def test_jira_webhook_signature_verification_rejects_invalid_signature() -> None:
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret="current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+    )
+
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-atlassian-webhook-identifier": "jira-sig-invalid",
+            "x-sena-signature": "deadbeef",
+        },
+    )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["error"]["code"] == "jira_authentication_failed"
+    assert body["error"]["details"]["signature_error"] == "invalid_signature"
+
+
+def test_jira_webhook_signature_verification_rejects_missing_signature_when_secret_configured() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret="current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+    )
+
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-atlassian-webhook-identifier": "jira-sig-missing",
+        },
+    )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["error"]["code"] == "jira_authentication_failed"
+    assert body["error"]["details"]["signature_error"] == "missing_signature"
+
+
 def test_servicenow_webhook_happy_path_returns_machine_readable_payload() -> None:
     app = create_app(
         _settings(
@@ -1431,6 +1537,103 @@ def test_servicenow_webhook_audit_record_includes_source_metadata() -> None:
         source_metadata["servicenow_change_number"]
         == payload["change_request"]["number"]
     )
+
+
+def test_servicenow_webhook_signature_verification_accepts_current_and_previous_secret() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+            servicenow_webhook_secret="sn-current-secret",
+            servicenow_webhook_secret_previous="sn-old-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+    )
+    current_signature = _hmac_sha256_hex("sn-current-secret", raw_payload)
+    previous_signature = _hmac_sha256_hex("sn-old-secret", raw_payload)
+
+    current_response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-delivery-id": "sn-sig-current",
+            "x-sena-signature": current_signature,
+        },
+    )
+    previous_response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-delivery-id": "sn-sig-previous",
+            "x-servicenow-signature": f"sha256={previous_signature}",
+        },
+    )
+
+    assert current_response.status_code == 200
+    assert previous_response.status_code == 200
+
+
+def test_servicenow_webhook_signature_verification_rejects_invalid_signature() -> None:
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+            servicenow_webhook_secret="sn-current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+    )
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-delivery-id": "sn-sig-invalid",
+            "x-sena-signature": "deadbeef",
+        },
+    )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["error"]["code"] == "servicenow_authentication_failed"
+    assert body["error"]["details"]["signature_error"] == "invalid_signature"
+
+
+def test_servicenow_webhook_signature_verification_rejects_missing_signature_when_secret_configured() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+            servicenow_webhook_secret="sn-current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+    )
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-delivery-id": "sn-sig-missing",
+        },
+    )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["error"]["code"] == "servicenow_authentication_failed"
+    assert body["error"]["details"]["signature_error"] == "missing_signature"
 
 
 def test_rate_limiting_per_api_key() -> None:

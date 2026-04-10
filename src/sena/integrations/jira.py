@@ -62,9 +62,11 @@ class SharedSecretJiraWebhookVerifier:
         self._signature_header = signature_header.lower()
 
     def verify(self, *, headers: dict[str, str], raw_body: bytes) -> None:
-        provided = headers.get(self._signature_header, "")
+        provided = _extract_jira_signature(headers=headers, signature_header=self._signature_header)
         if not provided:
-            raise JiraIntegrationError("missing webhook signature")
+            raise JiraIntegrationError(
+                "missing webhook signature (expected header: x-sena-signature or x-hub-signature-256)"
+            )
         expected = hmac.new(self._secret, raw_body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(provided, expected):
             raise JiraIntegrationError("invalid webhook signature")
@@ -78,14 +80,26 @@ class RotatingSharedSecretJiraWebhookVerifier:
         self._signature_header = signature_header.lower()
 
     def verify(self, *, headers: dict[str, str], raw_body: bytes) -> None:
-        provided = headers.get(self._signature_header, "")
+        provided = _extract_jira_signature(headers=headers, signature_header=self._signature_header)
         if not provided:
-            raise JiraIntegrationError("missing webhook signature")
+            raise JiraIntegrationError(
+                "missing webhook signature (expected header: x-sena-signature or x-hub-signature-256)"
+            )
         for secret in self._secrets:
             expected = hmac.new(secret, raw_body, hashlib.sha256).hexdigest()
             if hmac.compare_digest(provided, expected):
                 return
         raise JiraIntegrationError("invalid webhook signature")
+
+
+def _extract_jira_signature(*, headers: dict[str, str], signature_header: str) -> str:
+    direct = str(headers.get(signature_header, "")).strip()
+    if direct:
+        return direct
+    prefixed = str(headers.get("x-hub-signature-256", "")).strip()
+    if prefixed.lower().startswith("sha256="):
+        return prefixed.split("=", 1)[1].strip()
+    return prefixed
 
 
 class JiraIdempotencyStore(Protocol):
