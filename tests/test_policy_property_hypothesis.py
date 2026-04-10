@@ -5,6 +5,7 @@ from pathlib import Path
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from tempfile import TemporaryDirectory
+from itertools import permutations
 
 import pytest
 
@@ -12,7 +13,12 @@ hypothesis = pytest.importorskip("hypothesis")
 from hypothesis import HealthCheck, given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
-from sena.core.enums import DecisionOutcome, RuleDecision, Severity  # noqa: E402
+from sena.core.enums import (  # noqa: E402
+    ActionOrigin,
+    DecisionOutcome,
+    RuleDecision,
+    Severity,
+)
 from sena.core.models import (  # noqa: E402
     ActionProposal,
     ExceptionScope,
@@ -191,6 +197,7 @@ def test_precedence_is_invariant_under_rule_permutations(
     assert permuted.outcome == canonical.outcome
     assert permuted.baseline_outcome == canonical.baseline_outcome
     assert permuted.decision_hash == canonical.decision_hash
+    assert permuted.canonical_replay_payload == canonical.canonical_replay_payload
     assert sorted(rule.rule_id for rule in permuted.matched_rules) == sorted(
         rule.rule_id for rule in canonical.matched_rules
     )
@@ -267,3 +274,173 @@ def test_exception_overlays_never_override_invariant_blocks(
     assert all(
         result.changed_outcome is False for result in trace.evaluated_exceptions
     )
+
+
+@SAFE_HYPOTHESIS_SETTINGS
+@given(
+    decision_order=st.sampled_from(
+        [
+            (RuleDecision.ALLOW, RuleDecision.ESCALATE, RuleDecision.BLOCK),
+            (RuleDecision.BLOCK, RuleDecision.ALLOW, RuleDecision.ESCALATE),
+            (RuleDecision.ESCALATE, RuleDecision.BLOCK, RuleDecision.ALLOW),
+        ]
+    )
+)
+def test_conflicting_matched_rules_have_stable_precedence_and_conflict_ids(
+    decision_order: tuple[RuleDecision, RuleDecision, RuleDecision],
+) -> None:
+    rules = [
+        PolicyRule(
+            id=f"conflict_{idx}",
+            description=f"conflicting rule {idx}",
+            severity=Severity.MEDIUM,
+            inviolable=False,
+            applies_to=["approve_vendor_payment"],
+            condition={"field": "country", "eq": "us"},
+            decision=decision,
+            reason=f"decision {decision.value}",
+        )
+        for idx, decision in enumerate(decision_order)
+    ]
+    proposal = ActionProposal(
+        action_type="approve_vendor_payment",
+        attributes={"country": "us"},
+    )
+    outcomes: set[DecisionOutcome] = set()
+    conflict_vectors: set[tuple[str, ...]] = set()
+
+    for order in permutations(rules):
+        trace = PolicyEvaluator(
+            list(order),
+            config=EvaluatorConfig(deterministic_mode=True),
+        ).evaluate(proposal, {})
+        outcomes.add(trace.outcome)
+        conflict_vectors.add(tuple(trace.conflicting_rules))
+        assert "conflict_resolution" in {
+            step["stage"]
+            for step in trace.canonical_replay_payload["precedence_steps"]
+            if isinstance(step, dict)
+        }
+
+    assert outcomes == {DecisionOutcome.BLOCKED}
+    assert all(vector for vector in conflict_vectors)
+
+
+@SAFE_HYPOTHESIS_SETTINGS
+@given(
+    include_citations=st.booleans(),
+    include_owner=st.booleans(),
+)
+def test_missing_evidence_changes_only_evidence_sensitive_rule_path(
+    include_citations: bool,
+    include_owner: bool,
+) -> None:
+    rules = [
+        PolicyRule(
+            id="allow_verified_vendor",
+            description="allow verified vendor",
+            severity=Severity.LOW,
+            inviolable=False,
+            applies_to=["approve_vendor_payment"],
+            condition={"field": "vendor_verified", "eq": True},
+            decision=RuleDecision.ALLOW,
+            reason="vendor verified",
+            required_evidence=["source_citations", "human_owner"],
+            missing_evidence_decision=RuleDecision.ESCALATE,
+        ),
+        PolicyRule(
+            id="allow_small_amount",
+            description="allow small amount",
+            severity=Severity.LOW,
+            inviolable=False,
+            applies_to=["approve_vendor_payment"],
+            condition={"field": "amount", "lte": 500},
+            decision=RuleDecision.ALLOW,
+            reason="small amount",
+        ),
+    ]
+    base_attrs = {
+        "vendor_verified": True,
+        "amount": 100,
+    }
+    with_evidence = ActionProposal(
+        action_type="approve_vendor_payment",
+        action_origin=ActionOrigin.AI_SUGGESTED,
+        attributes={
+            **base_attrs,
+            "ai_metadata": {
+                "citation_references": ["doc-1"] if include_citations else [],
+                "human_owner": "ops-1" if include_owner else "",
+            },
+        },
+    )
+    without_evidence = ActionProposal(
+        action_type="approve_vendor_payment",
+        action_origin=ActionOrigin.AI_SUGGESTED,
+        attributes=base_attrs,
+    )
+    evaluator = PolicyEvaluator(
+        rules,
+        config=EvaluatorConfig(deterministic_mode=True),
+    )
+    trace_with = evaluator.evaluate(with_evidence, {})
+    trace_without = evaluator.evaluate(without_evidence, {})
+    by_id_with = {item.rule_id: item for item in trace_with.evaluated_rules}
+    by_id_without = {item.rule_id: item for item in trace_without.evaluated_rules}
+
+    assert by_id_with["allow_small_amount"].decision == RuleDecision.ALLOW
+    assert by_id_without["allow_small_amount"].decision == RuleDecision.ALLOW
+    assert by_id_with["allow_small_amount"].missing_evidence == []
+    assert by_id_without["allow_small_amount"].missing_evidence == []
+
+    expected_missing: list[str] = []
+    if not include_citations:
+        expected_missing.append("source_citations")
+    if not include_owner:
+        expected_missing.append("human_owner")
+    assert sorted(by_id_with["allow_verified_vendor"].missing_evidence) == sorted(
+        expected_missing
+    )
+    assert sorted(by_id_without["allow_verified_vendor"].missing_evidence) == [
+        "human_owner",
+        "source_citations",
+    ]
+
+
+@SAFE_HYPOTHESIS_SETTINGS
+@given(
+    amount=st.integers(min_value=1, max_value=2000),
+    vendor_verified=st.booleans(),
+)
+def test_canonical_replay_payload_excludes_volatile_fields_by_construction(
+    amount: int, vendor_verified: bool
+) -> None:
+    rules = [
+        PolicyRule(
+            id="allow_verified",
+            description="allow verified vendors",
+            severity=Severity.LOW,
+            inviolable=False,
+            applies_to=["approve_vendor_payment"],
+            condition={"field": "vendor_verified", "eq": True},
+            decision=RuleDecision.ALLOW,
+            reason="verified",
+        )
+    ]
+    proposal = ActionProposal(
+        action_type="approve_vendor_payment",
+        request_id="req-1",
+        actor_id="actor-1",
+        attributes={"amount": amount, "vendor_verified": vendor_verified},
+    )
+    trace = PolicyEvaluator(
+        rules, config=EvaluatorConfig(deterministic_mode=True)
+    ).evaluate(proposal, {})
+    payload = trace.canonical_replay_payload
+    payload_json = json.dumps(payload, sort_keys=True)
+
+    assert "decision_timestamp" not in payload
+    assert "decision_id" not in payload
+    assert "operational_metadata" not in payload
+    assert "decision_timestamp" not in payload_json
+    assert "dec_" not in payload_json
