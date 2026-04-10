@@ -633,6 +633,24 @@ def test_validation_error_shape() -> None:
     assert body["error"]["code"] == "validation_error"
 
 
+def test_outbound_admin_endpoint_uses_connector_specific_not_configured_error() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    jira_response = client.get("/v1/integrations/jira/admin/outbound/completions")
+    assert jira_response.status_code == 400
+    assert jira_response.json()["error"]["code"] == "jira_mapping_not_configured"
+
+    servicenow_response = client.get(
+        "/v1/integrations/servicenow/admin/outbound/completions"
+    )
+    assert servicenow_response.status_code == 400
+    assert (
+        servicenow_response.json()["error"]["code"]
+        == "servicenow_mapping_not_configured"
+    )
+
+
 def test_strict_mode_requires_actor_identity_fields() -> None:
     app = create_app(_settings())
     client = TestClient(app)

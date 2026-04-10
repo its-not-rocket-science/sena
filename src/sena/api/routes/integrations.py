@@ -34,6 +34,19 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             details={"reason": "connector must be one of: jira, servicenow"},
         )
 
+    def _configured_connector(name: str):
+        connector = _supported_connector(name)
+        if connector is not None:
+            return connector
+        if name == "jira":
+            raise_api_error("jira_mapping_not_configured")
+        if name == "servicenow":
+            raise_api_error("servicenow_mapping_not_configured")
+        raise_api_error(
+            "validation_error",
+            details={"reason": "connector must be one of: jira, servicenow"},
+        )
+
     @router.post("/integrations/webhook", summary="Generic webhook policy evaluation")
     def integrations_webhook(
         req: WebhookEvaluateRequest,
@@ -287,12 +300,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         summary="List outbound delivery completion records",
     )
     def admin_outbound_completions(connector: str, limit: int = 100) -> dict:
-        selected = _supported_connector(connector)
-        if selected is None:
-            raise_api_error(
-                "validation_error",
-                details={"reason": f"{connector} connector is not configured"},
-            )
+        selected = _configured_connector(connector)
         return {"items": selected.outbound_completion_records(limit=limit)}
 
     @router.get(
@@ -300,12 +308,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         summary="List outbound delivery dead-letter records",
     )
     def admin_outbound_dead_letter(connector: str, limit: int = 100) -> dict:
-        selected = _supported_connector(connector)
-        if selected is None:
-            raise_api_error(
-                "validation_error",
-                details={"reason": f"{connector} connector is not configured"},
-            )
+        selected = _configured_connector(connector)
         return {"items": selected.outbound_dead_letter_records(limit=limit)}
 
     @router.post(
@@ -313,12 +316,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         summary="Replay outbound dead-letter records",
     )
     def admin_outbound_dead_letter_replay(connector: str, ids: list[int]) -> dict:
-        selected = _supported_connector(connector)
-        if selected is None:
-            raise_api_error(
-                "validation_error",
-                details={"reason": f"{connector} connector is not configured"},
-            )
+        selected = _configured_connector(connector)
         items: list[dict] = []
         for dead_letter_id in ids:
             items.append(selected.replay_dead_letter(int(dead_letter_id)))
@@ -331,12 +329,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
     def admin_outbound_dead_letter_manual_redrive(
         connector: str, ids: list[int], note: str = "manually redriven"
     ) -> dict:
-        selected = _supported_connector(connector)
-        if selected is None:
-            raise_api_error(
-                "validation_error",
-                details={"reason": f"{connector} connector is not configured"},
-            )
+        selected = _configured_connector(connector)
         items: list[dict] = []
         for dead_letter_id in ids:
             items.append(
@@ -349,12 +342,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         summary="Summarize duplicate suppression counts",
     )
     def admin_outbound_duplicate_summary(connector: str) -> dict:
-        selected = _supported_connector(connector)
-        if selected is None:
-            raise_api_error(
-                "validation_error",
-                details={"reason": f"{connector} connector is not configured"},
-            )
+        selected = _configured_connector(connector)
         return selected.outbound_duplicate_suppression_summary()
 
     @router.get("/admin/slo", summary="Production SLO targets")
