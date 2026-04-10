@@ -195,6 +195,11 @@ class ReliableDeliveryExecutor:
         delivery_fn: Any,
     ) -> dict[str, Any]:
         if self._completion_store.has_completed(operation_key):
+            recorder = getattr(
+                self._completion_store, "record_outbound_duplicate_suppression", None
+            )
+            if callable(recorder):
+                recorder(operation_key=operation_key, target=target)
             return {
                 "status": "duplicate_suppressed",
                 "target": target,

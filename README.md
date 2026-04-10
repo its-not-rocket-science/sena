@@ -94,6 +94,13 @@ Not yet pilot-ready by default:
 - API and CLI: `src/sena/api/*`, `src/sena/cli/*`
 - Integrations (supported depth): `src/sena/integrations/jira.py`, `src/sena/integrations/servicenow.py`
 - Connector reliability persistence: `src/sena/integrations/persistence.py`
+- Operator reliability inspection surfaces for Jira/ServiceNow outbound delivery:
+  - API: `/v1/integrations/{jira|servicenow}/admin/outbound/completions`
+  - API: `/v1/integrations/{jira|servicenow}/admin/outbound/dead-letter`
+  - API: `/v1/integrations/{jira|servicenow}/admin/outbound/dead-letter/replay`
+  - API: `/v1/integrations/{jira|servicenow}/admin/outbound/dead-letter/manual-redrive`
+  - API: `/v1/integrations/{jira|servicenow}/admin/outbound/duplicates/summary`
+  - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <db> ...`
 
 Legacy modules under `src/sena/legacy/*` are out of supported scope.
 

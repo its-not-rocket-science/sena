@@ -78,6 +78,7 @@ from sena.policy.importer import PolicyImportError, import_legacy_policy_file
 from sena.schemas import EvaluatePayload
 from sena.policy.test_runner import PolicyTestRunnerError, run_policy_tests
 from sena.services.rollout import RolloutConfigError, load_rollout_config
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
 TEMPLATES_ROOT = (
     Path(__file__).resolve().parent.parent / "examples" / "policy_templates"
@@ -972,6 +973,56 @@ def _run_evidence_pack(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
+def _run_integrations_reliability_completions(args: argparse.Namespace) -> None:
+    store = SQLiteIntegrationReliabilityStore(str(args.sqlite_path))
+    payload = {
+        "items": [
+            record.__dict__ for record in store.list_completion_records(limit=args.limit)
+        ]
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _run_integrations_reliability_dead_letter(args: argparse.Namespace) -> None:
+    store = SQLiteIntegrationReliabilityStore(str(args.sqlite_path))
+    payload = {
+        "items": [
+            record.__dict__
+            for record in store.list_dead_letter_records(limit=args.limit)
+        ]
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _run_integrations_reliability_manual_redrive(args: argparse.Namespace) -> None:
+    store = SQLiteIntegrationReliabilityStore(str(args.sqlite_path))
+    records = (
+        [store.get_dead_letter_record(args.id)]
+        if args.id is not None
+        else store.list_dead_letter_records(limit=args.limit)
+    )
+    items: list[dict[str, Any]] = []
+    for record in records:
+        if record is None:
+            continue
+        store.mark_completed(
+            record.operation_key,
+            target=record.target,
+            payload=record.payload,
+            result={"status": "manually_redriven", "note": args.note},
+            attempts=record.attempts,
+            max_attempts=record.max_attempts or record.attempts,
+        )
+        store.delete_dead_letter_record(record.id)
+        items.append({"dead_letter_id": record.id, "status": "manually_redriven"})
+    print(json.dumps({"items": items, "note": args.note}, indent=2, sort_keys=True))
+
+
+def _run_integrations_reliability_duplicates(args: argparse.Namespace) -> None:
+    store = SQLiteIntegrationReliabilityStore(str(args.sqlite_path))
+    print(json.dumps(store.duplicate_suppression_summary(), indent=2, sort_keys=True))
+
+
 def _run_replay_drift(args: argparse.Namespace) -> None:
     replay_payload = _load_json_file(args.replay_file, "replay fixture")
     baseline_rules, baseline_meta = load_policy_bundle(args.baseline_policy_dir)
@@ -1534,6 +1585,33 @@ def _build_evidence_pack_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_integrations_reliability_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="SENA outbound connector reliability inspection commands"
+    )
+    parser.add_argument("--sqlite-path", type=Path, required=True)
+    sub = parser.add_subparsers(dest="reliability_command", required=True)
+
+    completions = sub.add_parser("completions")
+    completions.add_argument("--limit", type=int, default=100)
+    completions.set_defaults(handler=_run_integrations_reliability_completions)
+
+    dead_letter = sub.add_parser("dead-letter")
+    dead_letter.add_argument("--limit", type=int, default=100)
+    dead_letter.set_defaults(handler=_run_integrations_reliability_dead_letter)
+
+    manual_redrive = sub.add_parser("manual-redrive")
+    manual_redrive.add_argument("--id", type=int)
+    manual_redrive.add_argument("--limit", type=int, default=100)
+    manual_redrive.add_argument("--note", default="manually redriven via CLI")
+    manual_redrive.set_defaults(handler=_run_integrations_reliability_manual_redrive)
+
+    duplicates = sub.add_parser("duplicates-summary")
+    duplicates.set_defaults(handler=_run_integrations_reliability_duplicates)
+
+    return parser
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "production-check":
         parser = argparse.ArgumentParser(
@@ -1575,6 +1653,11 @@ def main() -> None:
         return
     if len(sys.argv) > 1 and sys.argv[1] == "evidence-pack":
         parser = _build_evidence_pack_parser()
+        args = parser.parse_args(sys.argv[2:])
+        args.handler(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "integrations-reliability":
+        parser = _build_integrations_reliability_parser()
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return
