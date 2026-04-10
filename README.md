@@ -271,6 +271,13 @@ Configuration knobs:
 - `SENA_INGESTION_QUEUE_BACKEND=memory|redis`
 - `SENA_INGESTION_QUEUE_MAX_SIZE=1000`
 - `SENA_INGESTION_QUEUE_REDIS_URL=redis://...` (required for `redis` backend)
+- `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH=/var/lib/sena/integration_reliability.db`
+- `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true` (development/demo only; never production)
+
+Supported Jira and ServiceNow connector paths are wired for durable reliability by default:
+- In `SENA_RUNTIME_MODE=production`, startup now fails unless `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` is explicitly configured when Jira or ServiceNow integration is enabled.
+- In non-production modes, SENA defaults connector reliability state to durable SQLite (falling back to `SENA_PROCESSING_SQLITE_PATH` when a dedicated reliability DB path is not set).
+- Process-local in-memory reliability is only used when explicitly enabled with `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true` (recommended only for tests/demos).
 
 Load test harness:
 

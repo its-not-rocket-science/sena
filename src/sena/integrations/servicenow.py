@@ -142,12 +142,18 @@ class ServiceNowConnector(ApprovalConnectorBase):
         idempotency_store: ServiceNowIdempotencyStore | None = None,
         reliability_store: SQLiteIntegrationReliabilityStore | None = None,
         reliability_db_path: str | None = None,
+        require_durable_reliability: bool = False,
         delivery_client: ServiceNowDeliveryClient | None = None,
         verifier: ServiceNowWebhookVerifier | None = None,
     ) -> None:
         durable_store = reliability_store
         if durable_store is None and reliability_db_path:
             durable_store = SQLiteIntegrationReliabilityStore(str(Path(reliability_db_path)))
+        if require_durable_reliability and durable_store is None:
+            raise ServiceNowIntegrationError(
+                "durable reliability storage is required; "
+                "configure reliability_store or reliability_db_path"
+            )
         super().__init__(
             config=ApprovalConnectorConfig(routes=config.routes),
             verifier=verifier or AllowAllServiceNowWebhookVerifier(),

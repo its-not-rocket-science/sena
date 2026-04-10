@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from sena.api.app import create_app
 from sena.api.config import ApiSettings
+from sena.policy.integration_persistence import SQLiteIntegrationReliabilityStore
 
 
 def _settings(**kwargs):
@@ -1920,6 +1921,64 @@ def test_startup_fails_in_production_without_jira_secret(tmp_path) -> None:
                 jira_webhook_secret=None,
             )
         )
+
+
+def test_startup_fails_in_production_without_integration_reliability_db_path(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(
+        RuntimeError,
+        match="requires SENA_INTEGRATION_RELIABILITY_SQLITE_PATH",
+    ):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+                jira_webhook_secret="prod-secret",
+                integration_reliability_sqlite_path=None,
+            )
+        )
+
+
+def test_non_production_jira_connector_defaults_to_durable_reliability(
+    tmp_path,
+) -> None:
+    runtime_db = tmp_path / "runtime.db"
+    app = create_app(
+        _settings(
+            runtime_mode="development",
+            processing_sqlite_path=str(runtime_db),
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+        )
+    )
+
+    connector = app.state.engine_state.jira_connector
+    assert connector is not None
+    assert isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
+
+
+def test_non_production_can_explicitly_allow_inmemory_reliability(
+    tmp_path,
+) -> None:
+    app = create_app(
+        _settings(
+            runtime_mode="development",
+            processing_sqlite_path=str(tmp_path / "runtime.db"),
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            integration_reliability_allow_inmemory=True,
+        )
+    )
+
+    connector = app.state.engine_state.jira_connector
+    assert connector is not None
+    assert not isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
 
 
 def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:

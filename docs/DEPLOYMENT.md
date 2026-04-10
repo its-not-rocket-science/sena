@@ -12,8 +12,14 @@
 - `SENA_POLICY_DIR=<mounted policy bundle>`
 - `SENA_BUNDLE_NAME`, `SENA_BUNDLE_VERSION`
 - `SENA_AUDIT_SINK_JSONL=<persistent volume path>`
+- `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH=<persistent volume path>`
 - `SENA_RATE_LIMIT_REQUESTS`, `SENA_RATE_LIMIT_WINDOW_SECONDS`
 - `SENA_REQUEST_TIMEOUT_SECONDS`, `SENA_REQUEST_MAX_BYTES`
+
+### Connector reliability requirement (Jira / ServiceNow)
+- In production mode (`SENA_RUNTIME_MODE=production`), enabling Jira or ServiceNow mappings requires `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH`.
+- Production startup fails fast if this path is missing or if `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true`.
+- In development/pilot, connector reliability defaults to durable SQLite; set `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true` only for demos/tests.
 
 ## Kubernetes Helm chart pattern (examples)
 Use the `examples/k8s_admission_demo` assets as a reference and expose `/v1/health` and `/v1/ready` probes.

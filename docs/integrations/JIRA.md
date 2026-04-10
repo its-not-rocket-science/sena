@@ -63,6 +63,8 @@ Use existing payment rules and map Jira fields:
 This lets `approve_vendor_payment` rules evaluate Jira-native approval requests deterministically.
 
 ## Deployment notes
-- Use a durable external idempotency store for multi-instance deployments (the included in-memory store is process-local).
+- Configure `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` to persist Jira idempotency + outbound delivery bookkeeping.
+- In production mode, Jira integration startup fails unless durable reliability storage is explicitly configured.
+- In-memory connector reliability is development/demo-only (`SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true`).
 - Pin Jira webhook routes to explicit event types and required fields.
 - Keep bundle naming aligned with route `policy_bundle` values.

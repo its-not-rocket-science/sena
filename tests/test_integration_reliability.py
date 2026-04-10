@@ -240,3 +240,25 @@ def test_servicenow_dlq_retry_metadata_persists_across_restart(tmp_path) -> None
         ServiceNowConnector(config=cfg, reliability_db_path=str(db_path)).handle_event(
             envelope
         )
+
+
+def test_supported_connectors_can_require_durable_reliability() -> None:
+    jira_cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    with pytest.raises(JiraIntegrationError, match="durable reliability storage is required"):
+        JiraConnector(
+            config=jira_cfg,
+            verifier=AllowAllJiraWebhookVerifier(),
+            require_durable_reliability=True,
+        )
+
+    servicenow_cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    with pytest.raises(
+        ServiceNowIntegrationError,
+        match="durable reliability storage is required",
+    ):
+        ServiceNowConnector(
+            config=servicenow_cfg,
+            require_durable_reliability=True,
+        )
