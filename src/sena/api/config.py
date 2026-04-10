@@ -68,6 +68,8 @@ class ApiSettings:
     servicenow_username: str | None = None
     servicenow_password: str | None = None
     servicenow_oauth_token: str | None = None
+    integration_reliability_sqlite_path: str | None = None
+    integration_reliability_allow_inmemory: bool = False
     auto_recovery_enabled: bool = False
     auto_recovery_error_threshold: float = 0.10
     auto_recovery_window_seconds: int = 300
@@ -231,6 +233,12 @@ def load_settings_from_env() -> ApiSettings:
         servicenow_username=os.getenv("SENA_SERVICENOW_USERNAME"),
         servicenow_password=os.getenv("SENA_SERVICENOW_PASSWORD"),
         servicenow_oauth_token=os.getenv("SENA_SERVICENOW_OAUTH_TOKEN"),
+        integration_reliability_sqlite_path=os.getenv(
+            "SENA_INTEGRATION_RELIABILITY_SQLITE_PATH"
+        ),
+        integration_reliability_allow_inmemory=_parse_bool(
+            os.getenv("SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY"), default=False
+        ),
         auto_recovery_enabled=_parse_bool(
             os.getenv("SENA_AUTO_RECOVERY_ENABLED"), default=False
         ),

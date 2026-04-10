@@ -74,3 +74,8 @@ All are under `tests/fixtures/integrations/servicenow/`.
 - Mapping/payload mismatch → `servicenow_invalid_mapping`
 - Policy bundle mismatch/not found → `servicenow_policy_bundle_not_found`
 - Other evaluation exceptions → `servicenow_evaluation_error`
+
+## Reliability storage requirements
+- Configure `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` to persist duplicate-suppression and outbound retry/dead-letter state.
+- In production mode, ServiceNow integration startup fails unless durable reliability storage is explicitly configured.
+- In-memory reliability mode is for explicit development/demo usage only (`SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true`).

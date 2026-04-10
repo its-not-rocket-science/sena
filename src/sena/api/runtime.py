@@ -98,6 +98,22 @@ ROLE_ACTION_TYPE_DENYLIST: dict[str, set[str]] = {
 }
 
 
+def _supported_reliability_integrations_enabled(settings: ApiSettings) -> bool:
+    return bool(
+        settings.jira_mapping_config_path or settings.servicenow_mapping_config_path
+    )
+
+
+def _resolve_connector_reliability_db_path(settings: ApiSettings) -> str | None:
+    if settings.integration_reliability_sqlite_path:
+        return settings.integration_reliability_sqlite_path
+    if settings.integration_reliability_allow_inmemory:
+        return None
+    if _supported_reliability_integrations_enabled(settings):
+        return settings.processing_sqlite_path
+    return None
+
+
 class EngineState:
     def __init__(
         self,
@@ -279,6 +295,31 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
                 raise RuntimeError(
                     f"{env_name} must point to an existing file: {config_path}"
                 )
+    if runtime_settings.integration_reliability_sqlite_path:
+        reliability_parent = (
+            Path(runtime_settings.integration_reliability_sqlite_path)
+            .expanduser()
+            .resolve()
+            .parent
+        )
+        if not reliability_parent.exists() or not reliability_parent.is_dir():
+            raise RuntimeError(
+                "SENA_INTEGRATION_RELIABILITY_SQLITE_PATH parent directory must exist: "
+                f"{runtime_settings.integration_reliability_sqlite_path}"
+            )
+    if runtime_settings.runtime_mode == "production":
+        if runtime_settings.integration_reliability_allow_inmemory:
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production forbids "
+                "SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true"
+            )
+        if _supported_reliability_integrations_enabled(runtime_settings) and not (
+            runtime_settings.integration_reliability_sqlite_path
+        ):
+            raise RuntimeError(
+                "SENA_RUNTIME_MODE=production requires "
+                "SENA_INTEGRATION_RELIABILITY_SQLITE_PATH when Jira or ServiceNow integration is enabled"
+            )
 
     if runtime_settings.runtime_mode == "production":
         if not runtime_settings.audit_sink_jsonl:
@@ -412,6 +453,8 @@ def build_runtime_state(
         state.jira_connector = JiraConnector(
             config=load_jira_mapping_config(runtime_settings.jira_mapping_config_path),
             verifier=verifier,
+            reliability_db_path=_resolve_connector_reliability_db_path(runtime_settings),
+            require_durable_reliability=runtime_settings.runtime_mode == "production",
             delivery_client=delivery_client,
         )
 
@@ -452,6 +495,8 @@ def build_runtime_state(
                 runtime_settings.servicenow_mapping_config_path
             ),
             verifier=verifier,
+            reliability_db_path=_resolve_connector_reliability_db_path(runtime_settings),
+            require_durable_reliability=runtime_settings.runtime_mode == "production",
             delivery_client=delivery_client,
         )
 

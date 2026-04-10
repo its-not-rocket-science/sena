@@ -110,6 +110,18 @@ def _validate_env_coherence(settings: ApiSettings) -> list[str]:
                 errors.append(
                     f"{env_name} must point to an existing file: {config_path}"
                 )
+    if settings.integration_reliability_sqlite_path:
+        reliability_parent = (
+            Path(settings.integration_reliability_sqlite_path)
+            .expanduser()
+            .resolve()
+            .parent
+        )
+        if not reliability_parent.exists() or not reliability_parent.is_dir():
+            errors.append(
+                "SENA_INTEGRATION_RELIABILITY_SQLITE_PATH parent directory must exist: "
+                f"{settings.integration_reliability_sqlite_path}"
+            )
 
     if settings.runtime_mode == "production":
         if not settings.audit_sink_jsonl:
@@ -130,6 +142,16 @@ def _validate_env_coherence(settings: ApiSettings) -> list[str]:
         if settings.jira_mapping_config_path and not settings.jira_webhook_secret:
             errors.append(
                 "SENA_RUNTIME_MODE=production requires SENA_JIRA_WEBHOOK_SECRET when Jira integration is enabled"
+            )
+        if settings.integration_reliability_allow_inmemory:
+            errors.append(
+                "SENA_RUNTIME_MODE=production forbids SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true"
+            )
+        if (
+            settings.jira_mapping_config_path or settings.servicenow_mapping_config_path
+        ) and not settings.integration_reliability_sqlite_path:
+            errors.append(
+                "SENA_RUNTIME_MODE=production requires SENA_INTEGRATION_RELIABILITY_SQLITE_PATH when Jira or ServiceNow integration is enabled"
             )
     if settings.audit_verify_on_startup_strict and not settings.audit_sink_jsonl:
         errors.append(
