@@ -28,6 +28,8 @@ def _normalize(package: dict) -> dict:
     loaded_from = normalized.get("policy_bundle_metadata", {}).get("loaded_from")
     if loaded_from is not None:
         normalized["policy_bundle_metadata"]["loaded_from"] = "<loaded_from>"
+    normalized.pop("canonical_artifacts", None)
+    normalized.pop("operational_metadata", None)
     normalized.pop("determinism_contract", None)
     return normalized
 
@@ -61,6 +63,11 @@ def test_review_package_snapshot_for_blocked_decision() -> None:
     assert trace.outcome == DecisionOutcome.BLOCKED
     package = build_decision_review_package(trace)
     assert package["determinism_contract"]["scope"] == "canonical_replay_payload_only"
+    assert package["canonical_artifacts"]["decision_hash"] == trace.decision_hash
+    assert (
+        package["canonical_artifacts"]["input_fingerprint"]
+        == trace.audit_record.input_fingerprint
+    )
     assert package["determinism_contract"]["canonical_replay_payload"]["decision_hash"]
     assert _normalize(package) == _load_json(
         "tests/fixtures/golden/review_packages/blocked_vendor_payment.json"
@@ -101,3 +108,20 @@ def test_review_package_handles_missing_optional_fields() -> None:
     assert package["normalized_source_system_references"] == []
     assert package["precedence"]["explanation"] is None
     assert package["governance_evidence"]["missing_evidence_classes"] == []
+
+
+def test_review_package_canonical_artifacts_are_round_trip_stable() -> None:
+    evaluator = _evaluator()
+    proposal = ActionProposal(
+        action_type="approve_vendor_payment",
+        request_id="req-review-roundtrip",
+        actor_id="actor-1",
+        actor_role="finance_analyst",
+        attributes={"amount": 1000, "vendor_verified": True},
+    )
+
+    first = build_decision_review_package(evaluator.evaluate(proposal, facts={}))
+    second = build_decision_review_package(evaluator.evaluate(proposal, facts={}))
+
+    assert first["canonical_artifacts"] == second["canonical_artifacts"]
+    assert first["determinism_contract"]["canonical_artifacts"] == first["canonical_artifacts"]
