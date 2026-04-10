@@ -130,7 +130,7 @@
       }
     ],
     "conflicting_rule_ids": [
-      "payment_escalate_high_amount_non_director"
+      "payment_block_unverified_vendor"
     ]
   },
   "invariants": {

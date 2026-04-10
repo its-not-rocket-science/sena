@@ -331,9 +331,22 @@ class PolicyEvaluator:
         blocks = [r for r in matched if r.decision == RuleDecision.BLOCK]
         escalations = [r for r in matched if r.decision == RuleDecision.ESCALATE]
         allows = [r for r in matched if r.decision == RuleDecision.ALLOW]
+        decision_classes = {result.decision for result in matched}
+        conflict_decision: RuleDecision | None = None
+        if len(decision_classes) > 1:
+            if RuleDecision.BLOCK in decision_classes:
+                conflict_decision = RuleDecision.BLOCK
+            elif RuleDecision.ESCALATE in decision_classes:
+                conflict_decision = RuleDecision.ESCALATE
+            else:
+                conflict_decision = RuleDecision.ALLOW
         conflicting_rules = (
-            sorted({r.rule_id for r in matched if r.decision != matched[0].decision})
-            if matched
+            sorted(
+                result.rule_id
+                for result in matched
+                if result.decision == conflict_decision
+            )
+            if conflict_decision is not None
             else []
         )
 
@@ -722,7 +735,7 @@ class PolicyEvaluator:
             ai_metadata_errors,
         ) = self._run_pre_evaluation_validation(proposal, context)
 
-        if not schema_errors and not identity_errors and not ai_metadata_errors:
+        if not schema_errors and not identity_errors:
             evaluated_invariants = self._evaluate_invariants(
                 applicable_invariants, context, missing_fields
             )
