@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from sena.api.app import create_app
 from sena.api.config import ApiSettings
-from sena.policy.integration_persistence import SQLiteIntegrationReliabilityStore
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
 
 def _settings(**kwargs):
