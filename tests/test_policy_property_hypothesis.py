@@ -22,6 +22,7 @@ from sena.core.models import (  # noqa: E402
     PolicyRule,
 )
 from sena.engine.evaluator import PolicyEvaluator  # noqa: E402
+from sena.policy.grammar import COMPARISON_OPERATORS, LOGICAL_OPERATORS  # noqa: E402
 from sena.policy.interpreter import evaluate_condition_with_trace  # noqa: E402
 from sena.policy.parser import PolicyParseError, parse_policy_file  # noqa: E402
 
@@ -106,7 +107,10 @@ def test_interpreter_missing_fields_never_crash(
         alphabet=st.characters(whitelist_categories=("Ll", "Lu", "Nd")),
         min_size=3,
         max_size=16,
-    ).filter(lambda name: name not in {"field", "eq", "and", "or", "not"}),
+    ).filter(
+        lambda name: name
+        not in (COMPARISON_OPERATORS | LOGICAL_OPERATORS | {"field"})
+    ),
 )
 def test_unsupported_conditions_fail_safely_in_parser_and_interpreter(
     unknown_operator: str,
