@@ -25,13 +25,10 @@ export SENA_JIRA_WEBHOOK_SECRET=local-dev-secret  # optional in local dev
 
 Example mapping file: `src/sena/examples/integrations/jira_mappings.yaml`.
 
-## Failure behavior matrix
-- Unsupported event type → `jira_unsupported_event_type`
-- Missing required fields / actor identity → `jira_missing_required_fields`
-- Invalid mapping config → `jira_invalid_mapping`
-- Duplicate deliveries → stable `duplicate_ignored` response (`jira_duplicate_delivery`)
-- Policy bundle mismatch/not found → `jira_policy_bundle_not_found`
-- Timeout/partial failures → deterministic response object with status + errors
+## Release/readiness confidence artifact
+The authoritative, machine-generated confidence matrix (supported event types, signature verification modes, duplicate behavior, required metadata/field failures, and known unsupported cases) is published at `docs/artifacts/integrations/jira_servicenow_confidence_matrix.json`.
+
+It is generated from committed mappings (`src/sena/examples/integrations/*_mappings.yaml`), committed fixtures, and test-backed assertions in `tests/fixtures/integrations/confidence_assertions.json`, and CI fails on drift via `scripts/generate_integration_confidence_matrix.py --check`.
 
 ## Local test scenario
 ```bash

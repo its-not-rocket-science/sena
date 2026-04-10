@@ -25,6 +25,9 @@ jobs:
         run: |
           pip install -e .[dev]
 
+      - name: Verify integration confidence matrix artifact
+        run: PYTHONPATH=src python scripts/generate_integration_confidence_matrix.py --check
+
       - name: Run tests
         run: pytest
 
