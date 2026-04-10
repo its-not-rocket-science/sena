@@ -29,11 +29,12 @@ Deterministic guarantees are explicit:
 
 When docs drift, treat these as canonical in this order:
 
-1. `README.md` (positioning + boundaries)
+1. `README.md` (positioning + supported scope)
 2. `docs/CONTROL_PLANE.md` (implemented product surface)
-3. `docs/ARCHITECTURE.md` (supported-vs-legacy architecture reality)
-4. `docs/TECHNICAL_MATURITY_PLAN.md` (alpha → pilot-ready plan)
-5. `ROADMAP.md` (next priorities and non-goals)
+3. `docs/ARCHITECTURE.md` (supported vs experimental vs legacy boundaries)
+4. `docs/TECHNICAL_MATURITY_PLAN.md` (alpha → pilot-ready execution plan)
+
+Everything else is supplementary. Demo/investor materials are intentionally isolated in `docs/LABS.md`.
 
 ## What SENA is
 
@@ -278,46 +279,15 @@ python scripts/load_test.py --url http://127.0.0.1:8000/v1/evaluate --requests 5
 ```
 
 
-## LangChain callback quickstart (experimental)
+## Experimental and lab assets
 
-```python
-from sena.integrations.langchain import SenaApprovalCallback
+Experimental integrations and demo-only assets are not part of the supported product path.
 
-callbacks = [SenaApprovalCallback("http://localhost:8000", "enterprise-demo:active")]
-```
+- Experimental API surfaces: generic webhook, Slack interactions, LangChain callback integration.
+- Demo packages: Kubernetes admission demo and monitoring demo workflows.
+- Investor/fundraising collateral: kept outside the core product narrative.
 
-See `examples/langchain_demo/refund_agent.py` and `examples/langchain_demo/verify_refund_audit.py` for an end-to-end audit-proof workflow.
-
-## Kubernetes admission demo (experimental)
-
-Run the end-to-end demo (AI suggestion -> SENA block -> Merkle verification).
-
-> Strategy note: this demo is an experimental surface and not the primary supported integration story.
-
-```bash
-make demo-k8s
-```
-
-Demo assets live in `examples/k8s_admission_demo/`:
-- `ai_agent_simulator.py`
-- `sena_webhook.py`
-- `verify_demo.py`
-- `docker-compose-demo.yml`
-- `DEMO_SCRIPT.md`
-- `INVESTOR_DECK.md`
-
-## Monitoring demo (Prometheus + Grafana, experimental packaging)
-
-Run the monitoring stack and start continuous demo traffic:
-
-```bash
-make demo-monitoring
-```
-
-This starts SENA, Prometheus, and Grafana via `docker-compose-monitoring.yml`, and
-generates traffic with `scripts/generate_traffic.py` (10 decisions/second with random
-Merkle proof verification attempts).
-
+Use `docs/LABS.md` as the single index for all of the above.
 
 ## Evidentiary-grade audit verification
 
