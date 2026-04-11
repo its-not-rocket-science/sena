@@ -157,6 +157,16 @@ Use this checklist for the supported integration paths only:
 3. Run `sena production-check --format both` and confirm pass.
 4. Verify readiness at `GET /v1/ready` and a known-good webhook fixture in non-production.
 
+Copy-paste startup verification:
+
+```bash
+export SENA_BASE_URL="${SENA_BASE_URL:-http://127.0.0.1:8000}"
+export SENA_ADMIN_API_KEY="${SENA_ADMIN_API_KEY:?set admin key}"
+
+curl -fsS "$SENA_BASE_URL/v1/ready" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
 ### Live incident triage checklist
 
 1. Confirm request authenticity failures via `error.code`:
@@ -178,6 +188,104 @@ Use this checklist for the supported integration paths only:
 - Use manual redrive only with an operator note:
   - `POST /v1/integrations/{connector}/admin/outbound/dead-letter/manual-redrive?note=...`
 - Keep API response contracts machine-readable: route by `error.code`, not by message text.
+- For supported-path incidents, use admin APIs/CLI only (do **not** inspect SQLite tables directly).
+
+### End-to-end operator flow (supported Jira + ServiceNow path)
+
+The following flow is designed to be complete for incident handling without opening SQLite directly.
+
+#### 1) Startup configuration validation
+
+```bash
+export SENA_BASE_URL="${SENA_BASE_URL:-http://127.0.0.1:8000}"
+export SENA_ADMIN_API_KEY="${SENA_ADMIN_API_KEY:?set admin key}"
+export CONNECTOR="${CONNECTOR:-jira}" # or servicenow
+
+sena production-check --format both
+curl -fsS "$SENA_BASE_URL/v1/health" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+curl -fsS "$SENA_BASE_URL/v1/ready" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+Expected: `/v1/health.status=ok` and `/v1/ready.status=ready`.
+
+#### 2) Normal health checks (steady state)
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/health" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+curl -fsS "$SENA_BASE_URL/v1/ready" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/duplicates/summary" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+Use the duplicate summary trend as an early warning for repeated webhook deliveries or repeated outbound retries.
+
+#### 3) Outbound completion inspection
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/completions?limit=50" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+Interpretation:
+- `operation_key`: deterministic key for a connector action (dedupe boundary).
+- `target`: Jira (`comment` or `status`) or ServiceNow (`callback`).
+- `attempts` close to `max_attempts`: reliability pressure even when eventually completed.
+- `result`: remote-system callback response (authoritative outcome details).
+
+#### 4) Dead-letter inspection
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/dead-letter?limit=50" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+Prioritize by:
+- newest first (returned `id` descending),
+- repeated `error` patterns,
+- `attempts == max_attempts` (exhausted retries).
+
+#### 5) Replay dead-letter item (preferred recovery)
+
+After root-cause fix (credential, endpoint, mapping, remote-system outage):
+
+```bash
+export DEAD_LETTER_ID=123
+curl -fsS -X POST \
+  "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/dead-letter/replay" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "[$DEAD_LETTER_ID]" | jq .
+```
+
+Expected per item: `{"dead_letter_id":123,"status":"replayed",...}` and the item is removed from dead-letter.
+
+#### 6) Manual redrive (only when replay is not possible)
+
+Use when delivery already happened outside SENA and you must reconcile reliability state:
+
+```bash
+export DEAD_LETTER_ID=123
+curl -fsS -X POST \
+  "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/dead-letter/manual-redrive?note=external-redrive-INC1234" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "[$DEAD_LETTER_ID]" | jq .
+```
+
+Expected per item: `{"dead_letter_id":123,"status":"manually_redriven"}`.
+
+#### 7) Duplicate suppression interpretation
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/duplicates/summary" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+Interpretation guide:
+- `inbound.seen_total - inbound.unique_delivery_ids` approximates duplicate webhook deliveries observed.
+- `inbound.suppressed_total` counts inbound duplicates safely ignored by idempotency.
+- `outbound.suppressed_total` counts outbound duplicate sends prevented.
+- `outbound.by_target` isolates suppression by delivery target (`comment`, `status`, `callback`).
 
 ## 8) API surface reminders
 

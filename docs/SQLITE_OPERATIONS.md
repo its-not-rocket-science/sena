@@ -2,6 +2,8 @@
 
 This runbook covers operational hardening for the policy registry (`src/sena/policy/store.py`) and disaster-recovery workflows.
 
+> Scope note: for supported Jira + ServiceNow incident handling, operators should use integration admin APIs/CLI (completions, dead-letter, replay, manual redrive, duplicate summary) and avoid direct table inspection.
+
 ## Durability and concurrency defaults
 
 The SQLite policy registry uses explicit PRAGMA settings on every connection:
@@ -92,3 +94,14 @@ python -m sena.cli.main registry --sqlite-path /tmp/drill/restored.db \
 - `python scripts/backup_policy_registry.py ...`
 - `python scripts/restore_policy_registry.py ...`
 - `python scripts/verify_policy_registry.py ...`
+
+## Supported integration reliability operations (no direct SQL)
+
+When `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` is configured, use these commands instead of querying SQLite manually:
+
+```bash
+python -m sena.cli.main integrations-reliability --sqlite-path /var/lib/sena/integration-reliability.db completions
+python -m sena.cli.main integrations-reliability --sqlite-path /var/lib/sena/integration-reliability.db dead-letter
+python -m sena.cli.main integrations-reliability --sqlite-path /var/lib/sena/integration-reliability.db duplicates-summary
+python -m sena.cli.main integrations-reliability --sqlite-path /var/lib/sena/integration-reliability.db manual-redrive --id 123 --note "external remediation INC1234"
+```

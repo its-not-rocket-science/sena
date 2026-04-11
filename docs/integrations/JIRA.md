@@ -78,3 +78,53 @@ This lets `approve_vendor_payment` rules evaluate Jira-native approval requests 
   - API: `GET /v1/integrations/jira/admin/outbound/duplicates/summary`
   - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> duplicates-summary`
 - Keep bundle naming aligned with route `policy_bundle` values.
+
+## Supported-path incident flow (copy/paste)
+
+```bash
+export SENA_BASE_URL="${SENA_BASE_URL:-http://127.0.0.1:8000}"
+export SENA_ADMIN_API_KEY="${SENA_ADMIN_API_KEY:?set admin key}"
+```
+
+1) Inspect successful outbound completions:
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/integrations/jira/admin/outbound/completions?limit=25" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+2) Inspect dead-letter records:
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/integrations/jira/admin/outbound/dead-letter?limit=25" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+3) Replay one dead-letter record after root cause fix:
+
+```bash
+curl -fsS -X POST "$SENA_BASE_URL/v1/integrations/jira/admin/outbound/dead-letter/replay" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '[123]' | jq .
+```
+
+4) Manual redrive (external remediation already done):
+
+```bash
+curl -fsS -X POST "$SENA_BASE_URL/v1/integrations/jira/admin/outbound/dead-letter/manual-redrive?note=external-remediation-INC1234" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '[123]' | jq .
+```
+
+5) Interpret duplicate suppression:
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/integrations/jira/admin/outbound/duplicates/summary" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+- `inbound.suppressed_total`: duplicate Jira webhook deliveries ignored safely.
+- `outbound.suppressed_total`: duplicate comment/status sends prevented.
+- `outbound.by_target.comment|status`: isolate repeated suppression by delivery type.
