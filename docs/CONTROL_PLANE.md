@@ -1,5 +1,7 @@
 # SENA Control Plane (Alpha)
 
+Terminology follows README: `supported`, `experimental`, `labs/demo`, and `legacy`.
+
 ## Supported product (current scope)
 
 SENA is an **alpha control-plane core for Jira + ServiceNow approval decisioning**.
@@ -9,8 +11,6 @@ The supported path is concrete and implemented: ingest Jira/ServiceNow approval 
 - Outcomes: `APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`
 - Same policy semantics across Jira and ServiceNow
 - Deterministic replay artifacts + hash-linked audit verification
-
-Broader connector applicability exists, but it is not the primary supported product claim in this phase.
 
 ## Implemented capabilities
 
@@ -22,7 +22,7 @@ Broader connector applicability exists, but it is not the primary supported prod
 
 ## Honest maturity statement
 
-SENA is **alpha**. It should be represented as pilot-prep infrastructure, not as a complete enterprise control plane.
+SENA is **alpha**: pilot-prep infrastructure, not a complete enterprise control plane.
 
 Not yet complete as built-in platform controls:
 - full enterprise tenancy administration,
@@ -39,4 +39,4 @@ Not yet complete as built-in platform controls:
 
 ## Strategy conflict marker
 
-Any materials framing Kubernetes or other demo connectors as the primary product wedge should be treated as outdated for the current phase.
+Any materials framing Kubernetes or other labs/demo connectors as the primary product wedge are historical.
