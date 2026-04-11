@@ -1,17 +1,32 @@
-# Examples Index (Supported First)
+# Examples Index (Supported Path First)
 
-This folder contains both supported operator examples and experimental demos.
+This directory intentionally keeps the **supported operator path** narrow and puts non-supported material in a clearly separate section.
 
-## Supported examples (Jira + ServiceNow story)
+## Supported examples (default)
 
-- `design_partner_reference/` — canonical design-partner workflow pack with fixtures, mappings, and deterministic evidence artifacts.
-- `gated_promotion_flow.sh` — supported policy promotion gate flow.
-- `simulation_scenarios.json` — scenario input for supported simulation workflow.
-- `basic_usage.py` — minimal policy evaluation usage on the supported core engine.
+These are the only examples that should be used for design-partner and production-adjacent workflows:
 
-## Experimental/demo examples (non-supported)
+1. `design_partner_reference/` — canonical Jira + ServiceNow governance pack (normalization, promotion gates, replay, audit evidence).
+2. `gated_promotion_flow.sh` — focused CLI promotion-gate walkthrough against the supported policy lifecycle.
+3. `basic_usage.py` — minimal evaluator invocation using the supported policy/runtime surface.
 
-- `k8s_admission_demo/` — demo-only Kubernetes admission scenario.
-- `langchain_demo/` — demo-only LangChain callback scenario.
+### Supported run commands
 
-Use experimental/demo examples for exploration only; they are not product commitment.
+```bash
+PYTHONPATH=src python examples/basic_usage.py
+PYTHONPATH=src python examples/design_partner_reference/run_reference.py
+bash examples/gated_promotion_flow.sh
+```
+
+## Compatibility fixture (not a standalone story)
+
+- `simulation_scenarios.json` — fixture consumed by `gated_promotion_flow.sh`; keep aligned with supported promotion-gate semantics.
+
+## Experimental / labs demos (non-supported)
+
+The following are intentionally **not** product commitments and should not be used to represent supported scope:
+
+- `k8s_admission_demo/` — exploratory Kubernetes admission demo.
+- `langchain_demo/` — exploratory LangChain callback demo.
+
+If you are updating docs or onboarding material, always anchor on the supported section above first.
