@@ -1,12 +1,12 @@
 # Canonical Workflow: Change-Approval Decision with Deterministic Evidence
 
-## Why this is the ONE canonical workflow
+## Why this is the canonical workflow
 
 This workflow is the highest-value wedge in the current product scope:
 
-- **Business value:** governs high-risk change approvals (the core Jira/ServiceNow wedge).
-- **Determinism + audit required:** every approval decision must be replayable and cryptographically verifiable.
-- **Demoable in <10 minutes:** one script generates full promotion + evaluation + replay + audit evidence.
+- **Business value:** governs high-risk change approvals in Jira + ServiceNow.
+- **Determinism + audit:** every approval decision is replayable and cryptographically verifiable.
+- **Fast proof:** one script generates promotion, evaluation, replay, and audit evidence.
 
 ---
 
@@ -221,19 +221,19 @@ PYTHONPATH=src python examples/design_partner_reference/run_reference.py
 
 ---
 
-## Missing pieces (to make this truly canonical in production)
+## Production hardening gaps
 
-1. **Single command, single pass/fail gate for the canonical flow**
-   - Today the flow exists and is scriptable, but there is no explicit `make canonical-workflow-check` target that enforces all required evidence artifacts and invariants in CI.
+1. **Single command, single pass/fail gate**
+   - Add `make canonical-workflow-check` to enforce required artifacts and invariants in CI.
 
-2. **Evidence schema contract checks at the boundary**
-   - Artifacts are generated, but strict JSON Schema validation for all canonical evidence files should be enforced to prevent drift in downstream compliance tooling.
+2. **Evidence schema checks at the boundary**
+   - Enforce strict JSON Schema validation for canonical evidence files to prevent downstream drift.
 
-3. **Policy promotion gate defaults should be fail-closed in production config**
-   - Repo has promotion validation and signing, but production deployment profiles should mandate these gates by default (not only by convention/runbook).
+3. **Fail-closed policy promotion defaults in production config**
+   - Production deployment profiles should mandate promotion and signing gates by default.
 
-4. **Operational SLOs attached to workflow steps**
-   - The workflow proves correctness; it should also publish target SLOs (latency, verification completion time, replay throughput) for pilot acceptance and on-call operations.
+4. **Operational SLOs per workflow step**
+   - Publish target latency, verification completion time, and replay throughput for pilots and on-call operations.
 
 5. **Dedicated canonical-workflow dashboard panel set**
-   - Monitoring exists, but a focused dashboard section for this one flow (promotion gate health, decision outcomes, replay drift counts, audit verification freshness) would improve operator confidence during demos and pilots.
+   - Add focused panels for promotion gate health, decision outcomes, replay drift counts, and audit verification freshness.

@@ -1,4 +1,6 @@
-# SENA Architecture (Supported vs Legacy)
+# SENA Architecture (supported vs legacy)
+
+Terminology in this document follows README: `supported`, `experimental`, `labs/demo`, and `legacy`.
 
 ## Architecture anchor: Jira + ServiceNow first
 
@@ -10,9 +12,9 @@ Supported flow:
 3. Evaluate through the shared deterministic evaluator.
 4. Emit deterministic decision artifacts and audit evidence.
 
-This is the contract-backed path. Broader applicability (generic webhook, Slack, LangChain callback, Kubernetes demo assets) is secondary and non-contractual in the current phase.
+This is the contract-backed path. Broader applicability (generic webhook, Slack, LangChain callback, Kubernetes labs/demo assets) is secondary and non-contractual.
 
-## Supported architecture (source of truth)
+## supported architecture (source of truth)
 
 Supported code lives in `src/sena/*`:
 1. `sena.policy.*` (parse/validate/interpret)
@@ -20,7 +22,7 @@ Supported code lives in `src/sena/*`:
 3. `sena.api.*` and `sena.cli.*` (runtime surfaces)
 4. `sena.integrations.jira` and `sena.integrations.servicenow` (supported integration depth)
 
-Legacy code under `src/sena/legacy/*` is out of supported claims.
+Legacy code under `src/sena/legacy/*` is legacy and out of supported claims.
 
 ## Decision flow
 
@@ -31,7 +33,7 @@ Legacy code under `src/sena/legacy/*` is out of supported claims.
 
 ## Honest maturity statement
 
-Current state is **alpha**. This repository contains core deterministic and evidence primitives, but not a finished enterprise control-plane experience.
+Current state is **alpha**. The repository contains core deterministic and evidence primitives, but not a finished enterprise control-plane experience.
 
 ## Non-goals / boundaries
 
@@ -41,4 +43,4 @@ Current state is **alpha**. This repository contains core deterministic and evid
 
 ## Strategy conflict marker
 
-Any architecture language that treats Kubernetes demo assets as the flagship integration path conflicts with the current supported-path narrative and should be considered historical.
+Any architecture language that treats Kubernetes labs/demo assets as the flagship integration path is historical.

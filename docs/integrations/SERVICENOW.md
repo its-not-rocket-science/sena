@@ -1,7 +1,7 @@
 # ServiceNow Integration Runbook
 
-## Why this integration exists
-SENA's ServiceNow integration is designed for enterprise change governance workflows where approvals are high-risk, auditable, and must be deterministic. It turns ServiceNow change approval requests into normalized `ActionProposal` objects and returns a deterministic callback payload that ServiceNow Flow Designer or Business Rules can consume directly.
+## Scope
+This is a **supported** integration for high-risk, auditable ServiceNow change approvals. It converts ServiceNow approval requests into normalized `ActionProposal` objects and returns deterministic callback payloads for Flow Designer or Business Rules.
 
 ## Supported flow
 1. ServiceNow sends a change-approval event to `POST /v1/integrations/servicenow/webhook`.

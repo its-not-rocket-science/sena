@@ -28,17 +28,24 @@ Start here for supported docs and operator flow:
 
 ## Explicit scope boundaries
 
-- **Supported:** Jira + ServiceNow decisioning and evidence path above.
-- **Experimental:** generic webhook, Slack interactions, LangChain callback, and non-core modules listed in `src/sena/MODULE_STATUS.md`.
-- **Labs/Demo:** investor/lab/k8s demo materials indexed in `docs/EXPERIMENTAL_INDEX.md`.
-- **Legacy:** historical material only; no supported guarantees.
+- **supported:** Jira + ServiceNow decisioning and evidence path above.
+- **experimental:** generic webhook, Slack interactions, LangChain callback, and non-core modules listed in `src/sena/MODULE_STATUS.md`.
+- **labs/demo:** investor/lab/k8s demo materials indexed in `docs/EXPERIMENTAL_INDEX.md`.
+- **legacy:** historical material only; no product guarantees.
 
-Anything outside the supported path is intentionally labeled and should not be read as product commitment.
+## Terminology standard
+
+- `supported`: contract-backed product behavior.
+- `experimental`: evaluation-only, may change without compatibility guarantees.
+- `labs/demo`: demo or exploration assets, not product contract.
+- `legacy`: historical material outside current product guarantees.
+- `canonical_replay_payload`: replay-stable decision artifact used for equality checks.
+- `operational_metadata`: runtime-only fields that are intentionally non-stable across runs.
 
 ## Deterministic replay contract
 
-SENA separates replay-stable and operational data:
-- `canonical_replay_payload`: stable artifact for replay equality checks.
+SENA separates replay-stable and runtime-only data:
+- `canonical_replay_payload`: replay-stable artifact for equality checks.
 - `operational_metadata`: runtime-only values (for example `decision_id`, event/write timestamps).
 
 Guarantees:

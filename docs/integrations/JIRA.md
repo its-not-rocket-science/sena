@@ -1,12 +1,9 @@
 # Jira Integration Runbook
 
-## What this integration is
-A production-shaped, deterministic Jira approval gateway for SENA. Jira issue webhooks are normalized into `ActionProposal` objects, evaluated by policy bundles, and the resulting decision can be posted back as Jira comments and/or structured status payloads.
+## Scope
+This is a **supported** deterministic Jira approval gateway. Jira issue webhooks are normalized into `ActionProposal`, evaluated by policy bundles, and returned as machine-readable decisions (with optional outbound Jira payloads).
 
-## What this integration is not
-- Not a full Jira workflow engine replacement.
-- Not a generic best-effort webhook demo.
-- Not an implicit fallback path: unsupported events and malformed payloads fail deterministically.
+It is not a Jira workflow-engine replacement; unsupported events and malformed payloads fail closed.
 
 ## Supported flow
 1. Jira sends webhook to `POST /v1/integrations/jira/webhook`.

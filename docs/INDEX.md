@@ -1,8 +1,9 @@
 # Documentation Index (Supported Path First)
 
 This index is the default entrypoint for product and engineering work.
+Scope labels follow README terminology: `supported`, `experimental`, `labs/demo`, and `legacy`.
 
-## 1) Supported product docs (Jira + ServiceNow)
+## 1) Supported docs (default path)
 
 - `CONTROL_PLANE.md` — implemented product surface and runtime contract.
 - `ARCHITECTURE.md` — supported vs experimental vs legacy boundaries.
@@ -29,9 +30,9 @@ This index is the default entrypoint for product and engineering work.
 - `MIGRATION.md`
 - `BUNDLE_SIGNING.md`
 
-## 4) Explicitly non-default materials
+## 4) Non-default materials
 
-These are useful, but not part of the default supported Jira + ServiceNow product path:
+Useful context, but not part of the supported default path:
 
 - Experimental/labs/demo index: `EXPERIMENTAL_INDEX.md`
 - Historical archive: `archive/legacy_vision.md`
