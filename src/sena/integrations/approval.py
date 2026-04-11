@@ -11,7 +11,10 @@ from pydantic import BaseModel, Field
 
 from sena.core.enums import ActionOrigin
 from sena.core.models import ActionProposal, AutonomousToolMetadata
+from sena.api.logging import get_logger
 from sena.integrations.base import Connector, IntegrationError
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,22 @@ class DeadLetterQueue(Protocol):
     def push(self, item: "DeadLetterItem") -> None: ...
 
     def items(self) -> list["DeadLetterItem"]: ...
+
+
+class ConnectorReliabilityObserver(Protocol):
+    def record_inbound_duplicate_suppression(self) -> None: ...
+
+    def record_outbound_duplicate_suppression(self, *, target: str) -> None: ...
+
+    def record_outbound_dead_letter(self, *, target: str) -> None: ...
+
+    def record_outbound_completion(self, *, target: str) -> None: ...
+
+    def record_outbound_dead_letter_removed(self) -> None: ...
+
+    def record_outbound_replay(self, *, target: str, status: str) -> None: ...
+
+    def record_outbound_manual_redrive(self, *, target: str) -> None: ...
 
 
 class InMemoryDeliveryIdempotencyStore:
@@ -176,12 +195,14 @@ class ReliableDeliveryExecutor:
         max_attempts: int,
         completion_store: DeliveryCompletionStore | None = None,
         dlq: DeadLetterQueue | None = None,
+        reliability_observer: ConnectorReliabilityObserver | None = None,
     ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be >= 1")
         self._max_attempts = max_attempts
         self._completion_store = completion_store or InMemoryDeliveryExecutionStore()
         self._dlq = dlq or InMemoryDeadLetterQueue()
+        self._reliability_observer = reliability_observer
 
     @property
     def dlq(self) -> DeadLetterQueue:
@@ -201,6 +222,10 @@ class ReliableDeliveryExecutor:
             )
             if callable(recorder):
                 recorder(operation_key=operation_key, target=target)
+            if self._reliability_observer is not None:
+                self._reliability_observer.record_outbound_duplicate_suppression(
+                    target=target
+                )
             return {
                 "status": "duplicate_suppressed",
                 "target": target,
@@ -231,6 +256,10 @@ class ReliableDeliveryExecutor:
                             last_failed_at=last_failed_at,
                         )
                     )
+                    if self._reliability_observer is not None:
+                        self._reliability_observer.record_outbound_dead_letter(
+                            target=target
+                        )
                     raise DeliveryRetryError(
                         f"delivery failed after {attempt} attempts: {last_error}"
                     ) from exc
@@ -243,6 +272,8 @@ class ReliableDeliveryExecutor:
                 attempts=attempt,
                 max_attempts=self._max_attempts,
             )
+            if self._reliability_observer is not None:
+                self._reliability_observer.record_outbound_completion(target=target)
             return {"status": "delivered", "target": target, "result": result}
         raise DeliveryRetryError(
             f"delivery failed after {self._max_attempts} attempts: {last_error or 'unknown'}"
@@ -371,10 +402,12 @@ class ApprovalConnectorBase(Connector):
         config: ApprovalConnectorConfig,
         verifier: ApprovalWebhookVerifier,
         idempotency_store: DeliveryIdempotencyStore,
+        reliability_observer: ConnectorReliabilityObserver | None = None,
     ) -> None:
         self._config = config
         self._verifier = verifier
         self._idempotency = idempotency_store
+        self._reliability_observer = reliability_observer
 
     def handle_event(self, event: dict[str, Any]) -> dict[str, Any]:
         headers = event.get("headers") or {}
@@ -429,6 +462,13 @@ class ApprovalConnectorBase(Connector):
             route=route,
         )
         if not self._idempotency.mark_if_new(delivery_id):
+            if self._reliability_observer is not None:
+                self._reliability_observer.record_inbound_duplicate_suppression()
+            logger.warning(
+                "connector_inbound_duplicate_suppressed",
+                connector=self.source_system,
+                delivery_id=delivery_id,
+            )
             raise self.error_cls(f"duplicate delivery '{delivery_id}'")
         return self.build_normalized_event(
             payload=payload, event_type=event_type, route=route, delivery_id=delivery_id

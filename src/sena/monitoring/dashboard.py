@@ -81,6 +81,48 @@ class TractionMetrics:
             "Daily full audit verification status (1=passed,0=failed)",
             registry=registry,
         )
+        self.sena_connector_inbound_duplicate_suppression_total = Counter(
+            "sena_connector_inbound_duplicate_suppression_total",
+            "Inbound duplicate webhook deliveries suppressed by connector",
+            labelnames=("connector",),
+            registry=registry,
+        )
+        self.sena_connector_outbound_duplicate_suppression_total = Counter(
+            "sena_connector_outbound_duplicate_suppression_total",
+            "Outbound duplicate deliveries suppressed by connector and target",
+            labelnames=("connector", "target"),
+            registry=registry,
+        )
+        self.sena_connector_outbound_dead_letter_total = Counter(
+            "sena_connector_outbound_dead_letter_total",
+            "Outbound deliveries moved to dead-letter by connector and target",
+            labelnames=("connector", "target"),
+            registry=registry,
+        )
+        self.sena_connector_outbound_replay_total = Counter(
+            "sena_connector_outbound_replay_total",
+            "Outbound dead-letter replay attempts by connector, target, and status",
+            labelnames=("connector", "target", "status"),
+            registry=registry,
+        )
+        self.sena_connector_outbound_manual_redrive_total = Counter(
+            "sena_connector_outbound_manual_redrive_total",
+            "Outbound dead-letter records manually redriven by connector and target",
+            labelnames=("connector", "target"),
+            registry=registry,
+        )
+        self.sena_connector_outbound_completion_total = Counter(
+            "sena_connector_outbound_completion_total",
+            "Outbound completion records created by connector and target",
+            labelnames=("connector", "target"),
+            registry=registry,
+        )
+        self.sena_connector_outbound_dead_letter_volume = Gauge(
+            "sena_connector_outbound_dead_letter_volume",
+            "Current outbound dead-letter queue volume by connector",
+            labelnames=("connector",),
+            registry=registry,
+        )
 
     def observe_request(self, *, method: str, path: str, status_code: int) -> None:
         labels = _RequestMetricLabels(
@@ -131,6 +173,54 @@ class TractionMetrics:
 
     def observe_active_policies(self, *, count: int) -> None:
         self.sena_active_policies.set(max(0, count))
+
+    def observe_connector_inbound_duplicate_suppression(self, *, connector: str) -> None:
+        self.sena_connector_inbound_duplicate_suppression_total.labels(
+            connector=connector
+        ).inc()
+
+    def observe_connector_outbound_duplicate_suppression(
+        self, *, connector: str, target: str
+    ) -> None:
+        self.sena_connector_outbound_duplicate_suppression_total.labels(
+            connector=connector, target=target
+        ).inc()
+
+    def observe_connector_outbound_dead_letter(
+        self, *, connector: str, target: str
+    ) -> None:
+        self.sena_connector_outbound_dead_letter_total.labels(
+            connector=connector, target=target
+        ).inc()
+        dead_letter = self.sena_connector_outbound_dead_letter_volume.labels(
+            connector=connector
+        )
+        dead_letter.inc()
+
+    def observe_connector_outbound_dead_letter_removed(self, *, connector: str) -> None:
+        dead_letter = self.sena_connector_outbound_dead_letter_volume.labels(
+            connector=connector
+        )
+        dead_letter.dec()
+
+    def observe_connector_outbound_replay(
+        self, *, connector: str, target: str, status: str
+    ) -> None:
+        self.sena_connector_outbound_replay_total.labels(
+            connector=connector, target=target, status=status
+        ).inc()
+
+    def observe_connector_outbound_manual_redrive(
+        self, *, connector: str, target: str
+    ) -> None:
+        self.sena_connector_outbound_manual_redrive_total.labels(
+            connector=connector, target=target
+        ).inc()
+
+    def observe_connector_outbound_completion(self, *, connector: str, target: str) -> None:
+        self.sena_connector_outbound_completion_total.labels(
+            connector=connector, target=target
+        ).inc()
 
 
 def _parse_iso_timestamp_to_epoch(value: str | None) -> float | None:

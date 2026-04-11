@@ -81,6 +81,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("POST", "/v1/integrations/{connector}/admin/outbound/dead-letter/replay"),
         ("POST", "/v1/integrations/{connector}/admin/outbound/dead-letter/manual-redrive"),
         ("GET", "/v1/integrations/{connector}/admin/outbound/duplicates/summary"),
+        ("GET", "/v1/integrations/{connector}/admin/outbound/reliability/summary"),
     },
     "verifier": {
         ("GET", "/v1/decision/{decision_id}/attestations"),
@@ -517,6 +518,9 @@ def build_runtime_state(
             reliability_db_path=_resolve_connector_reliability_db_path(runtime_settings),
             require_durable_reliability=runtime_settings.runtime_mode == "production",
             delivery_client=delivery_client,
+            reliability_observer=state.metrics.connector_reliability_observer(
+                connector="jira"
+            ),
         )
 
     if runtime_settings.servicenow_mapping_config_path:
@@ -559,6 +563,9 @@ def build_runtime_state(
             reliability_db_path=_resolve_connector_reliability_db_path(runtime_settings),
             require_durable_reliability=runtime_settings.runtime_mode == "production",
             delivery_client=delivery_client,
+            reliability_observer=state.metrics.connector_reliability_observer(
+                connector="servicenow"
+            ),
         )
 
 

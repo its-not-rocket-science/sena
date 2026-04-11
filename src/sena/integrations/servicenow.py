@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from sena.api.logging import get_logger
 from sena.integrations.approval import (
     ApprovalConnectorBase,
     ApprovalConnectorConfig,
@@ -25,6 +26,7 @@ from sena.integrations.approval import (
 from sena.integrations.base import DecisionPayload, IntegrationError
 from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
+logger = get_logger(__name__)
 
 class ServiceNowIntegrationError(IntegrationError):
     """Raised for deterministic ServiceNow integration failures."""
@@ -145,6 +147,7 @@ class ServiceNowConnector(ApprovalConnectorBase):
         require_durable_reliability: bool = False,
         delivery_client: ServiceNowDeliveryClient | None = None,
         verifier: ServiceNowWebhookVerifier | None = None,
+        reliability_observer: Any | None = None,
     ) -> None:
         durable_store = reliability_store
         if durable_store is None and reliability_db_path:
@@ -160,6 +163,7 @@ class ServiceNowConnector(ApprovalConnectorBase):
             idempotency_store=idempotency_store
             or durable_store
             or InMemoryServiceNowIdempotencyStore(),
+            reliability_observer=reliability_observer,
         )
         self._config = config
         self._reliability_store = durable_store
@@ -168,7 +172,9 @@ class ServiceNowConnector(ApprovalConnectorBase):
             max_attempts=config.outbound.max_attempts,
             completion_store=durable_store or InMemoryDeliveryExecutionStore(),
             dlq=durable_store or InMemoryDeadLetterQueue(),
+            reliability_observer=reliability_observer,
         )
+        self._reliability_observer = reliability_observer
 
     def dead_letter_items(self) -> list[dict[str, Any]]:
         return [item.__dict__.copy() for item in self._delivery_executor.dlq.items()]
@@ -188,6 +194,11 @@ class ServiceNowConnector(ApprovalConnectorBase):
             return {"inbound": {}, "outbound": {}}
         return self._reliability_store.duplicate_suppression_summary()
 
+    def outbound_reliability_summary(self) -> dict[str, Any]:
+        if self._reliability_store is None:
+            return {}
+        return self._reliability_store.reliability_summary()
+
     def replay_dead_letter(self, dead_letter_id: int) -> dict[str, Any]:
         if self._reliability_store is None:
             raise ServiceNowIntegrationError("durable reliability storage is not configured")
@@ -196,7 +207,25 @@ class ServiceNowConnector(ApprovalConnectorBase):
             raise ServiceNowIntegrationError(f"dead-letter record not found: {dead_letter_id}")
         if record.target != "callback":
             raise ServiceNowIntegrationError(f"unsupported dead-letter target: {record.target}")
-        result = self._delivery_client.publish_callback(record.payload)
+        try:
+            result = self._delivery_client.publish_callback(record.payload)
+        except Exception:
+            self._reliability_store.record_admin_event(
+                event_type="replay",
+                target=record.target,
+                status="failure",
+            )
+            if self._reliability_observer is not None:
+                self._reliability_observer.record_outbound_replay(
+                    target=record.target, status="failure"
+                )
+            logger.warning(
+                "connector_outbound_dead_letter_replay_failed",
+                connector=self.source_system,
+                target=record.target,
+                dead_letter_id=dead_letter_id,
+            )
+            raise
         self._reliability_store.mark_completed(
             record.operation_key,
             target=record.target,
@@ -206,6 +235,21 @@ class ServiceNowConnector(ApprovalConnectorBase):
             max_attempts=record.max_attempts or self._config.outbound.max_attempts,
         )
         self._reliability_store.delete_dead_letter_record(dead_letter_id)
+        self._reliability_store.record_admin_event(
+            event_type="replay", target=record.target, status="success"
+        )
+        if self._reliability_observer is not None:
+            self._reliability_observer.record_outbound_replay(
+                target=record.target, status="success"
+            )
+            self._reliability_observer.record_outbound_completion(target=record.target)
+            self._reliability_observer.record_outbound_dead_letter_removed()
+        logger.info(
+            "connector_outbound_dead_letter_replayed",
+            connector=self.source_system,
+            target=record.target,
+            dead_letter_id=dead_letter_id,
+        )
         return {"dead_letter_id": dead_letter_id, "status": "replayed", "result": result}
 
     def manual_redrive_dead_letter(self, dead_letter_id: int, *, note: str) -> dict[str, Any]:
@@ -223,6 +267,22 @@ class ServiceNowConnector(ApprovalConnectorBase):
             max_attempts=record.max_attempts or self._config.outbound.max_attempts,
         )
         self._reliability_store.delete_dead_letter_record(dead_letter_id)
+        self._reliability_store.record_admin_event(
+            event_type="manual_redrive", target=record.target, status="success"
+        )
+        if self._reliability_observer is not None:
+            self._reliability_observer.record_outbound_manual_redrive(
+                target=record.target
+            )
+            self._reliability_observer.record_outbound_completion(target=record.target)
+            self._reliability_observer.record_outbound_dead_letter_removed()
+        logger.info(
+            "connector_outbound_dead_letter_manual_redrive",
+            connector=self.source_system,
+            target=record.target,
+            dead_letter_id=dead_letter_id,
+            note=note,
+        )
         return {"dead_letter_id": dead_letter_id, "status": "manually_redriven"}
 
     def extract_event_type(self, payload: dict[str, Any]) -> str:
