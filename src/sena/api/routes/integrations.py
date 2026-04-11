@@ -47,6 +47,20 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             details={"reason": "connector must be one of: jira, servicenow"},
         )
 
+    def _ok(payload: dict) -> dict:
+        if "status" not in payload:
+            payload["status"] = "ok"
+        return payload
+
+    def _list_response(items: list[dict], **extras: object) -> dict:
+        return _ok(
+            {
+                "count": len(items),
+                "items": items,
+                **extras,
+            }
+        )
+
     @router.post("/integrations/webhook", summary="Generic webhook policy evaluation")
     def integrations_webhook(
         req: WebhookEvaluateRequest,
@@ -68,7 +82,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                 }
             )
             persist_idempotency_response(request, result)
-            return result
+            return _ok(result)
         except QueueOverflowError as exc:
             raise_api_error("rate_limited", details={"reason": str(exc)})
         except WebhookMappingError as exc:
@@ -119,7 +133,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                 }
             )
             persist_idempotency_response(request, result)
-            return result
+            return _ok(result)
         except QueueOverflowError as exc:
             raise_api_error("rate_limited", details={"reason": str(exc)})
         except LookupError as exc:
@@ -212,7 +226,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                 }
             )
             persist_idempotency_response(request, result)
-            return result
+            return _ok(result)
         except QueueOverflowError as exc:
             raise_api_error("rate_limited", details={"reason": str(exc)})
         except LookupError as exc:
@@ -282,18 +296,18 @@ def create_integrations_router(state: EngineState) -> APIRouter:
 
     @router.get("/admin/dlq", summary="List dead-letter queue items")
     def admin_dlq(limit: int = 100) -> dict:
-        return {"items": state.processing_store.list_dead_letters(limit=limit)}
+        return _list_response(state.processing_store.list_dead_letters(limit=limit))
 
     @router.post("/admin/dlq/retry", summary="Retry dead-letter queue items")
     def admin_dlq_retry(ids: list[int] | None = None) -> dict:
         retry_count = state.processing_store.force_retry(ids)
         if state.dlq_worker is not None:
             state.dlq_worker.run_once()
-        return {"retried": retry_count}
+        return _ok({"retried": retry_count})
 
     @router.get("/admin/data-access", summary="List governed data access events")
     def admin_data_access(limit: int = 100) -> dict:
-        return {"items": state.processing_store.list_data_access_events(limit=limit)}
+        return _list_response(state.processing_store.list_data_access_events(limit=limit))
 
     @router.get(
         "/integrations/{connector}/admin/outbound/completions",
@@ -301,7 +315,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
     )
     def admin_outbound_completions(connector: str, limit: int = 100) -> dict:
         selected = _configured_connector(connector)
-        return {"items": selected.outbound_completion_records(limit=limit)}
+        return _list_response(selected.outbound_completion_records(limit=limit))
 
     @router.get(
         "/integrations/{connector}/admin/outbound/dead-letter",
@@ -309,7 +323,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
     )
     def admin_outbound_dead_letter(connector: str, limit: int = 100) -> dict:
         selected = _configured_connector(connector)
-        return {"items": selected.outbound_dead_letter_records(limit=limit)}
+        return _list_response(selected.outbound_dead_letter_records(limit=limit))
 
     @router.post(
         "/integrations/{connector}/admin/outbound/dead-letter/replay",
@@ -320,7 +334,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         items: list[dict] = []
         for dead_letter_id in ids:
             items.append(selected.replay_dead_letter(int(dead_letter_id)))
-        return {"items": items}
+        return _list_response(items)
 
     @router.post(
         "/integrations/{connector}/admin/outbound/dead-letter/manual-redrive",
@@ -335,7 +349,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             items.append(
                 selected.manual_redrive_dead_letter(int(dead_letter_id), note=note)
             )
-        return {"items": items, "note": note}
+        return _list_response(items, note=note)
 
     @router.get(
         "/integrations/{connector}/admin/outbound/duplicates/summary",
@@ -343,14 +357,14 @@ def create_integrations_router(state: EngineState) -> APIRouter:
     )
     def admin_outbound_duplicate_summary(connector: str) -> dict:
         selected = _configured_connector(connector)
-        return selected.outbound_duplicate_suppression_summary()
+        return _ok(selected.outbound_duplicate_suppression_summary())
 
     @router.get("/admin/slo", summary="Production SLO targets")
     def admin_slo() -> dict:
         reliability = state.reliability_service
         if reliability is None:
-            return {"slo_definitions": []}
-        return reliability.slo_payload()
+            return _ok({"slo_definitions": []})
+        return _ok(reliability.slo_payload())
 
     @router.get("/admin/data/payloads", summary="List governed payloads by tenant and region")
     def admin_data_payloads(
@@ -363,7 +377,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             region=region,
             include_expired=include_expired,
         )
-        return {"items": items}
+        return _list_response(items)
 
     @router.post("/admin/data/payloads/{payload_id}/hold", summary="Apply legal hold to governed payload")
     def admin_data_payload_hold(payload_id: int, reason: str = "legal_hold") -> dict:
@@ -371,7 +385,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             payload_id,
             reason=reason,
         )
-        return {"payload_id": payload_id, "held": updated}
+        return _ok({"payload_id": payload_id, "held": updated})
 
     @router.post("/admin/audit/config", summary="Update audit verification controls")
     def admin_audit_config(payload: dict[str, bool], request: Request) -> dict:
@@ -399,11 +413,13 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     "required_header": "x-secondary-approver-id",
                 },
             )
-        return {
+        return _ok(
+            {
             "status": "accepted",
             "requested_changes": payload,
             "requires_restart": True,
-        }
+            }
+        )
 
     @router.post("/integrations/slack/interactions", summary="Handle Slack interactive callbacks")
     async def slack_interactions(request: Request, response: Response) -> dict:
@@ -415,7 +431,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                 raise SlackIntegrationError(
                     "Slack interaction payload form field is required"
                 )
-            return integration_service.handle_slack_interaction(payload_json)
+            return _ok(integration_service.handle_slack_interaction(payload_json))
         except SlackIntegrationError as exc:
             raise_api_error("slack_interaction_error", details={"reason": str(exc)})
         except Exception as exc:  # pragma: no cover

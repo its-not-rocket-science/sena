@@ -118,6 +118,7 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
 
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "ok"
     assert body["outcome"] == "BLOCKED"
     assert body["decision"] == "BLOCKED"
     assert body["decision_id"].startswith("dec_")
@@ -134,6 +135,10 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     assert (
         body["determinism_contract"]["operational_metadata"]
         == body["operational_metadata"]
+    )
+    assert (
+        body["canonical_artifacts"]["canonical_replay_payload"]
+        == body["canonical_replay_payload"]
     )
     expected_hash = hashlib.sha256(
         json.dumps(
@@ -366,6 +371,7 @@ def test_evaluate_review_package_endpoint_returns_durable_artifact() -> None:
 
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "ok"
     assert body["package_type"] == "sena.decision_review_package"
     assert body["decision_summary"]["outcome"] == "BLOCKED"
     assert body["precedence"]["explanation"]
@@ -761,6 +767,7 @@ def test_simulation_replay_endpoint(tmp_path) -> None:
     )
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "ok"
     assert "would change outcome" in body["summary"]
     assert body["total_replayed"] >= 1
 
@@ -797,6 +804,7 @@ def test_replay_drift_endpoint() -> None:
     )
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "ok"
     assert body["replay_type"] == "sena.ai_workflow_drift"
     assert body["changed_outcomes"] == 0
 
