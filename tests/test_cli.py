@@ -811,6 +811,11 @@ def test_replay_export_canonical_command_is_stable(tmp_path) -> None:
     assert first_payload == second_payload
     assert first_payload["artifact_schema"] == "sena.canonical_replay_artifact.v1"
     assert first_payload["determinism_scope"] == "canonical_replay_payload_only"
+    assert first_payload["determinism_contract"]["scope"] == "canonical_replay_payload_only"
+    assert (
+        first_payload["determinism_contract"]["canonical_replay_payload"]
+        == first_payload["canonical_replay_payload"]
+    )
 
 
 def test_policy_schema_migration_commands(tmp_path) -> None:

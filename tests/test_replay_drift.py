@@ -184,3 +184,8 @@ def test_export_canonical_replay_artifact_is_stable_and_excludes_volatile() -> N
         first_artifact["canonical_replay_payload_hash"]
         == second_artifact["canonical_replay_payload_hash"]
     )
+    assert first_artifact["determinism_contract"]["scope"] == "canonical_replay_payload_only"
+    assert (
+        first_artifact["determinism_contract"]["canonical_replay_payload"]
+        == first_artifact["canonical_replay_payload"]
+    )

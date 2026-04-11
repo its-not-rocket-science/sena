@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Protocol
@@ -386,10 +387,23 @@ class ApprovalConnectorBase(Connector):
         ):
             raise self.error_cls(self.invalid_envelope_message)
         normalized = self.normalize_event(headers=headers, payload=payload, raw_body=raw_body)
+        canonical_replay_payload = normalized.canonical_replay_payload()
+        operational_metadata = normalized.operational_metadata()
+        canonical_replay_payload_hash = hashlib.sha256(
+            json.dumps(
+                canonical_replay_payload, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
         return {
             "normalized_event": normalized.model_dump(),
-            "canonical_replay_payload": normalized.canonical_replay_payload(),
-            "operational_metadata": normalized.operational_metadata(),
+            "canonical_replay_payload": canonical_replay_payload,
+            "operational_metadata": operational_metadata,
+            "determinism_contract": {
+                "scope": "canonical_replay_payload_only",
+                "canonical_replay_payload": canonical_replay_payload,
+                "operational_metadata": operational_metadata,
+                "canonical_replay_payload_hash": canonical_replay_payload_hash,
+            },
             "action_proposal": self.map_to_proposal(normalized),
         }
 

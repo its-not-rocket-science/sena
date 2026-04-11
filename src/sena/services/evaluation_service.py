@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from time import perf_counter
@@ -139,9 +141,18 @@ class EvaluationService:
             endpoint=endpoint,
         )
         payload = trace.to_dict()
+        canonical_replay_payload = dict(trace.canonical_replay_payload or {})
+        operational_metadata = dict(trace.operational_metadata or {})
+        canonical_replay_payload_hash = hashlib.sha256(
+            json.dumps(
+                canonical_replay_payload, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
         payload["determinism_contract"] = {
             "scope": "canonical_replay_payload_only",
-            "canonical_replay_payload_hash": trace.decision_hash,
+            "canonical_replay_payload": canonical_replay_payload,
+            "operational_metadata": operational_metadata,
+            "canonical_replay_payload_hash": canonical_replay_payload_hash,
             "volatile_fields": ["decision_id", "decision_timestamp", "operational_metadata"],
         }
         explanation_bundle = {
