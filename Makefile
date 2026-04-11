@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack demo-k8s demo-monitoring integration-matrix-check
+.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack durability-evidence-pack demo-k8s demo-monitoring integration-matrix-check
 
 install:
 	pip install -e .
@@ -37,6 +37,10 @@ pilot-evidence:
 
 pilot-integration-pack:
 	PYTHONPATH=src python scripts/generate_integration_pilot_pack.py --output-dir docs/examples/pilot_integration_pack --clean
+
+
+durability-evidence-pack:
+	PYTHONPATH=src python scripts/generate_sqlite_reliability_evidence.py --output-dir docs/examples/sqlite_reliability_evidence --output-zip docs/examples/sqlite_reliability_evidence.zip --clean
 
 demo-k8s:
 	@mkdir -p examples/k8s_admission_demo/artifacts/audit
