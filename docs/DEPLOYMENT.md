@@ -6,13 +6,15 @@
 - **Docker Compose (production variant):** run API, Postgres, Prometheus, and backup sidecar with auth enabled.
 
 ## Environment variables
-- `SENA_ENABLE_API_KEY_AUTH=true`
+- `SENA_RUNTIME_MODE=production`
+- `SENA_API_KEY_ENABLED=true`
 - `SENA_API_KEYS=<comma-separated keys>`
-- `SENA_API_KEY_ROLES=<json mapping>`
 - `SENA_POLICY_DIR=<mounted policy bundle>`
 - `SENA_BUNDLE_NAME`, `SENA_BUNDLE_VERSION`
 - `SENA_AUDIT_SINK_JSONL=<persistent volume path>`
 - `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH=<persistent volume path>`
+- `SENA_JIRA_MAPPING_CONFIG`, `SENA_JIRA_WEBHOOK_SECRET` (when Jira enabled)
+- `SENA_SERVICENOW_MAPPING_CONFIG`, `SENA_SERVICENOW_WEBHOOK_SECRET` (when ServiceNow enabled)
 - `SENA_RATE_LIMIT_REQUESTS`, `SENA_RATE_LIMIT_WINDOW_SECONDS`
 - `SENA_REQUEST_TIMEOUT_SECONDS`, `SENA_REQUEST_MAX_BYTES`
 
@@ -44,5 +46,25 @@ SQLite is acceptable for local/dev and single-instance pilots. For production ho
 ## Backup / restore runbook
 1. Back up policy registry (`scripts/backup_policy_registry.py`).
 2. Archive audit sink artifacts (`scripts/backup.py`).
-3. Verify backups with checksum + restore drill in staging.
-4. Restore with `scripts/restore_policy_registry.py` and `scripts/restore.py`.
+3. Back up integration reliability DB at `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH`.
+4. Verify backups with checksum + restore drill in staging.
+5. Restore with `scripts/restore_policy_registry.py` and `scripts/restore.py`.
+
+## Operator startup and supported-path smoke checks
+
+Use this exact sequence after deployment:
+
+```bash
+export SENA_BASE_URL="https://sena.example.com"
+export SENA_ADMIN_API_KEY="${SENA_ADMIN_API_KEY:?set admin key}"
+export CONNECTOR="${CONNECTOR:-jira}" # or servicenow
+
+sena production-check --format both
+curl -fsS "$SENA_BASE_URL/v1/health" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+curl -fsS "$SENA_BASE_URL/v1/ready" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/completions?limit=5" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/dead-letter?limit=5" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/duplicates/summary" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+If these succeed, operators can handle supported Jira/ServiceNow incidents through admin endpoints without direct SQLite inspection.
