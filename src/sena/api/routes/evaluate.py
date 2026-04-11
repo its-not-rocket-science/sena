@@ -57,6 +57,11 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
             )
             raise_api_error("evaluation_error", details={"reason": str(exc)})
 
+    def _ok(payload: dict) -> dict:
+        if "status" not in payload:
+            payload["status"] = "ok"
+        return payload
+
     @router.post(
         "/evaluate",
         summary="Evaluate one action proposal",
@@ -70,6 +75,20 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
         if idempotent_response is not None:
             return idempotent_response
         result = _evaluate(req, request)
+        result = _ok(result)
+        determinism_contract = result.get("determinism_contract")
+        if (
+            isinstance(determinism_contract, dict)
+            and "canonical_artifacts" not in result
+        ):
+            result["canonical_artifacts"] = {
+                "canonical_replay_payload": determinism_contract.get(
+                    "canonical_replay_payload", {}
+                ),
+                "operational_metadata": determinism_contract.get(
+                    "operational_metadata", {}
+                ),
+            }
         if req.dry_run:
             result["dry_run"] = True
         persist_idempotency_response(request, result)
@@ -94,13 +113,14 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
                 if req.autonomous_metadata
                 else None,
             )
-            return evaluation_service.evaluate_review_package(
+            result = evaluation_service.evaluate_review_package(
                 proposal=proposal,
                 facts=req.facts,
                 endpoint="/v1/evaluate/review-package",
                 default_decision=parse_default_decision(req.default_decision),
                 strict_require_allow=req.strict_require_allow,
             )
+            return _ok(result)
         except Exception as exc:  # pragma: no cover
             raise_api_error("evaluation_error", details={"reason": str(exc)})
 
@@ -110,40 +130,48 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
         description="Evaluates up to 500 requests and returns ordered results.",
     )
     def evaluate_batch(req: BatchEvaluateRequest, request: Request) -> dict:
-        return {
+        return _ok(
+            {
             "count": len(req.items),
             "results": [_evaluate(item, request) for item in req.items],
-        }
+            }
+        )
 
     @router.post("/simulation", summary="Simulate bundle impact")
     def simulation(req: SimulationRequest) -> dict:
-        return evaluation_service.simulate_policy_change(
-            baseline_policy_dir=req.baseline_policy_dir,
-            candidate_policy_dir=req.candidate_policy_dir,
-            scenarios=[item.model_dump() for item in req.scenarios],
+        return _ok(
+            evaluation_service.simulate_policy_change(
+                baseline_policy_dir=req.baseline_policy_dir,
+                candidate_policy_dir=req.candidate_policy_dir,
+                scenarios=[item.model_dump() for item in req.scenarios],
+            )
         )
 
     @router.post("/replay/drift", summary="Replay historical payloads for drift")
     def replay_drift(req: ReplayDriftRequest) -> dict:
-        return evaluation_service.replay_policy_drift(
-            replay_payload=req.replay_payload,
-            baseline_policy_dir=req.baseline_policy_dir,
-            candidate_policy_dir=req.candidate_policy_dir,
-            baseline_mapping_mode=req.baseline_mapping_mode,
-            baseline_mapping_config_path=req.baseline_mapping_config_path,
-            candidate_mapping_mode=req.candidate_mapping_mode,
-            candidate_mapping_config_path=req.candidate_mapping_config_path,
+        return _ok(
+            evaluation_service.replay_policy_drift(
+                replay_payload=req.replay_payload,
+                baseline_policy_dir=req.baseline_policy_dir,
+                candidate_policy_dir=req.candidate_policy_dir,
+                baseline_mapping_mode=req.baseline_mapping_mode,
+                baseline_mapping_config_path=req.baseline_mapping_config_path,
+                candidate_mapping_mode=req.candidate_mapping_mode,
+                candidate_mapping_config_path=req.candidate_mapping_config_path,
+            )
         )
 
     @router.post("/simulation/replay", summary="Replay recent audit traffic")
     def simulation_replay(req: SimulationReplayRequest) -> dict:
         window_seconds = 3600 if req.window == "last_1_hour" else 86400
         try:
-            return evaluation_service.replay_recent_traffic(
-                audit_path=state.settings.audit_sink_jsonl,
-                proposed_policy_dir=req.proposed_policy_dir,
-                window_seconds=window_seconds,
-                max_samples=req.max_samples,
+            return _ok(
+                evaluation_service.replay_recent_traffic(
+                    audit_path=state.settings.audit_sink_jsonl,
+                    proposed_policy_dir=req.proposed_policy_dir,
+                    window_seconds=window_seconds,
+                    max_samples=req.max_samples,
+                )
             )
         except ValueError as exc:
             raise_api_error("http_bad_request", details={"reason": str(exc)})

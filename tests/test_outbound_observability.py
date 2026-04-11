@@ -57,14 +57,19 @@ def test_outbound_observability_api_endpoints(tmp_path) -> None:
     client = TestClient(app)
     completions = client.get("/v1/integrations/jira/admin/outbound/completions")
     assert completions.status_code == 200
+    assert completions.json()["status"] == "ok"
+    assert completions.json()["count"] == 1
     assert completions.json()["items"][0]["operation_key"] == "op-1"
 
     dead_letter = client.get("/v1/integrations/jira/admin/outbound/dead-letter")
     assert dead_letter.status_code == 200
+    assert dead_letter.json()["status"] == "ok"
+    assert dead_letter.json()["count"] == 1
     dead_letter_id = int(dead_letter.json()["items"][0]["id"])
 
     summary = client.get("/v1/integrations/jira/admin/outbound/duplicates/summary")
     assert summary.status_code == 200
+    assert summary.json()["status"] == "ok"
     assert summary.json()["inbound"]["suppressed_total"] == 1
 
     redrive = client.post(
@@ -73,6 +78,8 @@ def test_outbound_observability_api_endpoints(tmp_path) -> None:
         json=[dead_letter_id],
     )
     assert redrive.status_code == 200
+    assert redrive.json()["status"] == "ok"
+    assert redrive.json()["count"] == 1
     assert redrive.json()["items"][0]["status"] == "manually_redriven"
     assert store.get_dead_letter_record(dead_letter_id) is None
 
