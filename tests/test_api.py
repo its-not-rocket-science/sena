@@ -1975,6 +1975,29 @@ def test_startup_fails_in_production_without_jira_secret(tmp_path) -> None:
         )
 
 
+def test_startup_allows_secret_rotation_with_previous_jira_secret_in_production(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    app = create_app(
+        _settings(
+            runtime_mode="production",
+            enable_api_key_auth=True,
+            api_key="secret",
+            audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+            bundle_signature_strict=True,
+            bundle_signature_keyring_dir=str(keyring_dir),
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret=None,
+            jira_webhook_secret_previous="prod-previous-secret",
+            integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+        )
+    )
+
+    assert app.state.engine_state.jira_connector is not None
+
+
 def test_startup_fails_in_production_when_jira_enabled_without_mapping_config(
     tmp_path,
 ) -> None:
@@ -2093,6 +2116,61 @@ def test_startup_fails_in_production_without_integration_reliability_db_path(
         )
 
 
+def test_startup_fails_in_production_when_write_back_enabled_without_jira_secret(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(RuntimeError, match="requires SENA_JIRA_WEBHOOK_SECRET"):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+                jira_write_back=True,
+                jira_webhook_secret=None,
+                jira_webhook_secret_previous=None,
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+            )
+        )
+
+
+def test_startup_fails_when_integration_reliability_sqlite_parent_missing() -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_INTEGRATION_RELIABILITY_SQLITE_PATH parent directory must exist",
+    ):
+        create_app(
+            _settings(
+                integration_reliability_sqlite_path="does/not/exist/reliability.db",
+            )
+        )
+
+
+def test_non_production_integration_reliability_path_overrides_processing_path(
+    tmp_path,
+) -> None:
+    processing_path = tmp_path / "runtime.db"
+    reliability_path = tmp_path / "custom-reliability.db"
+    app = create_app(
+        _settings(
+            runtime_mode="development",
+            processing_sqlite_path=str(processing_path),
+            integration_reliability_sqlite_path=str(reliability_path),
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+        )
+    )
+
+    connector = app.state.engine_state.jira_connector
+    assert connector is not None
+    assert isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
+    assert connector._idempotency._db_path == str(reliability_path)
+
+
 def test_non_production_jira_connector_defaults_to_durable_reliability(
     tmp_path,
 ) -> None:
@@ -2119,6 +2197,25 @@ def test_non_production_can_explicitly_allow_inmemory_reliability(
             processing_sqlite_path=str(tmp_path / "runtime.db"),
             jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
             integration_reliability_allow_inmemory=True,
+        )
+    )
+
+    connector = app.state.engine_state.jira_connector
+    assert connector is not None
+    assert not isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
+
+
+def test_pilot_mode_allows_inmemory_reliability_without_explicit_sqlite_path(
+    tmp_path,
+) -> None:
+    app = create_app(
+        _settings(
+            runtime_mode="pilot",
+            processing_sqlite_path=str(tmp_path / "runtime.db"),
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret="pilot-secret",
+            integration_reliability_allow_inmemory=True,
+            integration_reliability_sqlite_path=None,
         )
     )
 
