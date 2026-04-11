@@ -105,6 +105,18 @@ class SQLiteIntegrationReliabilityStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS outbound_delivery_admin_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    error TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
             columns = {
                 str(row["name"])
                 for row in conn.execute("PRAGMA table_info(delivery_idempotency_keys)")
@@ -455,4 +467,61 @@ class SQLiteIntegrationReliabilityStore:
                     for row in outbound_by_target_rows
                 },
             },
+        }
+
+    def record_admin_event(
+        self, *, event_type: str, target: str, status: str, error: str | None = None
+    ) -> None:
+        created_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO outbound_delivery_admin_events (
+                    event_type, target, status, error, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (event_type, target, status, error, created_at),
+            )
+
+    def reliability_summary(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            dead_letter = conn.execute(
+                "SELECT COUNT(*) AS total FROM outbound_delivery_dead_letter"
+            ).fetchone()
+            completions = conn.execute(
+                """
+                SELECT target, COUNT(*) AS total
+                FROM outbound_delivery_completion
+                GROUP BY target
+                ORDER BY target ASC
+                """
+            ).fetchall()
+            replay = conn.execute(
+                """
+                SELECT status, COUNT(*) AS total
+                FROM outbound_delivery_admin_events
+                WHERE event_type = 'replay'
+                GROUP BY status
+                """
+            ).fetchall()
+            manual = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM outbound_delivery_admin_events
+                WHERE event_type = 'manual_redrive' AND status = 'success'
+                """
+            ).fetchone()
+        completion_by_target = {str(row["target"]): int(row["total"]) for row in completions}
+        replay_counts = {str(row["status"]): int(row["total"]) for row in replay}
+        return {
+            "dead_letter_volume": int(dead_letter["total"]),
+            "completion_total": sum(completion_by_target.values()),
+            "completion_by_target": completion_by_target,
+            "replay": {
+                "success_total": int(replay_counts.get("success", 0)),
+                "failure_total": int(replay_counts.get("failure", 0)),
+            },
+            "manual_redrive_total": int(manual["total"]),
+            "duplicate_suppression": self.duplicate_suppression_summary(),
         }

@@ -54,9 +54,106 @@ class ApiMetrics:
     def observe_active_policies(self, *, count: int) -> None:
         self.traction.observe_active_policies(count=count)
 
+    def connector_reliability_observer(self, *, connector: str) -> "ConnectorReliabilityObserver":
+        return ConnectorReliabilityObserver(metrics=self, connector=connector)
+
+    def observe_connector_inbound_duplicate_suppression(self, *, connector: str) -> None:
+        self.traction.observe_connector_inbound_duplicate_suppression(
+            connector=connector
+        )
+
+    def observe_connector_outbound_duplicate_suppression(
+        self, *, connector: str, target: str
+    ) -> None:
+        self.traction.observe_connector_outbound_duplicate_suppression(
+            connector=connector,
+            target=target,
+        )
+
+    def observe_connector_outbound_dead_letter(
+        self, *, connector: str, target: str
+    ) -> None:
+        self.traction.observe_connector_outbound_dead_letter(
+            connector=connector,
+            target=target,
+        )
+
+    def observe_connector_outbound_dead_letter_removed(self, *, connector: str) -> None:
+        self.traction.observe_connector_outbound_dead_letter_removed(connector=connector)
+
+    def observe_connector_outbound_replay(
+        self, *, connector: str, target: str, status: str
+    ) -> None:
+        self.traction.observe_connector_outbound_replay(
+            connector=connector,
+            target=target,
+            status=status,
+        )
+
+    def observe_connector_outbound_manual_redrive(
+        self, *, connector: str, target: str
+    ) -> None:
+        self.traction.observe_connector_outbound_manual_redrive(
+            connector=connector,
+            target=target,
+        )
+
+    def observe_connector_outbound_completion(self, *, connector: str, target: str) -> None:
+        self.traction.observe_connector_outbound_completion(
+            connector=connector,
+            target=target,
+        )
+
     def exposition(self) -> bytes:
         return generate_latest(self.registry)
 
     @property
     def content_type(self) -> str:
         return CONTENT_TYPE_LATEST
+
+
+class ConnectorReliabilityObserver:
+    def __init__(self, *, metrics: ApiMetrics, connector: str) -> None:
+        self._metrics = metrics
+        self._connector = connector
+
+    def record_inbound_duplicate_suppression(self) -> None:
+        self._metrics.observe_connector_inbound_duplicate_suppression(
+            connector=self._connector
+        )
+
+    def record_outbound_duplicate_suppression(self, *, target: str) -> None:
+        self._metrics.observe_connector_outbound_duplicate_suppression(
+            connector=self._connector,
+            target=target,
+        )
+
+    def record_outbound_dead_letter(self, *, target: str) -> None:
+        self._metrics.observe_connector_outbound_dead_letter(
+            connector=self._connector,
+            target=target,
+        )
+
+    def record_outbound_dead_letter_removed(self) -> None:
+        self._metrics.observe_connector_outbound_dead_letter_removed(
+            connector=self._connector
+        )
+
+    def record_outbound_replay(self, *, target: str, status: str) -> None:
+        self._metrics.observe_connector_outbound_replay(
+            connector=self._connector,
+            target=target,
+            status=status,
+        )
+
+    def record_outbound_manual_redrive(self, *, target: str) -> None:
+        self._metrics.observe_connector_outbound_manual_redrive(
+            connector=self._connector,
+            target=target,
+        )
+
+    def record_outbound_completion(self, *, target: str) -> None:
+        self._metrics.observe_connector_outbound_completion(
+            connector=self._connector,
+            target=target,
+        )

@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from sena.api.dependencies import check_idempotency_key, persist_idempotency_response
 from sena.api.error_handlers import error_payload
 from sena.api.errors import raise_api_error
+from sena.api.logging import get_logger
 from sena.api.runtime import EngineState
 from sena.api.schemas import WebhookEvaluateRequest
 from sena.integrations.jira import JiraIntegrationError
@@ -16,6 +17,8 @@ from sena.integrations.slack import SlackIntegrationError
 from sena.integrations.webhook import WebhookMappingError
 from sena.services.integration_service import IntegrationService
 from sena.services.reliability_service import QueueOverflowError
+
+logger = get_logger(__name__)
 
 
 def create_integrations_router(state: EngineState) -> APIRouter:
@@ -334,6 +337,10 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         items: list[dict] = []
         for dead_letter_id in ids:
             items.append(selected.replay_dead_letter(int(dead_letter_id)))
+        logger.info(
+            "connector_outbound_dead_letter_replay_requested",
+            connector=connector,
+        )
         return _list_response(items)
 
     @router.post(
@@ -349,6 +356,11 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             items.append(
                 selected.manual_redrive_dead_letter(int(dead_letter_id), note=note)
             )
+        logger.info(
+            "connector_outbound_dead_letter_manual_redrive_requested",
+            connector=connector,
+            note=note,
+        )
         return _list_response(items, note=note)
 
     @router.get(
@@ -358,6 +370,16 @@ def create_integrations_router(state: EngineState) -> APIRouter:
     def admin_outbound_duplicate_summary(connector: str) -> dict:
         selected = _configured_connector(connector)
         return _ok(selected.outbound_duplicate_suppression_summary())
+
+    @router.get(
+        "/integrations/{connector}/admin/outbound/reliability/summary",
+        summary="Summarize connector outbound reliability counts",
+    )
+    def admin_outbound_reliability_summary(connector: str) -> dict:
+        selected = _configured_connector(connector)
+        if not hasattr(selected, "outbound_reliability_summary"):
+            return _ok({})
+        return _ok(selected.outbound_reliability_summary())
 
     @router.get("/admin/slo", summary="Production SLO targets")
     def admin_slo() -> dict:

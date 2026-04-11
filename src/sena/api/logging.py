@@ -45,6 +45,11 @@ class JsonFormatter(logging.Formatter):
             "evaluation_ms",
             "endpoint",
             "errors",
+            "connector",
+            "target",
+            "delivery_id",
+            "dead_letter_id",
+            "note",
         ):
             if hasattr(record, field_name):
                 payload[field_name] = getattr(record, field_name)

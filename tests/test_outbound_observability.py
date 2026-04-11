@@ -82,6 +82,14 @@ def test_outbound_observability_api_endpoints(tmp_path) -> None:
     assert redrive.json()["count"] == 1
     assert redrive.json()["items"][0]["status"] == "manually_redriven"
     assert store.get_dead_letter_record(dead_letter_id) is None
+    reliability_summary = client.get(
+        "/v1/integrations/jira/admin/outbound/reliability/summary"
+    )
+    assert reliability_summary.status_code == 200
+    assert reliability_summary.json()["status"] == "ok"
+    assert reliability_summary.json()["dead_letter_volume"] == 0
+    assert reliability_summary.json()["manual_redrive_total"] == 1
+    assert reliability_summary.json()["completion_by_target"]["comment"] == 2
 
 
 def test_cli_integrations_reliability_commands(tmp_path) -> None:
@@ -161,3 +169,88 @@ def test_outbound_duplicate_suppression_summary_tracks_executor_hits(tmp_path) -
     assert first["status"] == "delivered"
     assert second["status"] == "duplicate_suppressed"
     assert store.duplicate_suppression_summary()["outbound"]["suppressed_total"] == 1
+
+
+def test_connector_reliability_metrics_cover_duplicate_dlq_replay_and_completion(tmp_path) -> None:
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from sena.api.app import create_app
+    from sena.integrations.jira import (
+        AllowAllJiraWebhookVerifier,
+        JiraConnector,
+        JiraIntegrationError,
+        load_jira_mapping_config,
+    )
+
+    class _Client:
+        def publish_comment(self, issue_key: str, message: str) -> dict:
+            return {"status": "ok", "issue_key": issue_key, "message": message}
+
+        def publish_status(self, issue_key: str, payload: dict) -> dict:
+            return {"status": "ok", "issue_key": issue_key, "payload": payload}
+
+    settings = _settings(tmp_path)
+    app = create_app(settings)
+    app.state.engine_state.jira_connector = JiraConnector(
+        config=load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml"),
+        verifier=AllowAllJiraWebhookVerifier(),
+        reliability_db_path=str(tmp_path / "reliability.db"),
+        delivery_client=_Client(),
+        reliability_observer=app.state.engine_state.metrics.connector_reliability_observer(
+            connector="jira"
+        ),
+    )
+    client = TestClient(app)
+
+    payload = {
+        "webhookEvent": "jira:issue_updated",
+        "timestamp": 1711982000,
+        "issue": {
+            "id": "10001",
+            "key": "RISK-1",
+            "fields": {
+                "customfield_approval_amount": 12000,
+                "customfield_requester_role": "finance_analyst",
+                "customfield_vendor_verified": False,
+                "customfield_tenant_id": "tenant-finance",
+                "customfield_workflow_id": "wf-ap-01",
+                "customfield_business_unit": "finance",
+                "customfield_sla_deadline_at": "2026-04-11T00:00:00Z",
+                "customfield_escalation_deadline_at": "2026-04-10T18:00:00Z",
+                "status": {"name": "Pending Approval"},
+                "previous_status": {"name": "In Review"},
+                "priority": {"name": "P2"},
+            },
+        },
+        "user": {"accountId": "acct-1"},
+        "changelog": {"items": [{"field": "status", "toString": "Pending Approval"}]},
+    }
+    envelope = {
+        "headers": {"x-atlassian-webhook-identifier": "dup-1"},
+        "payload": payload,
+        "raw_body": json.dumps(payload).encode("utf-8"),
+    }
+    app.state.engine_state.jira_connector.handle_event(envelope)
+    with pytest.raises(JiraIntegrationError, match="duplicate delivery"):
+        app.state.engine_state.jira_connector.handle_event(envelope)
+    store = SQLiteIntegrationReliabilityStore(str(tmp_path / "reliability.db"))
+    store.push(
+        DeadLetterItem(
+            operation_key="op-r1",
+            target="comment",
+            error="timeout",
+            attempts=1,
+            payload={"issue_key": "RISK-1", "message": "retry"},
+            max_attempts=1,
+        )
+    )
+    dead_letter_id = store.list_dead_letter_records(limit=1)[0].id
+    replay = client.post(
+        "/v1/integrations/jira/admin/outbound/dead-letter/replay",
+        json=[dead_letter_id],
+    )
+    assert replay.status_code == 200
+    metrics_body = client.get("/v1/metrics/prometheus").text
+    assert 'sena_connector_inbound_duplicate_suppression_total{connector="jira"} 1.0' in metrics_body
+    assert 'sena_connector_outbound_replay_total{connector="jira",status="success",target="comment"} 1.0' in metrics_body
+    assert 'sena_connector_outbound_completion_total{connector="jira",target="comment"} 1.0' in metrics_body
