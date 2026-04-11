@@ -239,6 +239,16 @@ def load_runtime_bundle(
 
 
 def validate_startup_settings(runtime_settings: ApiSettings) -> None:
+    _validate_runtime_mode_and_policy_store(runtime_settings)
+    _validate_data_regions(runtime_settings)
+    _validate_api_auth_settings(runtime_settings)
+    _validate_connector_config_paths(runtime_settings)
+    _validate_reliability_sqlite_path(runtime_settings)
+    _validate_production_startup_requirements(runtime_settings)
+    _validate_operational_limits(runtime_settings)
+
+
+def _validate_runtime_mode_and_policy_store(runtime_settings: ApiSettings) -> None:
     if runtime_settings.runtime_mode not in VALID_RUNTIME_MODES:
         raise RuntimeError(
             f"SENA_RUNTIME_MODE must be one of {sorted(VALID_RUNTIME_MODES)}; got '{runtime_settings.runtime_mode}'"
@@ -270,6 +280,9 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
                 "SENA_POLICY_STORE_SQLITE_PATH parent directory must exist: "
                 f"{runtime_settings.policy_store_sqlite_path}"
             )
+
+
+def _validate_data_regions(runtime_settings: ApiSettings) -> None:
     if not runtime_settings.data_allowed_regions:
         raise RuntimeError("SENA_DATA_ALLOWED_REGIONS must include at least one region")
     if runtime_settings.data_default_region not in set(runtime_settings.data_allowed_regions):
@@ -277,6 +290,8 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
             "SENA_DATA_DEFAULT_REGION must be present in SENA_DATA_ALLOWED_REGIONS"
         )
 
+
+def _validate_api_auth_settings(runtime_settings: ApiSettings) -> None:
     if runtime_settings.api_key and not runtime_settings.enable_api_key_auth:
         raise RuntimeError("SENA_API_KEY is set but SENA_API_KEY_ENABLED is not true")
     if (
@@ -305,6 +320,9 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
         raise RuntimeError(
             "SENA_SLACK_BOT_TOKEN and SENA_SLACK_CHANNEL must be set together when enabling Slack integration"
         )
+
+
+def _validate_connector_config_paths(runtime_settings: ApiSettings) -> None:
     for config_path, env_name in (
         (runtime_settings.webhook_mapping_config_path, "SENA_WEBHOOK_MAPPING_CONFIG"),
         (runtime_settings.jira_mapping_config_path, "SENA_JIRA_MAPPING_CONFIG"),
@@ -319,6 +337,9 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
                 raise RuntimeError(
                     f"{env_name} must point to an existing file: {config_path}"
                 )
+
+
+def _validate_reliability_sqlite_path(runtime_settings: ApiSettings) -> None:
     if runtime_settings.integration_reliability_sqlite_path:
         reliability_parent = (
             Path(runtime_settings.integration_reliability_sqlite_path)
@@ -331,6 +352,9 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
                 "SENA_INTEGRATION_RELIABILITY_SQLITE_PATH parent directory must exist: "
                 f"{runtime_settings.integration_reliability_sqlite_path}"
             )
+
+
+def _validate_production_startup_requirements(runtime_settings: ApiSettings) -> None:
     if runtime_settings.runtime_mode == "production":
         if not runtime_settings.audit_sink_jsonl:
             raise RuntimeError(
@@ -416,6 +440,9 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
                     "SENA_SERVICENOW_MAPPING_CONFIG is invalid for production startup: "
                     f"{exc}"
                 ) from exc
+
+
+def _validate_operational_limits(runtime_settings: ApiSettings) -> None:
     if (
         runtime_settings.audit_verify_on_startup_strict
         and not runtime_settings.audit_sink_jsonl
