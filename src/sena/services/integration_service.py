@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -12,6 +13,27 @@ from sena.integrations.base import DecisionPayload
 class IntegrationService:
     state: Any
     evaluation_service: Any
+
+    @staticmethod
+    def _normalization_contract(mapped: dict[str, Any]) -> dict[str, Any]:
+        canonical_replay_payload = dict(mapped.get("canonical_replay_payload", {}))
+        operational_metadata = dict(mapped.get("operational_metadata", {}))
+        canonical_replay_payload_hash = hashlib.sha256(
+            json.dumps(
+                canonical_replay_payload, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        return {
+            "canonical_replay_payload": canonical_replay_payload,
+            "operational_metadata": operational_metadata,
+            "determinism_scope": "canonical_replay_payload_only",
+            "determinism_contract": {
+                "scope": "canonical_replay_payload_only",
+                "canonical_replay_payload": canonical_replay_payload,
+                "operational_metadata": operational_metadata,
+                "canonical_replay_payload_hash": canonical_replay_payload_hash,
+            },
+        }
 
     def handle_webhook_event(
         self,
@@ -34,12 +56,7 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
-        normalization = {
-            "normalized_event": normalized,
-            "canonical_replay_payload": mapped.get("canonical_replay_payload", {}),
-            "operational_metadata": mapped.get("operational_metadata", {}),
-            "determinism_scope": "canonical_replay_payload_only",
-        }
+        normalization = {"normalized_event": normalized, **self._normalization_contract(mapped)}
         decision = self.evaluation_service.evaluate(
             proposal=proposal,
             facts=facts,
@@ -79,12 +96,7 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
-        normalization = {
-            "normalized_event": normalized,
-            "canonical_replay_payload": mapped.get("canonical_replay_payload", {}),
-            "operational_metadata": mapped.get("operational_metadata", {}),
-            "determinism_scope": "canonical_replay_payload_only",
-        }
+        normalization = {"normalized_event": normalized, **self._normalization_contract(mapped)}
         event_route = self.state.jira_connector.route_for_event_type(
             normalized["source_event_type"]
         )
@@ -158,12 +170,7 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
-        normalization = {
-            "normalized_event": normalized,
-            "canonical_replay_payload": mapped.get("canonical_replay_payload", {}),
-            "operational_metadata": mapped.get("operational_metadata", {}),
-            "determinism_scope": "canonical_replay_payload_only",
-        }
+        normalization = {"normalized_event": normalized, **self._normalization_contract(mapped)}
         event_route = self.state.servicenow_connector.route_for_event_type(
             normalized["source_event_type"]
         )

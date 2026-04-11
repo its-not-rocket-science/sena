@@ -127,6 +127,20 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     assert body["determinism_contract"]["scope"] == "canonical_replay_payload_only"
     assert body["canonical_replay_payload"]["decision_hash"] == body["decision_hash"]
     assert "decision_timestamp" in body["operational_metadata"]
+    assert (
+        body["determinism_contract"]["canonical_replay_payload"]
+        == body["canonical_replay_payload"]
+    )
+    assert (
+        body["determinism_contract"]["operational_metadata"]
+        == body["operational_metadata"]
+    )
+    expected_hash = hashlib.sha256(
+        json.dumps(
+            body["canonical_replay_payload"], sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+    assert body["determinism_contract"]["canonical_replay_payload_hash"] == expected_hash
 
 
 def test_evaluate_tracks_downstream_outcome_and_incident(tmp_path) -> None:
@@ -358,6 +372,10 @@ def test_evaluate_review_package_endpoint_returns_durable_artifact() -> None:
     assert body["policy_bundle_metadata"]["bundle_name"] == "enterprise-demo"
     assert body["determinism_contract"]["scope"] == "canonical_replay_payload_only"
     assert "decision_timestamp" in body["determinism_contract"]["operational_metadata"]
+    assert (
+        body["determinism_contract"]["canonical_replay_payload"]
+        == body["canonical_artifacts"]["canonical_replay_payload"]
+    )
 
 
 def test_api_key_auth_blocks_unauthorized_request() -> None:
