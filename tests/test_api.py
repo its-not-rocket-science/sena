@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from sena.api.app import create_app
 from sena.api.config import ApiSettings
+from sena.integrations.approval import DeadLetterItem
 from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
 
@@ -673,6 +674,93 @@ def test_outbound_admin_endpoint_uses_connector_specific_not_configured_error() 
         servicenow_response.json()["error"]["code"]
         == "servicenow_mapping_not_configured"
     )
+
+
+def test_outbound_admin_endpoints_bound_large_limits() -> None:
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+    response = client.get(
+        "/v1/integrations/jira/admin/outbound/completions",
+        params={"limit": 5000},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["requested_limit"] == 5000
+    assert body["limit"] == 1000
+    assert body["truncated"] is True
+
+
+def test_outbound_admin_replay_is_idempotent_for_missing_ids(tmp_path) -> None:
+    reliability_db = tmp_path / "integration_reliability.db"
+    store = SQLiteIntegrationReliabilityStore(str(reliability_db))
+    store.push(
+        DeadLetterItem(
+            operation_key="op-r1",
+            target="comment",
+            error="timeout",
+            attempts=1,
+            max_attempts=1,
+            payload={"issue_key": "RISK-1", "message": "retry me"},
+        )
+    )
+    dead_letter_id = store.list_dead_letter_records(limit=1)[0].id
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            integration_reliability_sqlite_path=str(reliability_db),
+        )
+    )
+    client = TestClient(app)
+
+    first = client.post(
+        "/v1/integrations/jira/admin/outbound/dead-letter/replay",
+        json=[dead_letter_id],
+    )
+    assert first.status_code == 200
+    assert first.json()["succeeded"] == 1
+    assert first.json()["not_found"] == 0
+
+    second = client.post(
+        "/v1/integrations/jira/admin/outbound/dead-letter/replay",
+        json=[dead_letter_id, 999_999],
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert body["status"] == "ok"
+    assert body["succeeded"] == 0
+    assert body["not_found"] == 2
+    assert all(item["status"] == "not_found" for item in body["items"])
+
+
+def test_outbound_admin_manual_redrive_validates_note_and_reports_missing_storage() -> None:
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+
+    malformed_note = client.post(
+        "/v1/integrations/jira/admin/outbound/dead-letter/manual-redrive",
+        params={"note": "bad\nnote"},
+        json=[1],
+    )
+    assert malformed_note.status_code == 422
+    assert malformed_note.json()["error"]["code"] == "validation_error"
+
+    missing_storage = client.post(
+        "/v1/integrations/jira/admin/outbound/dead-letter/manual-redrive",
+        params={"note": "manual remediation completed"},
+        json=[1],
+    )
+    assert missing_storage.status_code == 200
+    assert missing_storage.json()["failed"] == 1
+    assert missing_storage.json()["items"][0]["status"] == "failed"
 
 
 def test_strict_mode_requires_actor_identity_fields() -> None:

@@ -210,6 +210,16 @@ class JiraConnector(ApprovalConnectorBase):
             return {}
         return self._reliability_store.reliability_summary()
 
+    def _normalized_admin_note(self, note: str) -> str:
+        normalized = str(note).strip()
+        if not normalized:
+            raise JiraIntegrationError("manual redrive note must not be empty")
+        if len(normalized) > 1024:
+            raise JiraIntegrationError("manual redrive note exceeds 1024 characters")
+        if any(ord(ch) < 32 for ch in normalized):
+            raise JiraIntegrationError("manual redrive note contains control characters")
+        return normalized
+
     def replay_dead_letter(self, dead_letter_id: int) -> dict[str, Any]:
         if self._reliability_store is None:
             raise JiraIntegrationError("durable reliability storage is not configured")
@@ -272,6 +282,7 @@ class JiraConnector(ApprovalConnectorBase):
     def manual_redrive_dead_letter(self, dead_letter_id: int, *, note: str) -> dict[str, Any]:
         if self._reliability_store is None:
             raise JiraIntegrationError("durable reliability storage is not configured")
+        normalized_note = self._normalized_admin_note(note)
         record = self._reliability_store.get_dead_letter_record(dead_letter_id)
         if record is None:
             raise JiraIntegrationError(f"dead-letter record not found: {dead_letter_id}")
@@ -279,7 +290,7 @@ class JiraConnector(ApprovalConnectorBase):
             record.operation_key,
             target=record.target,
             payload=record.payload,
-            result={"status": "manually_redriven", "note": note},
+            result={"status": "manually_redriven", "note": normalized_note},
             attempts=record.attempts,
             max_attempts=record.max_attempts or self._config.outbound.max_attempts,
         )
@@ -298,7 +309,7 @@ class JiraConnector(ApprovalConnectorBase):
             connector=self.source_system,
             target=record.target,
             dead_letter_id=dead_letter_id,
-            note=note,
+            note=normalized_note,
         )
         return {"dead_letter_id": dead_letter_id, "status": "manually_redriven"}
 

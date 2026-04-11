@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
@@ -19,6 +21,9 @@ from sena.services.integration_service import IntegrationService
 from sena.services.reliability_service import QueueOverflowError
 
 logger = get_logger(__name__)
+_DEFAULT_LIST_LIMIT = 100
+_MAX_LIST_LIMIT = 1000
+_MAX_NOTE_LENGTH = 1024
 
 
 def create_integrations_router(state: EngineState) -> APIRouter:
@@ -62,6 +67,90 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                 "items": items,
                 **extras,
             }
+        )
+
+    def _bounded_limit(limit: int) -> tuple[int, int]:
+        requested = int(limit)
+        if requested < 1:
+            raise_api_error(
+                "validation_error",
+                details={"reason": "limit must be >= 1"},
+            )
+        return requested, min(requested, _MAX_LIST_LIMIT)
+
+    def _normalize_note(note: str) -> str:
+        normalized = str(note).strip()
+        if not normalized:
+            raise_api_error(
+                "validation_error",
+                details={"reason": "note must not be empty"},
+            )
+        if len(normalized) > _MAX_NOTE_LENGTH:
+            raise_api_error(
+                "validation_error",
+                details={"reason": f"note exceeds {_MAX_NOTE_LENGTH} characters"},
+            )
+        if any(ord(ch) < 32 for ch in normalized):
+            raise_api_error(
+                "validation_error",
+                details={"reason": "note contains control characters"},
+            )
+        return normalized
+
+    def _bulk_dead_letter_action(
+        *,
+        connector: str,
+        ids: list[int],
+        action_name: str,
+        action_fn: Callable[[Any, int], dict[str, Any]],
+    ) -> dict:
+        selected = _configured_connector(connector)
+        items: list[dict[str, Any]] = []
+        succeeded = 0
+        not_found = 0
+        failed = 0
+        for dead_letter_id in ids:
+            current_id = int(dead_letter_id)
+            try:
+                result = action_fn(selected, current_id)
+                result.setdefault("dead_letter_id", current_id)
+                items.append(result)
+                succeeded += 1
+            except (JiraIntegrationError, ServiceNowIntegrationError) as exc:
+                reason = str(exc)
+                if "dead-letter record not found" in reason:
+                    not_found += 1
+                    items.append(
+                        {
+                            "dead_letter_id": current_id,
+                            "status": "not_found",
+                            "reason": reason,
+                        }
+                    )
+                    continue
+                failed += 1
+                items.append(
+                    {
+                        "dead_letter_id": current_id,
+                        "status": "failed",
+                        "reason": reason,
+                    }
+                )
+        logger.info(
+            "connector_outbound_dead_letter_admin_action_requested",
+            connector=connector,
+            action=action_name,
+            requested_ids=len(ids),
+            succeeded=succeeded,
+            not_found=not_found,
+            failed=failed,
+        )
+        return _list_response(
+            items,
+            requested=len(ids),
+            succeeded=succeeded,
+            not_found=not_found,
+            failed=failed,
         )
 
     @router.post("/integrations/webhook", summary="Generic webhook policy evaluation")
@@ -316,32 +405,43 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         "/integrations/{connector}/admin/outbound/completions",
         summary="List outbound delivery completion records",
     )
-    def admin_outbound_completions(connector: str, limit: int = 100) -> dict:
+    def admin_outbound_completions(connector: str, limit: int = _DEFAULT_LIST_LIMIT) -> dict:
         selected = _configured_connector(connector)
-        return _list_response(selected.outbound_completion_records(limit=limit))
+        requested_limit, effective_limit = _bounded_limit(limit)
+        return _list_response(
+            selected.outbound_completion_records(limit=effective_limit),
+            requested_limit=requested_limit,
+            limit=effective_limit,
+            truncated=requested_limit > effective_limit,
+        )
 
     @router.get(
         "/integrations/{connector}/admin/outbound/dead-letter",
         summary="List outbound delivery dead-letter records",
     )
-    def admin_outbound_dead_letter(connector: str, limit: int = 100) -> dict:
+    def admin_outbound_dead_letter(connector: str, limit: int = _DEFAULT_LIST_LIMIT) -> dict:
         selected = _configured_connector(connector)
-        return _list_response(selected.outbound_dead_letter_records(limit=limit))
+        requested_limit, effective_limit = _bounded_limit(limit)
+        return _list_response(
+            selected.outbound_dead_letter_records(limit=effective_limit),
+            requested_limit=requested_limit,
+            limit=effective_limit,
+            truncated=requested_limit > effective_limit,
+        )
 
     @router.post(
         "/integrations/{connector}/admin/outbound/dead-letter/replay",
         summary="Replay outbound dead-letter records",
     )
     def admin_outbound_dead_letter_replay(connector: str, ids: list[int]) -> dict:
-        selected = _configured_connector(connector)
-        items: list[dict] = []
-        for dead_letter_id in ids:
-            items.append(selected.replay_dead_letter(int(dead_letter_id)))
-        logger.info(
-            "connector_outbound_dead_letter_replay_requested",
+        return _bulk_dead_letter_action(
             connector=connector,
+            ids=ids,
+            action_name="replay",
+            action_fn=lambda selected, dead_letter_id: selected.replay_dead_letter(
+                dead_letter_id
+            ),
         )
-        return _list_response(items)
 
     @router.post(
         "/integrations/{connector}/admin/outbound/dead-letter/manual-redrive",
@@ -350,18 +450,17 @@ def create_integrations_router(state: EngineState) -> APIRouter:
     def admin_outbound_dead_letter_manual_redrive(
         connector: str, ids: list[int], note: str = "manually redriven"
     ) -> dict:
-        selected = _configured_connector(connector)
-        items: list[dict] = []
-        for dead_letter_id in ids:
-            items.append(
-                selected.manual_redrive_dead_letter(int(dead_letter_id), note=note)
-            )
-        logger.info(
-            "connector_outbound_dead_letter_manual_redrive_requested",
+        normalized_note = _normalize_note(note)
+        result = _bulk_dead_letter_action(
             connector=connector,
-            note=note,
+            ids=ids,
+            action_name="manual_redrive",
+            action_fn=lambda selected, dead_letter_id: selected.manual_redrive_dead_letter(
+                dead_letter_id, note=normalized_note
+            ),
         )
-        return _list_response(items, note=note)
+        result["note"] = normalized_note
+        return result
 
     @router.get(
         "/integrations/{connector}/admin/outbound/duplicates/summary",
