@@ -11,6 +11,7 @@ Scope labels follow README terminology: `supported`, `experimental`, `labs/demo`
 - `INTEGRATION_ABSTRACTION.md` — normalization contract across Jira/ServiceNow.
 - `integrations/JIRA.md` and `integrations/SERVICENOW.md` — connector specifics.
 - `PILOT_ACCEPTANCE.md` and `DESIGN_PARTNER_READY.md` — practical readiness checks.
+- `../src/sena/MODULE_STATUS.md` — supported/experimental module surface map.
 
 ## 2) Operations and reliability
 

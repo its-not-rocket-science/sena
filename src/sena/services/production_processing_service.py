@@ -168,6 +168,11 @@ class ProductionProcessingService:
         reliability.enqueue_event(event)
         return reliability.process_next(self.process_event)
 
+    @property
+    def evaluation_service(self) -> EvaluationService:
+        """Expose evaluation dependency without requiring private attribute access."""
+        return self._evaluation
+
     @staticmethod
     def fallback_default_decision() -> DecisionOutcome:
         return DecisionOutcome.APPROVED
