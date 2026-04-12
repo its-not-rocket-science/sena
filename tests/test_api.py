@@ -1501,6 +1501,34 @@ def test_jira_webhook_signature_verification_accepts_current_and_previous_secret
     assert previous_response.status_code == 200
 
 
+def test_jira_webhook_signature_verification_accepts_unprefixed_x_hub_signature_256() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret="current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+    )
+    signature = _hmac_sha256_hex("current-secret", raw_payload)
+
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-atlassian-webhook-identifier": "jira-sig-unprefixed",
+            "x-hub-signature-256": signature,
+        },
+    )
+
+    assert response.status_code == 200
+
+
 def test_jira_webhook_signature_verification_rejects_invalid_signature() -> None:
     app = create_app(
         _settings(
@@ -1718,6 +1746,34 @@ def test_servicenow_webhook_signature_verification_accepts_current_and_previous_
 
     assert current_response.status_code == 200
     assert previous_response.status_code == 200
+
+
+def test_servicenow_webhook_signature_verification_accepts_unprefixed_x_servicenow_signature() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+            servicenow_webhook_secret="sn-current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+    )
+    signature = _hmac_sha256_hex("sn-current-secret", raw_payload)
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-delivery-id": "sn-sig-unprefixed",
+            "x-servicenow-signature": signature,
+        },
+    )
+
+    assert response.status_code == 200
 
 
 def test_servicenow_webhook_signature_verification_rejects_invalid_signature() -> None:

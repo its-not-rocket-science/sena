@@ -113,6 +113,30 @@ def test_jira_verifier_rejects_invalid_signature() -> None:
         )
 
 
+def test_jira_verifier_accepts_unprefixed_x_hub_signature_256() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(
+        config=cfg,
+        verifier=SharedSecretJiraWebhookVerifier("topsecret"),
+    )
+    payload = _payload()
+    raw_body = json.dumps(payload).encode("utf-8")
+    signature = _hmac_sha256("topsecret", raw_body)
+
+    event = connector.handle_event(
+        {
+            "headers": {
+                "x-atlassian-webhook-identifier": "delivery-4a",
+                "x-hub-signature-256": signature,
+            },
+            "payload": payload,
+            "raw_body": raw_body,
+        }
+    )
+
+    assert event["normalized_event"]["source_system"] == "jira"
+
+
 def test_jira_round_trip_source_payload_to_normalized_to_action_proposal() -> None:
     cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
     connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
@@ -218,3 +242,10 @@ def test_jira_send_decision_writes_dlq_after_retry_exhaustion() -> None:
     )
     assert response["status"] == "partial_failure"
     assert len(connector.dead_letter_items()) == 2
+
+
+def _hmac_sha256(secret: str, raw_body: bytes) -> str:
+    import hashlib
+    import hmac
+
+    return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
