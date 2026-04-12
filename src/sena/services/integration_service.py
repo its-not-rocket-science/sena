@@ -15,14 +15,20 @@ class IntegrationService:
     evaluation_service: Any
 
     @staticmethod
-    def _normalization_contract(mapped: dict[str, Any]) -> dict[str, Any]:
-        canonical_replay_payload = dict(mapped.get("canonical_replay_payload", {}))
-        operational_metadata = dict(mapped.get("operational_metadata", {}))
-        canonical_replay_payload_hash = hashlib.sha256(
+    def _canonical_payload_hash(canonical_replay_payload: dict[str, Any]) -> str:
+        return hashlib.sha256(
             json.dumps(
                 canonical_replay_payload, sort_keys=True, separators=(",", ":")
             ).encode("utf-8")
         ).hexdigest()
+
+    @classmethod
+    def _build_normalization_contract(cls, mapped: dict[str, Any]) -> dict[str, Any]:
+        canonical_replay_payload = dict(mapped.get("canonical_replay_payload", {}))
+        operational_metadata = dict(mapped.get("operational_metadata", {}))
+        canonical_replay_payload_hash = cls._canonical_payload_hash(
+            canonical_replay_payload
+        )
         return {
             "canonical_replay_payload": canonical_replay_payload,
             "operational_metadata": operational_metadata,
@@ -34,6 +40,29 @@ class IntegrationService:
                 "canonical_replay_payload_hash": canonical_replay_payload_hash,
             },
         }
+
+    @staticmethod
+    def _build_mapped_action_proposal(proposal: Any, *, include_actor_role: bool) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "action_type": proposal.action_type,
+            "request_id": proposal.request_id,
+            "actor_id": proposal.actor_id,
+            "attributes": proposal.attributes,
+        }
+        if include_actor_role:
+            payload["actor_role"] = proposal.actor_role
+        return payload
+
+    @staticmethod
+    def _build_decision_payload(decision: dict[str, Any], proposal: Any) -> DecisionPayload:
+        return DecisionPayload(
+            decision_id=decision["decision_id"],
+            request_id=proposal.request_id,
+            action_type=proposal.action_type,
+            matched_rule_ids=[item["rule_id"] for item in decision["matched_rules"]],
+            summary=decision["summary"],
+            merkle_proof=decision.get("decision_hash"),
+        )
 
     def handle_webhook_event(
         self,
@@ -56,7 +85,10 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
-        normalization = {"normalized_event": normalized, **self._normalization_contract(mapped)}
+        normalization = {
+            "normalized_event": normalized,
+            **self._build_normalization_contract(mapped),
+        }
         decision = self.evaluation_service.evaluate(
             proposal=proposal,
             facts=facts,
@@ -71,12 +103,9 @@ class IntegrationService:
             "event_type": event_type,
             "normalization": normalization,
             "normalized_event": normalized,
-            "mapped_action_proposal": {
-                "action_type": proposal.action_type,
-                "request_id": proposal.request_id,
-                "actor_id": proposal.actor_id,
-                "attributes": proposal.attributes,
-            },
+            "mapped_action_proposal": self._build_mapped_action_proposal(
+                proposal, include_actor_role=False
+            ),
             "decision": decision,
             "reasoning": decision.get("reasoning"),
         }
@@ -96,7 +125,10 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
-        normalization = {"normalized_event": normalized, **self._normalization_contract(mapped)}
+        normalization = {
+            "normalized_event": normalized,
+            **self._build_normalization_contract(mapped),
+        }
         event_route = self.state.jira_connector.route_for_event_type(
             normalized["source_event_type"]
         )
@@ -116,14 +148,7 @@ class IntegrationService:
             append_audit=False,
         )
         reliability = self.state.reliability_service
-        decision_payload = DecisionPayload(
-            decision_id=decision["decision_id"],
-            request_id=proposal.request_id,
-            action_type=proposal.action_type,
-            matched_rule_ids=[item["rule_id"] for item in decision["matched_rules"]],
-            summary=decision["summary"],
-            merkle_proof=decision.get("decision_hash"),
-        )
+        decision_payload = self._build_decision_payload(decision, proposal)
         if reliability is None:
             outbound = self.state.jira_connector.send_decision(decision_payload)
         else:
@@ -143,12 +168,9 @@ class IntegrationService:
             "status": "evaluated",
             "normalization": normalization,
             "normalized_event": normalized,
-            "mapped_action_proposal": {
-                "action_type": proposal.action_type,
-                "request_id": proposal.request_id,
-                "actor_id": proposal.actor_id,
-                "attributes": proposal.attributes,
-            },
+            "mapped_action_proposal": self._build_mapped_action_proposal(
+                proposal, include_actor_role=False
+            ),
             "decision": decision,
             "outbound_delivery": outbound,
         }
@@ -170,7 +192,10 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
-        normalization = {"normalized_event": normalized, **self._normalization_contract(mapped)}
+        normalization = {
+            "normalized_event": normalized,
+            **self._build_normalization_contract(mapped),
+        }
         event_route = self.state.servicenow_connector.route_for_event_type(
             normalized["source_event_type"]
         )
@@ -190,14 +215,7 @@ class IntegrationService:
             append_audit=False,
         )
         reliability = self.state.reliability_service
-        decision_payload = DecisionPayload(
-            decision_id=decision["decision_id"],
-            request_id=proposal.request_id,
-            action_type=proposal.action_type,
-            matched_rule_ids=[item["rule_id"] for item in decision["matched_rules"]],
-            summary=decision["summary"],
-            merkle_proof=decision.get("decision_hash"),
-        )
+        decision_payload = self._build_decision_payload(decision, proposal)
         if reliability is None:
             outbound = self.state.servicenow_connector.send_decision(decision_payload)
         else:
@@ -217,13 +235,9 @@ class IntegrationService:
             "status": "evaluated",
             "normalization": normalization,
             "normalized_event": normalized,
-            "mapped_action_proposal": {
-                "action_type": proposal.action_type,
-                "request_id": proposal.request_id,
-                "actor_id": proposal.actor_id,
-                "actor_role": proposal.actor_role,
-                "attributes": proposal.attributes,
-            },
+            "mapped_action_proposal": self._build_mapped_action_proposal(
+                proposal, include_actor_role=True
+            ),
             "decision": decision,
             "outbound_delivery": outbound,
         }

@@ -6,13 +6,20 @@ This file makes supported vs experimental vs legacy module scope explicit.
 
 - `sena.policy.*`
 - `sena.engine.*`
-- `sena.api.*`
+- `sena.api.*` (including runtime wiring in `sena.api.runtime`/`sena.api.app`)
 - `sena.cli.*`
 - `sena.integrations.jira`
 - `sena.integrations.servicenow`
 - `sena.integrations.persistence`
 - `sena.audit.*`
 - `sena.services.*` (where used by supported API/CLI flows)
+
+Supported reliability/admin surfaces are the versioned API routes under:
+- `sena.api.routes.integrations` (`/v1/admin/*` and connector outbound reliability endpoints)
+- `sena.services.reliability_service` (queueing, circuit breaker, and SLO payload contracts)
+
+Canonical artifact plumbing for replay/determinism is maintained in:
+- `sena.services.integration_service` (`canonical_replay_payload`, hash contract)
 
 ## Experimental modules (evaluation-only)
 

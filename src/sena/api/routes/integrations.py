@@ -29,7 +29,8 @@ _MAX_NOTE_LENGTH = 1024
 def create_integrations_router(state: EngineState) -> APIRouter:
     router = APIRouter(tags=["integrations"], responses={400:{"description":"Bad request"},401:{"description":"Unauthorized"},403:{"description":"Forbidden"},429:{"description":"Rate limited"},500:{"description":"Server error"}})
     integration_service = IntegrationService(
-        state=state, evaluation_service=state.processing_service._evaluation
+        state=state,
+        evaluation_service=state.processing_service.evaluation_service,
     )
 
     def _supported_connector(name: str):
