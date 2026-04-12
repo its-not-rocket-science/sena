@@ -14,6 +14,31 @@ This is a **supported** integration for high-risk, auditable ServiceNow change a
 export SENA_SERVICENOW_MAPPING_CONFIG=src/sena/examples/integrations/servicenow_mappings.yaml
 ```
 
+## Webhook headers and signature formats (supported)
+### Delivery identity headers
+- Preferred: `x-servicenow-delivery-id`
+- Fallback: `x-request-id`
+- Final fallback if neither header is present: deterministic synthetic key `"{event_type}:{source_record_id}:{updated_at|sys_updated_on|na}"`.
+
+### Signature headers and accepted formats
+When `SENA_SERVICENOW_WEBHOOK_SECRET` is configured, signatures are required and verified as HMAC-SHA256 over the raw request body.
+
+- Primary header: `x-sena-signature`
+  - Format: lowercase/uppercase hex digest value (no prefix).
+- Alternate header: `x-servicenow-signature`
+  - Format A: `sha256=<hex_digest>`
+  - Format B: `<hex_digest>` (unprefixed)
+
+If neither header is present while a secret is configured, SENA returns `401 servicenow_authentication_failed` with `signature_error=missing_signature`.
+If present but incorrect, SENA returns `401 servicenow_authentication_failed` with `signature_error=invalid_signature`.
+
+### Test-backed examples
+- Current + previous secret acceptance: `tests/test_api.py::test_servicenow_webhook_signature_verification_accepts_current_and_previous_secret`
+- Unprefixed `x-servicenow-signature` acceptance: `tests/test_api.py::test_servicenow_webhook_signature_verification_accepts_unprefixed_x_servicenow_signature`
+- Missing/invalid signature rejection:
+  - `tests/test_api.py::test_servicenow_webhook_signature_verification_rejects_missing_signature_when_secret_configured`
+  - `tests/test_api.py::test_servicenow_webhook_signature_verification_rejects_invalid_signature`
+
 ## Normalized event model (exact fields)
 ```json
 {
@@ -77,6 +102,16 @@ It is generated from committed mappings (`src/sena/examples/integrations/*_mappi
 - In production mode, ServiceNow integration startup fails unless durable reliability storage is explicitly configured.
 - In-memory reliability mode is for explicit development/demo usage only (`SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true`).
 
+## Duplicate delivery behavior
+- Inbound duplicates are suppressed by delivery-id idempotency and return deterministic API payload:
+  - HTTP `200`
+  - Top-level `status=duplicate_ignored`
+  - Error code `servicenow_duplicate_delivery`
+- Outbound duplicates are suppressed by operation key (`decision_id + callback + request_id`) and reported in duplicate counters.
+- Test-backed evidence:
+  - Inbound duplicate handling: `tests/test_api.py::test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response`
+  - Outbound duplicate suppression: `tests/test_servicenow_integration.py::test_servicenow_send_decision_is_idempotent_for_duplicate_retry`
+
 ## Outbound reliability operator commands
 - List outbound completion records:
   - API: `GET /v1/integrations/servicenow/admin/outbound/completions?limit=100`
@@ -92,6 +127,8 @@ It is generated from committed mappings (`src/sena/examples/integrations/*_mappi
 - Summarize duplicate suppression counters:
   - API: `GET /v1/integrations/servicenow/admin/outbound/duplicates/summary`
   - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> duplicates-summary`
+- Summarize outbound reliability counters (delivery attempts, failures, replay/manual-redrive activity):
+  - API: `GET /v1/integrations/servicenow/admin/outbound/reliability/summary`
 
 ## Supported-path incident flow (copy/paste)
 
@@ -142,3 +179,15 @@ curl -fsS "$SENA_BASE_URL/v1/integrations/servicenow/admin/outbound/duplicates/s
 - `inbound.suppressed_total`: duplicate ServiceNow webhook deliveries ignored safely.
 - `outbound.suppressed_total`: duplicate callback sends prevented.
 - `outbound.by_target.callback`: suppression concentration for callback channel.
+
+## Write-back semantics
+ServiceNow write-back is callback-oriented and controlled by mapping `outbound.mode`:
+- `callback`: publish deterministic callback payload to configured callback client
+- `none`: no outbound callback write-back
+
+Outcomes:
+- successful callback delivery: `status=delivered`
+- retries exhausted: `status=delivery_failed` and payload is retained for replay/manual-redrive via outbound dead-letter records.
+- Test-backed evidence:
+  - Deterministic callback payload shape: `tests/test_servicenow_integration.py::test_servicenow_send_decision_returns_deterministic_callback_shape`
+  - Retry-exhaustion + DLQ behavior: `tests/test_servicenow_integration.py::test_servicenow_send_decision_writes_dlq_after_retry_exhaustion`

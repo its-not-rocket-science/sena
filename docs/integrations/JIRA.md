@@ -12,6 +12,31 @@ It is not a Jira workflow-engine replacement; unsupported events and malformed p
 4. SENA evaluates mapped `ActionProposal` against active policy bundle.
 5. SENA returns machine-readable result and optionally sends outbound Jira decision payloads.
 
+## Webhook headers and signature formats (supported)
+### Delivery identity headers
+- Preferred: `x-atlassian-webhook-identifier`
+- Fallback: `x-request-id`
+- Final fallback if neither header is present: deterministic synthetic key `"{event_type}:{timestamp}:{issue.id}"`.
+
+### Signature headers and accepted formats
+When `SENA_JIRA_WEBHOOK_SECRET` is configured, signatures are required and verified as HMAC-SHA256 over the raw request body.
+
+- Primary header: `x-sena-signature`
+  - Format: lowercase/uppercase hex digest value (no prefix).
+- Alternate header: `x-hub-signature-256`
+  - Format A: `sha256=<hex_digest>`
+  - Format B: `<hex_digest>` (unprefixed)
+
+If neither header is present while a secret is configured, SENA returns `401 jira_authentication_failed` with `signature_error=missing_signature`.
+If present but incorrect, SENA returns `401 jira_authentication_failed` with `signature_error=invalid_signature`.
+
+### Test-backed examples
+- Current + previous secret acceptance: `tests/test_api.py::test_jira_webhook_signature_verification_accepts_current_and_previous_secret`
+- Unprefixed `x-hub-signature-256` acceptance: `tests/test_api.py::test_jira_webhook_signature_verification_accepts_unprefixed_x_hub_signature_256`
+- Missing/invalid signature rejection:
+  - `tests/test_api.py::test_jira_webhook_signature_verification_rejects_missing_signature_when_secret_configured`
+  - `tests/test_api.py::test_jira_webhook_signature_verification_rejects_invalid_signature`
+
 ## Configuration
 Set:
 
@@ -62,6 +87,16 @@ This lets `approve_vendor_payment` rules evaluate Jira-native approval requests 
 - In-memory connector reliability is development/demo-only (`SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true`).
 - Pin Jira webhook routes to explicit event types and required fields.
 
+## Duplicate delivery behavior
+- Inbound duplicates are suppressed by delivery-id idempotency and return deterministic API payload:
+  - HTTP `200`
+  - Top-level `status=duplicate_ignored`
+  - Error code `jira_duplicate_delivery`
+- Outbound duplicates are suppressed by operation key (`decision_id + target + issue_key`) and reported in duplicate counters.
+- Test-backed evidence:
+  - Inbound duplicate handling: `tests/test_api.py::test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response`
+  - Outbound duplicate suppression: `tests/test_jira_integration.py::test_jira_send_decision_is_idempotent_for_retries`
+
 ## Outbound reliability operator commands
 - List outbound completion records:
   - API: `GET /v1/integrations/jira/admin/outbound/completions?limit=100`
@@ -77,7 +112,23 @@ This lets `approve_vendor_payment` rules evaluate Jira-native approval requests 
 - Summarize duplicate suppression counters:
   - API: `GET /v1/integrations/jira/admin/outbound/duplicates/summary`
   - CLI: `python -m sena.cli.main integrations-reliability --sqlite-path <reliability.db> duplicates-summary`
+- Summarize outbound reliability counters (delivery attempts, failures, replay/manual-redrive activity):
+  - API: `GET /v1/integrations/jira/admin/outbound/reliability/summary`
 - Keep bundle naming aligned with route `policy_bundle` values.
+
+## Write-back semantics
+Jira write-back is controlled by mapping `outbound.mode`:
+- `comment`: publish comment only
+- `status`: publish status payload only
+- `both`: publish both comment and status (default in example mapping)
+- `none`: no outbound write-back
+
+Outcomes:
+- success for all configured targets: `status=delivered`
+- at least one target exhausted retries: `status=partial_failure` with per-target errors; failed deliveries are dead-lettered for replay/manual-redrive.
+- Test-backed evidence:
+  - Stable successful send: `tests/test_jira_integration.py::test_jira_send_decision_returns_stable_payload`
+  - Retry-exhaustion + DLQ behavior: `tests/test_jira_integration.py::test_jira_send_decision_writes_dlq_after_retry_exhaustion`
 
 ## Supported-path incident flow (copy/paste)
 

@@ -5,6 +5,7 @@ import pytest
 
 from sena.integrations.base import DecisionPayload
 from sena.integrations.servicenow import (
+    RotatingSharedSecretServiceNowWebhookVerifier,
     ServiceNowConnector,
     ServiceNowIntegrationError,
     load_servicenow_mapping_config,
@@ -93,6 +94,30 @@ def test_servicenow_connector_returns_stable_error_for_mapping_mismatch() -> Non
                 "raw_body": json.dumps(payload).encode("utf-8"),
             }
         )
+
+
+def test_servicenow_verifier_accepts_unprefixed_x_servicenow_signature() -> None:
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    verifier = RotatingSharedSecretServiceNowWebhookVerifier(("sn-secret",))
+    connector = ServiceNowConnector(config=cfg, verifier=verifier)
+    payload = _fixture("emergency_change")
+    raw_body = json.dumps(payload).encode("utf-8")
+    signature = _hmac_sha256("sn-secret", raw_body)
+
+    event = connector.handle_event(
+        {
+            "headers": {
+                "x-servicenow-delivery-id": "delivery-sig-unprefixed",
+                "x-servicenow-signature": signature,
+            },
+            "payload": payload,
+            "raw_body": raw_body,
+        }
+    )
+
+    assert event["normalized_event"]["source_system"] == "servicenow"
 
 
 def test_servicenow_round_trip_source_payload_to_normalized_to_action_proposal() -> (
@@ -208,3 +233,10 @@ def test_servicenow_send_decision_writes_dlq_after_retry_exhaustion() -> None:
     )
     assert response["status"] == "delivery_failed"
     assert len(connector.dead_letter_items()) == 1
+
+
+def _hmac_sha256(secret: str, raw_body: bytes) -> str:
+    import hashlib
+    import hmac
+
+    return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
