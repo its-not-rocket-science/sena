@@ -1,9 +1,12 @@
-# SENA Production Deployment Guide
+# SENA Deployment Guide (Supported Product Path)
+
+> **Scope:** This guide is for the supported product only: deterministic Jira + ServiceNow approval decisioning with replayable audit evidence.
+> For Kubernetes admission-controller demo assets, see `docs/EXPERIMENTAL_INDEX.md`.
 
 ## Quick start matrix
-- **Kubernetes (Helm):** use `examples/k8s_admission_demo` as base values and wire secrets via your vault.
-- **Terraform:** create a module that provisions container runtime + managed PostgreSQL + secrets backend.
-- **Docker Compose (production variant):** run API, Postgres, Prometheus, and backup sidecar with auth enabled.
+- **Single-instance API (recommended for alpha/pilot):** run API + persistent SQLite volumes for policy, audit, and reliability data.
+- **Container-orchestrated runtime:** deploy the same supported API container behind your platform ingress/load balancer.
+- **Monitoring stack (optional):** `docker-compose-monitoring.yml` + `monitoring/` for metrics visualization.
 
 ## Environment variables
 - `SENA_RUNTIME_MODE=production`
@@ -22,26 +25,6 @@
 - In production mode (`SENA_RUNTIME_MODE=production`), enabling Jira or ServiceNow mappings requires `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH`.
 - Production startup fails fast if this path is missing or if `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true`.
 - In development/pilot, connector reliability defaults to durable SQLite; set `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true` only for demos/tests.
-
-## Kubernetes Helm chart pattern (examples)
-Use the `examples/k8s_admission_demo` assets as a reference and expose `/v1/health` and `/v1/ready` probes.
-
-## Terraform module guidance (AWS/GCP/Azure)
-Provision:
-1. Container platform (EKS/GKE/AKS or ECS/Cloud Run/App Service).
-2. Managed PostgreSQL.
-3. Secret store (Secrets Manager/Secret Manager/Key Vault).
-4. Observability stack (Prometheus-compatible scrape + logs).
-
-## Docker Compose production variant
-Recommended services:
-- `sena-api` (read-only rootfs, auth enabled)
-- `postgres` (primary data store)
-- `prometheus` + `grafana`
-- `backup` cron sidecar (`pg_dump` + audit artifact snapshots)
-
-## Scaling guidance
-SQLite is acceptable for local/dev and single-instance pilots. For production horizontal scaling, migrate policy and idempotency state to PostgreSQL and run multiple API replicas behind a load balancer.
 
 ## Backup / restore runbook
 1. Back up policy registry (`scripts/backup_policy_registry.py`).

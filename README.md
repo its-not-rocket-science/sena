@@ -1,8 +1,8 @@
 # SENA
 
-SENA is an **alpha policy decision layer for Jira + ServiceNow approval events**.
+SENA is an **alpha deterministic Jira + ServiceNow approval decisioning engine with replayable audit evidence**.
 
-The supported product path is intentionally narrow and implementation-backed: normalize Jira/ServiceNow approval payloads, evaluate them against versioned policy bundles, and return deterministic decisions with replayable audit evidence.
+The supported product path is intentionally narrow and implementation-backed: normalize Jira/ServiceNow approval payloads, evaluate them against versioned policy bundles, and return deterministic decisions plus replayable evidence artifacts.
 
 ## Supported product path (default)
 
@@ -17,6 +17,7 @@ Supported code path:
 - `src/sena/engine/*`
 - `src/sena/api/*`
 - `src/sena/cli/*`
+- `src/sena/audit/*`
 - `src/sena/integrations/jira.py`
 - `src/sena/integrations/servicenow.py`
 
@@ -32,15 +33,6 @@ Start here for supported docs and operator flow:
 - **experimental:** generic webhook, Slack interactions, LangChain callback, and non-core modules listed in `src/sena/MODULE_STATUS.md`.
 - **labs/demo:** investor/lab/k8s demo materials indexed in `docs/EXPERIMENTAL_INDEX.md`.
 - **legacy:** historical material only; no product guarantees.
-
-## Terminology standard
-
-- `supported`: contract-backed product behavior.
-- `experimental`: evaluation-only, may change without compatibility guarantees.
-- `labs/demo`: demo or exploration assets, not product contract.
-- `legacy`: historical material outside current product guarantees.
-- `canonical_replay_payload`: replay-stable decision artifact used for equality checks.
-- `operational_metadata`: runtime-only fields that are intentionally non-stable across runs.
 
 ## Deterministic replay contract
 
@@ -100,8 +92,7 @@ python -m uvicorn sena.api.app:app --reload
 
 Versioned endpoints are under `/v1/*`. OpenAPI is at `/openapi.json` and Swagger UI at `/docs`.
 
-## Additional indexes (non-default)
+## Non-default indexes
 
 - Experimental + labs index: `docs/EXPERIMENTAL_INDEX.md`
 - Legacy/historical archive: `docs/archive/legacy_vision.md`
-- Strategy and supporting materials: `docs/`

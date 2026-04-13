@@ -1,14 +1,15 @@
-# Experimental, Labs, and Demo Index
+# Experimental, Labs, and Demo Index (Non-default)
 
-Everything in this index is **explicitly non-supported** unless promoted into the supported path.
+Everything in this index is explicitly non-supported unless promoted into `README.md` + `docs/INDEX.md`.
 
 ## Experimental integration surfaces (evaluation-only)
 
 - Generic webhook: `src/sena/integrations/webhook.py`
 - Slack interactions: `src/sena/integrations/slack.py`
 - LangChain callback: `src/sena/integrations/langchain/`
+- Cookbook recipes with experimental scope: `COOKBOOK.md`
 
-## Demo/labs documentation
+## Labs/demo docs and collateral
 
 - `LABS.md`
 - `labs/INVESTOR_DEMO.md`
@@ -22,13 +23,14 @@ Everything in this index is **explicitly non-supported** unless promoted into th
 - `../examples/k8s_admission_demo/`
 - `../examples/langchain_demo/`
 
-## Historical material
+## Legacy/historical docs
 
 - `archive/legacy_vision.md`
+- `THIRTY_DAY_WEDGE_PLAN.md`
 
 ## Promotion rule
 
-Experimental/labs/demo material should be treated as product scope **only after**:
-1. code path hardening in `src/sena/*`,
-2. deterministic fixtures and tests,
-3. inclusion in supported indexes (`README.md`, `docs/INDEX.md`, `examples/README.md`).
+A non-default item is promoted to supported only after:
+1. code-path hardening in supported modules,
+2. deterministic fixtures + tests,
+3. inclusion in default indexes (`README.md`, `docs/INDEX.md`, `examples/README.md`).

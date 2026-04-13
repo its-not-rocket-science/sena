@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sena"
 dynamic = ["version"]
-description = "Alpha deterministic policy enforcement engine for AI-assisted enterprise approval workflows"
+description = "Alpha deterministic Jira + ServiceNow approval decisioning engine with replayable audit evidence"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
