@@ -1,5 +1,8 @@
 # 30-Day Wedge Plan: Scope Reduction for Design-Partner Wins
 
+> **Deprecated planning snapshot:** This document is historical context and not the supported product contract. Use `README.md` and `docs/INDEX.md` for current scope.
+
+
 ## One-sentence product definition
 Sena is a **change-governance gate for ServiceNow emergency and standard changes** that enforces policy checks and returns a signed approval/deny decision with immutable audit evidence in under 2 seconds.
 

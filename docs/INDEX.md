@@ -1,44 +1,35 @@
 # Documentation Index (Supported Path First)
 
-This index is the default entrypoint for product and engineering work.
-Scope labels follow README terminology: `supported`, `experimental`, `labs/demo`, and `legacy`.
+This is the default reader path.
 
-## 1) Supported docs (default path)
+**Product statement:** SENA is for deterministic Jira + ServiceNow approval decisioning with replayable audit evidence.
 
-- `CONTROL_PLANE.md` — implemented product surface and runtime contract.
-- `ARCHITECTURE.md` — supported vs experimental vs legacy boundaries.
-- `CANONICAL_WORKFLOW.md` — end-to-end supported workflow and evidence chain.
-- `INTEGRATION_ABSTRACTION.md` — normalization contract across Jira/ServiceNow.
-- `integrations/JIRA.md` and `integrations/SERVICENOW.md` — connector specifics.
-- `PILOT_ACCEPTANCE.md` and `DESIGN_PARTNER_READY.md` — practical readiness checks.
-- `../src/sena/MODULE_STATUS.md` — supported/experimental module surface map.
+Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 
-## 2) Operations and reliability
+## 1) Read this first (supported)
 
-- `OPERATIONS.md`
-- `SQLITE_OPERATIONS.md`
-- `BACKUP.md`
-- `DEPLOYMENT.md`
-- `DEPLOYMENT_PROFILES.md`
-- `AUDIT_DURABILITY.md`
-- `SECURITY_CHECKLIST.md`
+- `../README.md` — concise product scope, guarantees, and integration taxonomy.
+- `CONTROL_PLANE.md` — implemented runtime contract.
+- `ARCHITECTURE.md` — supported boundaries and non-goals.
+- `CANONICAL_WORKFLOW.md` — end-to-end supported workflow + evidence chain.
+- `integrations/JIRA.md` and `integrations/SERVICENOW.md` — supported connector contracts.
+- `OPERATIONS.md` — day-2 operator runbooks for supported surfaces.
+- `PILOT_ACCEPTANCE.md` — measurable acceptance criteria.
 
-## 3) Policy and lifecycle
+## 2) Supported engineering references
 
+- `INTEGRATION_ABSTRACTION.md`
+- `AUDIT_GUARANTEES.md`
+- `CANONICAL_ARTIFACT_CONTRACT.md`
 - `POLICY_LIFECYCLE.md`
 - `POLICY_SCHEMA_EVOLUTION.md`
 - `MIGRATIONS.md`
-- `MIGRATION.md`
 - `BUNDLE_SIGNING.md`
+- `../src/sena/MODULE_STATUS.md`
 
-## 4) Non-default materials
+## 3) Non-default materials
 
-Useful context, but not part of the supported default path:
+These are intentionally outside the default product-reader path:
 
-- Experimental/labs/demo index: `EXPERIMENTAL_INDEX.md`
+- Experimental/labs index: `EXPERIMENTAL_INDEX.md`
 - Historical archive: `archive/legacy_vision.md`
-- Narrative/strategy supplements (for context, not product contract):
-  - `COMPETITIVE_ADVANTAGE.md`
-  - `WHY_SENA_WINS.md`
-  - `NATURAL_SWITCHING_COST_STRATEGY.md`
-  - `PRODUCT_POSITIONING_DECISIONS.md`

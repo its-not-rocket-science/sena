@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a release helper script (`scripts/bump_version.py`) for deterministic version bumps.
 
 ### Changed
+- Tightened default product surface to deterministic Jira + ServiceNow approval decisioning with replayable audit evidence across README, docs indexing, package metadata, and API descriptions.
+- Added machine-readable product surface inventory at `product_surface_inventory.yaml` and a reclassification report at `docs/PRODUCT_SURFACE_RECLASSIFICATION_REPORT.md`.
+- Demoted non-core cookbook/labs/demo materials behind `docs/EXPERIMENTAL_INDEX.md` and added explicit deprecation/historical banners for stale planning content.
 - Repositioned product documentation (README, control plane, architecture) around deterministic governance claims and added explicit alpha maturity boundaries.
 - Standardized project version declarations to `0.3.0`.
 - Reconciled product story across README, roadmap, and core architecture/control-plane docs around one wedge: deterministic policy governance for Jira + ServiceNow approval workflows.
