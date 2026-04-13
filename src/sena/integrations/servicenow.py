@@ -294,7 +294,6 @@ class ServiceNowConnector(ApprovalConnectorBase):
             connector=self.source_system,
             target=record.target,
             dead_letter_id=dead_letter_id,
-            note=normalized_note,
         )
         return {"dead_letter_id": dead_letter_id, "status": "manually_redriven"}
 
