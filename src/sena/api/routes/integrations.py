@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from typing import Any
@@ -24,6 +25,15 @@ logger = get_logger(__name__)
 _DEFAULT_LIST_LIMIT = 100
 _MAX_LIST_LIMIT = 1000
 _MAX_NOTE_LENGTH = 1024
+_SENSITIVE_HEADER_NAMES = {
+    "authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "x-sena-signature",
+    "x-hub-signature-256",
+    "x-servicenow-signature",
+}
 
 
 def create_integrations_router(state: EngineState) -> APIRouter:
@@ -154,6 +164,36 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             failed=failed,
         )
 
+    def _redacted_headers(headers: dict[str, str]) -> dict[str, str]:
+        redacted: dict[str, str] = {}
+        for key, value in headers.items():
+            normalized = str(key).lower()
+            if normalized in _SENSITIVE_HEADER_NAMES:
+                redacted[key] = "<redacted>"
+                continue
+            rendered = str(value)
+            redacted[key] = rendered if len(rendered) <= 256 else f"{rendered[:256]}...(truncated)"
+        return redacted
+
+    def _integration_dead_letter_event(
+        *,
+        event_type: str,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        raw_body: bytes,
+        strict_require_allow: bool | None = None,
+    ) -> dict[str, Any]:
+        event: dict[str, Any] = {
+            "event_type": event_type,
+            "payload": payload,
+            "headers": _redacted_headers(headers),
+            "raw_body_sha256": hashlib.sha256(raw_body).hexdigest(),
+            "raw_body_bytes": len(raw_body),
+        }
+        if strict_require_allow is not None:
+            event["strict_require_allow"] = strict_require_allow
+        return event
+
     @router.post("/integrations/webhook", summary="Generic webhook policy evaluation")
     def integrations_webhook(
         req: WebhookEvaluateRequest,
@@ -269,23 +309,23 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     },
                 )
             state.processing_store.enqueue_dead_letter(
-                {
-                    "event_type": "jira_webhook",
-                    "payload": payload,
-                    "headers": dict(request.headers.items()),
-                    "raw_body": raw_body.decode("utf-8"),
-                },
+                _integration_dead_letter_event(
+                    event_type="jira_webhook",
+                    payload=payload,
+                    headers=dict(request.headers.items()),
+                    raw_body=raw_body,
+                ),
                 reason,
             )
             raise_api_error("jira_invalid_mapping", details={"reason": reason})
         except Exception as exc:  # pragma: no cover
             state.processing_store.enqueue_dead_letter(
-                {
-                    "event_type": "jira_webhook",
-                    "payload": payload,
-                    "headers": dict(request.headers.items()),
-                    "raw_body": raw_body.decode("utf-8"),
-                },
+                _integration_dead_letter_event(
+                    event_type="jira_webhook",
+                    payload=payload,
+                    headers=dict(request.headers.items()),
+                    raw_body=raw_body,
+                ),
                 str(exc),
             )
             raise_api_error("jira_evaluation_error", details={"reason": str(exc)})
@@ -364,25 +404,25 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     },
                 )
             state.processing_store.enqueue_dead_letter(
-                {
-                    "event_type": "servicenow_webhook",
-                    "payload": payload,
-                    "headers": dict(request.headers.items()),
-                    "raw_body": raw_body.decode("utf-8"),
-                    "strict_require_allow": strict_require_allow,
-                },
+                _integration_dead_letter_event(
+                    event_type="servicenow_webhook",
+                    payload=payload,
+                    headers=dict(request.headers.items()),
+                    raw_body=raw_body,
+                    strict_require_allow=strict_require_allow,
+                ),
                 reason,
             )
             raise_api_error("servicenow_invalid_mapping", details={"reason": reason})
         except Exception as exc:  # pragma: no cover
             state.processing_store.enqueue_dead_letter(
-                {
-                    "event_type": "servicenow_webhook",
-                    "payload": payload,
-                    "headers": dict(request.headers.items()),
-                    "raw_body": raw_body.decode("utf-8"),
-                    "strict_require_allow": strict_require_allow,
-                },
+                _integration_dead_letter_event(
+                    event_type="servicenow_webhook",
+                    payload=payload,
+                    headers=dict(request.headers.items()),
+                    raw_body=raw_body,
+                    strict_require_allow=strict_require_allow,
+                ),
                 str(exc),
             )
             raise_api_error("servicenow_evaluation_error", details={"reason": str(exc)})

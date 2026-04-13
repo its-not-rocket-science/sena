@@ -1462,6 +1462,36 @@ def test_jira_webhook_unsupported_event_returns_deterministic_error() -> None:
     assert response.json()["error"]["code"] == "jira_unsupported_event_type"
 
 
+def test_jira_webhook_dead_letter_redacts_headers_and_raw_body() -> None:
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+    raw_payload = b'{"issue":{"id":"100","key":"RISK-2"}}'
+
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-sena-signature": "secret-signature",
+            "authorization": "Bearer top-secret-token",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "jira_invalid_mapping"
+
+    dlq_items = app.state.engine_state.processing_store.list_dead_letters(limit=1)
+    recorded_event = json.loads(dlq_items[0]["event_json"])
+    assert recorded_event["raw_body_sha256"] == hashlib.sha256(raw_payload).hexdigest()
+    assert recorded_event["raw_body_bytes"] == len(raw_payload)
+    assert "raw_body" not in recorded_event
+    assert recorded_event["headers"]["x-sena-signature"] == "<redacted>"
+    assert recorded_event["headers"]["authorization"] == "<redacted>"
+
+
 def test_jira_webhook_signature_verification_accepts_current_and_previous_secret() -> None:
     app = create_app(
         _settings(
@@ -1681,6 +1711,36 @@ def test_servicenow_webhook_missing_actor_identity_returns_deterministic_error()
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "servicenow_missing_required_fields"
+
+
+def test_servicenow_webhook_dead_letter_redacts_headers_and_raw_body() -> None:
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+    raw_payload = b'{"change_request":{"number":"CHG001"}}'
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-signature": "sha256=super-secret-signature",
+            "x-api-key": "sensitive-key",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "servicenow_invalid_mapping"
+
+    dlq_items = app.state.engine_state.processing_store.list_dead_letters(limit=1)
+    recorded_event = json.loads(dlq_items[0]["event_json"])
+    assert recorded_event["raw_body_sha256"] == hashlib.sha256(raw_payload).hexdigest()
+    assert recorded_event["raw_body_bytes"] == len(raw_payload)
+    assert "raw_body" not in recorded_event
+    assert recorded_event["headers"]["x-servicenow-signature"] == "<redacted>"
+    assert recorded_event["headers"]["x-api-key"] == "<redacted>"
 
 
 def test_servicenow_webhook_audit_record_includes_source_metadata() -> None:
