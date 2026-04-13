@@ -9,6 +9,7 @@ Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 ## 1) Read this first (supported)
 
 - `../README.md` — concise product scope, guarantees, and integration taxonomy.
+- `FLAGSHIP_WORKFLOW.md` — default end-to-end workflow (run this first).
 - `CONTROL_PLANE.md` — implemented runtime contract.
 - `ARCHITECTURE.md` — supported boundaries and non-goals.
 - `CANONICAL_WORKFLOW.md` — end-to-end supported workflow + evidence chain.

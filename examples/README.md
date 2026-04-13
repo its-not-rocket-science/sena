@@ -6,13 +6,15 @@ This directory intentionally keeps the **supported operator path** narrow and pu
 
 These are the only examples that should be used for design-partner and production-adjacent workflows:
 
-1. `design_partner_reference/` — canonical Jira + ServiceNow governance pack (normalization, promotion gates, replay, audit evidence).
-2. `gated_promotion_flow.sh` — focused CLI promotion-gate walkthrough against the supported policy lifecycle.
-3. `basic_usage.py` — minimal evaluator invocation using the supported policy/runtime surface.
+1. `flagship/` — default emergency change approval story (normalized ServiceNow event, deterministic decision, replay artifact, audit verification).
+2. `design_partner_reference/` — canonical Jira + ServiceNow governance pack (normalization, promotion gates, replay, audit evidence).
+3. `gated_promotion_flow.sh` — focused CLI promotion-gate walkthrough against the supported policy lifecycle.
+4. `basic_usage.py` — minimal evaluator invocation using the supported policy/runtime surface.
 
 ### Supported run commands
 
 ```bash
+PYTHONPATH=src python examples/flagship/run_flagship.py
 PYTHONPATH=src python examples/basic_usage.py
 PYTHONPATH=src python examples/design_partner_reference/run_reference.py
 bash examples/gated_promotion_flow.sh

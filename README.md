@@ -8,6 +8,20 @@ The supported product path is intentionally narrow and implementation-backed: no
 
 If you only read one section, read this one.
 
+## Flagship workflow (start here)
+
+Run one realistic end-to-end workflow first: **ServiceNow emergency privileged change approval**.
+
+- Docs: `docs/FLAGSHIP_WORKFLOW.md`
+- Runnable example: `examples/flagship/`
+- Outcome: deterministic `BLOCKED` decision with replay + audit verification artifacts
+
+Quick run:
+
+```bash
+PYTHONPATH=src python examples/flagship/run_flagship.py
+```
+
 - Decision outcomes: `APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`
 - One normalized policy model across Jira and ServiceNow
 - Deterministic replay contract + hash-linked audit chain
@@ -22,6 +36,7 @@ Supported code path:
 - `src/sena/integrations/servicenow.py`
 
 Start here for supported docs and operator flow:
+- `docs/FLAGSHIP_WORKFLOW.md`
 - `docs/INDEX.md`
 - `docs/CONTROL_PLANE.md`
 - `docs/ARCHITECTURE.md`
