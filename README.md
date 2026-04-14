@@ -2,6 +2,8 @@
 
 SENA is an **alpha deterministic Jira + ServiceNow approval decisioning engine with replayable audit evidence**.
 
+Read `docs/READINESS.md` for explicit capability status by maturity level (implemented now, pilot-ready, and not yet production-grade).
+
 The supported product path is intentionally narrow and implementation-backed: normalize Jira/ServiceNow approval payloads, evaluate them against versioned policy bundles, and return deterministic decisions plus replayable evidence artifacts.
 
 ## Supported product path (default)
@@ -39,10 +41,13 @@ Start here for supported docs and operator flow:
 - `docs/FLAGSHIP_WORKFLOW.md`
 - `docs/INDEX.md`
 - `docs/CONTROL_PLANE.md`
+- `docs/READINESS.md`
 - `docs/ARCHITECTURE.md`
 - `examples/README.md` (supported examples first)
 
 ## Explicit scope boundaries
+
+Maturity labels are normative: treat only what is marked pilot-ready in `docs/READINESS.md` as suitable for pilot deployment.
 
 - **supported:** Jira + ServiceNow decisioning and evidence path above.
 - **experimental:** generic webhook, Slack interactions, LangChain callback, and non-core modules listed in `src/sena/MODULE_STATUS.md`.

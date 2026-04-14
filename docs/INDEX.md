@@ -11,6 +11,7 @@ Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 - `../README.md` — concise product scope, guarantees, and integration taxonomy.
 - `FLAGSHIP_WORKFLOW.md` — default end-to-end workflow (run this first).
 - `CONTROL_PLANE.md` — implemented runtime contract.
+- `READINESS.md` — explicit maturity model (implemented, pilot-ready, not production-grade).
 - `ARCHITECTURE.md` — supported boundaries and non-goals.
 - `CANONICAL_WORKFLOW.md` — end-to-end supported workflow + evidence chain.
 - `integrations/JIRA.md` and `integrations/SERVICENOW.md` — supported connector contracts.
