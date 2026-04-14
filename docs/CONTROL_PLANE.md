@@ -1,5 +1,7 @@
 # SENA Control Plane (Alpha)
 
+Read `READINESS.md` for the canonical maturity model and explicit production-grade gaps.
+
 Terminology follows README: `supported`, `experimental`, `labs/demo`, and `legacy`.
 
 ## Supported product (current scope)
@@ -20,16 +22,9 @@ The supported path is concrete and implemented: ingest Jira/ServiceNow approval 
 4. Hash-linked audit records with verification endpoints.
 5. Policy lifecycle state transitions.
 
-## Honest maturity statement
+## Maturity statement
 
-SENA is **alpha**: pilot-prep infrastructure, not a complete enterprise control plane.
-
-Not yet complete as built-in platform controls:
-- full enterprise tenancy administration,
-- full OIDC/RBAC admin UX,
-- replicated/WORM-native audit storage,
-- async long-running orchestration for large simulation workloads,
-- full policy authoring/collaboration UI.
+SENA is **alpha**. Pilot suitability and production gaps are defined in `READINESS.md`; this document only describes the implemented control-plane scope.
 
 ## Non-goals (current phase)
 
