@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 from sena.api.config import ApiSettings
@@ -18,6 +19,9 @@ from sena.services.reliability_service import (
     RedisIngestionQueue,
     ReliabilityService,
 )
+from sena.storage_backends import get_capability
+
+logger = logging.getLogger(__name__)
 
 VALID_API_ROLES = {
     "admin",
@@ -246,6 +250,43 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
     _validate_reliability_sqlite_path(runtime_settings)
     _validate_production_startup_requirements(runtime_settings)
     _validate_operational_limits(runtime_settings)
+    _warn_or_fail_for_storage_profiles(runtime_settings)
+
+
+def _warn_or_fail_for_storage_profiles(runtime_settings: ApiSettings) -> None:
+    selected: list[tuple[str, str]] = [
+        ("audit", runtime_settings.audit_storage_backend),
+        ("policy_bundle", runtime_settings.policy_store_backend),
+        ("runtime_processing", "sqlite"),
+        ("ingestion_queue", runtime_settings.ingestion_queue_backend),
+    ]
+    reliability_backend = (
+        "inmemory"
+        if runtime_settings.integration_reliability_allow_inmemory
+        else "sqlite"
+    )
+    selected.append(("integration_reliability", reliability_backend))
+
+    for concern, backend in selected:
+        capability = get_capability(concern, backend)
+        if capability is None:
+            continue
+        if runtime_settings.runtime_mode == "production":
+            if capability.deployment_suitability == "local_dev":
+                raise RuntimeError(
+                    "SENA_RUNTIME_MODE=production forbids local/dev storage backend "
+                    f"'{backend}' for concern '{concern}'. {capability.notes}"
+                )
+            if capability.deployment_suitability == "pilot":
+                logger.warning(
+                    "Production startup using pilot storage backend '%s' for '%s'. "
+                    "Concurrency model: %s. Durability assumptions: %s. Notes: %s",
+                    backend,
+                    concern,
+                    capability.concurrency_model,
+                    capability.durability_assumptions,
+                    capability.notes,
+                )
 
 
 def _validate_runtime_mode_and_policy_store(runtime_settings: ApiSettings) -> None:

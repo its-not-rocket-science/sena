@@ -27,6 +27,7 @@ Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 - `POLICY_SCHEMA_EVOLUTION.md`
 - `MIGRATIONS.md`
 - `BUNDLE_SIGNING.md`
+- `STORAGE_BACKENDS.md`
 - `../src/sena/MODULE_STATUS.md`
 
 ## 3) Non-default materials

@@ -4,7 +4,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 
 class QueueOverflowError(RuntimeError):
@@ -13,6 +13,12 @@ class QueueOverflowError(RuntimeError):
 
 class CircuitBreakerOpenError(RuntimeError):
     """Raised when a dependency is short-circuited due to repeated failures."""
+
+
+class IngestionQueueBackend(Protocol):
+    def enqueue(self, event: dict[str, Any]) -> int: ...
+    def pop(self) -> dict[str, Any] | None: ...
+    def depth(self) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -154,7 +160,7 @@ class ReliabilityService:
     def __init__(
         self,
         *,
-        ingestion_queue: Any,
+        ingestion_queue: IngestionQueueBackend,
         circuit_breakers: dict[str, CircuitBreaker] | None = None,
     ) -> None:
         self.ingestion_queue = ingestion_queue

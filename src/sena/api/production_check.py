@@ -14,6 +14,7 @@ from sena.integrations.webhook import load_webhook_mapping_config
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.release_signing import verify_release_manifest
 from sena.policy.store import SQLitePolicyBundleRepository
+from sena.storage_backends import get_capability
 
 VALID_API_ROLES = {"admin", "policy_author", "reviewer", "deployer", "auditor"}
 VALID_RUNTIME_MODES = {"development", "pilot", "production"}
@@ -187,6 +188,33 @@ def _validate_env_coherence(settings: ApiSettings) -> list[str]:
     return errors
 
 
+def _storage_backend_profile_warnings(settings: ApiSettings) -> list[str]:
+    warnings: list[str] = []
+    selected: list[tuple[str, str]] = [
+        ("audit", settings.audit_storage_backend),
+        ("policy_bundle", settings.policy_store_backend),
+        ("runtime_processing", "sqlite"),
+        ("ingestion_queue", settings.ingestion_queue_backend),
+    ]
+    reliability_backend = (
+        "inmemory" if settings.integration_reliability_allow_inmemory else "sqlite"
+    )
+    selected.append(("integration_reliability", reliability_backend))
+    for concern, backend in selected:
+        capability = get_capability(concern, backend)
+        if capability is None or settings.runtime_mode != "production":
+            continue
+        if capability.deployment_suitability == "local_dev":
+            warnings.append(
+                f"unsafe local/dev backend selected in production: {concern}={backend}"
+            )
+        elif capability.deployment_suitability == "pilot":
+            warnings.append(
+                f"pilot backend selected in production: {concern}={backend}"
+            )
+    return warnings
+
+
 def _policy_backend_ready(settings: ApiSettings) -> list[str]:
     errors: list[str] = []
     if settings.policy_store_backend == "sqlite":
@@ -310,6 +338,11 @@ def run_production_readiness_check(settings: ApiSettings) -> dict[str, Any]:
         "integration mapping existence and schema validity",
         fatal=True,
         details=integration_details,
+    )
+    add(
+        "storage backend suitability",
+        fatal=True,
+        details=_storage_backend_profile_warnings(settings),
     )
 
     audit_details: list[str] = []

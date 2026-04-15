@@ -2202,6 +2202,27 @@ def test_startup_allows_secret_rotation_with_previous_jira_secret_in_production(
     assert app.state.engine_state.jira_connector is not None
 
 
+def test_startup_logs_storage_profile_warnings_in_production(tmp_path, caplog) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    caplog.set_level("WARNING")
+
+    create_app(
+        _settings(
+            runtime_mode="production",
+            enable_api_key_auth=True,
+            api_key="secret",
+            audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+            bundle_signature_strict=True,
+            bundle_signature_keyring_dir=str(keyring_dir),
+        )
+    )
+
+    assert any(
+        "pilot storage backend" in message for message in caplog.messages
+    )
+
+
 def test_startup_fails_in_production_when_jira_enabled_without_mapping_config(
     tmp_path,
 ) -> None:
