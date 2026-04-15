@@ -30,7 +30,7 @@ class AuditStorage(ABC):
 
 
 @dataclass
-class LocalFileStorage(AuditStorage):
+class DevelopmentJsonlAuditStorage(AuditStorage):
     path: str
 
     def append(self, entry: dict[str, Any]) -> str:
@@ -57,12 +57,14 @@ class LocalFileStorage(AuditStorage):
 
 
 @dataclass
-class SQLiteAppendOnlyStorage(AuditStorage):
+class PilotSQLiteAppendOnlyAuditStorage(AuditStorage):
     sqlite_path: str
     table_name: str = "audit_log"
 
     def _sink(self) -> SQLiteAppendOnlyAuditSink:
-        return SQLiteAppendOnlyAuditSink(sqlite_path=self.sqlite_path, table_name=self.table_name)
+        return SQLiteAppendOnlyAuditSink(
+            sqlite_path=self.sqlite_path, table_name=self.table_name
+        )
 
     def append(self, entry: dict[str, Any]) -> str:
         payload = dict(entry)
@@ -202,13 +204,15 @@ def storage_from_env(audit_sink_jsonl: str | None) -> AuditStorage | None:
                 "SENA_AUDIT_SINK_JSONL must be configured for local_file backend"
             )
         Path(audit_sink_jsonl).parent.mkdir(parents=True, exist_ok=True)
-        return LocalFileStorage(path=audit_sink_jsonl)
+        return DevelopmentJsonlAuditStorage(path=audit_sink_jsonl)
     if backend == "sqlite_append_only":
         sqlite_path = os.getenv("SENA_AUDIT_SQLITE_PATH")
         table_name = os.getenv("SENA_AUDIT_SQLITE_TABLE", "audit_log")
         if not sqlite_path:
             raise AuditStorageError("SENA_AUDIT_SQLITE_PATH is required")
-        return SQLiteAppendOnlyStorage(sqlite_path=sqlite_path, table_name=table_name)
+        return PilotSQLiteAppendOnlyAuditStorage(
+            sqlite_path=sqlite_path, table_name=table_name
+        )
     if backend == "s3_object_lock":
         bucket = os.getenv("SENA_AUDIT_S3_BUCKET")
         prefix = os.getenv("SENA_AUDIT_S3_PREFIX", "sena/audit")
@@ -232,3 +236,8 @@ def storage_from_env(audit_sink_jsonl: str | None) -> AuditStorage | None:
             retention_days=days,
         )
     raise AuditStorageError(f"Unsupported SENA_AUDIT_STORAGE_BACKEND: {backend}")
+
+
+# Backward-compatible aliases for prior names.
+LocalFileStorage = DevelopmentJsonlAuditStorage
+SQLiteAppendOnlyStorage = PilotSQLiteAppendOnlyAuditStorage

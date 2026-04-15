@@ -5,7 +5,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from sena.integrations.approval import DeadLetterItem
 
@@ -35,8 +35,31 @@ class OutboundDeadLetterRecord:
     created_at: str
 
 
-class SQLiteIntegrationReliabilityStore:
-    """Durable SQLite-backed stores for connector reliability state."""
+class IntegrationReliabilityStore(Protocol):
+    def mark_if_new(self, delivery_id: str) -> bool: ...
+
+    def mark_completed(
+        self,
+        operation_key: str,
+        *,
+        target: str,
+        payload: dict[str, Any],
+        result: dict[str, Any] | None,
+        attempts: int,
+        max_attempts: int,
+    ) -> None: ...
+
+    def has_completed(self, operation_key: str) -> bool: ...
+
+    def get_completion(self, operation_key: str) -> DeliveryCompletionRecord | None: ...
+
+    def push(self, item: DeadLetterItem) -> None: ...
+
+    def items(self) -> list[DeadLetterItem]: ...
+
+
+class PilotSQLiteIntegrationReliabilityStore:
+    """Pilot-grade SQLite-backed stores for connector reliability state."""
 
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -525,3 +548,7 @@ class SQLiteIntegrationReliabilityStore:
             "manual_redrive_total": int(manual["total"]),
             "duplicate_suppression": self.duplicate_suppression_summary(),
         }
+
+
+# Backward-compatible alias for older naming.
+SQLiteIntegrationReliabilityStore = PilotSQLiteIntegrationReliabilityStore

@@ -8,9 +8,23 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 logger = logging.getLogger(__name__)
+
+
+class RuntimeStateStore(Protocol):
+    """Contract for runtime state persistence (idempotency, DLQ, explanations)."""
+
+    def get_idempotency_response(self, key: str) -> str | None: ...
+
+    def store_idempotency_response(
+        self, key: str, response_json: str, *, ttl_hours: int
+    ) -> None: ...
+
+    def enqueue_dead_letter(self, event: dict[str, Any], error: str) -> int: ...
+
+    def list_dead_letters(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
 
 
 class ProcessingStore:
