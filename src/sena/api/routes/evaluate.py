@@ -11,14 +11,24 @@ from sena.api.schemas import (
     DecisionAttestationSignRequest,
     DecisionAttestationsResponse,
     EvaluateRequest,
+    JobAcceptedResponse,
+    JobResultResponse,
+    JobStatusResponse,
     ReplayDriftRequest,
+    SimulationJobSubmitRequest,
     SimulationReplayRequest,
     SimulationRequest,
 )
+from sena.services.async_jobs import TERMINAL_JOB_STATUSES, JobRecord
 from sena.services.audit_service import AuditService
 from sena.services.evaluation_service import EvaluationService
 from sena.services.reliability_service import QueueOverflowError
-from sena.verification import DecisionAttestation, VERIFIER_ROLE, sign_attestation, verify_attestation_signature
+from sena.verification import (
+    DecisionAttestation,
+    VERIFIER_ROLE,
+    sign_attestation,
+    verify_attestation_signature,
+)
 
 ERROR_RESPONSES = {
     400: {"description": "Invalid request or evaluation failure."},
@@ -61,6 +71,25 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
         if "status" not in payload:
             payload["status"] = "ok"
         return payload
+
+    def _serialize_job(record: JobRecord) -> dict:
+        return JobStatusResponse(**record.to_status_payload()).model_dump()
+
+    def _simulation_payload(req: SimulationRequest) -> dict:
+        return evaluation_service.simulate_policy_change(
+            baseline_policy_dir=req.baseline_policy_dir,
+            candidate_policy_dir=req.candidate_policy_dir,
+            scenarios=[item.model_dump() for item in req.scenarios],
+        )
+
+    def _submit_simulation_job(req: SimulationJobSubmitRequest) -> dict:
+        record = state.job_manager.submit(
+            runner=lambda: _ok(_simulation_payload(req)),
+            timeout_seconds=req.timeout_seconds,
+        )
+        return JobAcceptedResponse(
+            status="accepted", job=JobStatusResponse(**record.to_status_payload())
+        ).model_dump()
 
     @router.post(
         "/evaluate",
@@ -132,20 +161,78 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
     def evaluate_batch(req: BatchEvaluateRequest, request: Request) -> dict:
         return _ok(
             {
-            "count": len(req.items),
-            "results": [_evaluate(item, request) for item in req.items],
+                "count": len(req.items),
+                "results": [_evaluate(item, request) for item in req.items],
             }
         )
 
     @router.post("/simulation", summary="Simulate bundle impact")
-    def simulation(req: SimulationRequest) -> dict:
-        return _ok(
-            evaluation_service.simulate_policy_change(
-                baseline_policy_dir=req.baseline_policy_dir,
-                candidate_policy_dir=req.candidate_policy_dir,
-                scenarios=[item.model_dump() for item in req.scenarios],
+    def simulation(
+        req: SimulationRequest,
+        execution_mode: str = Query(default="auto", pattern="^(sync|async|auto)$"),
+    ) -> dict:
+        sync_fast_path_limit = 25
+        if execution_mode == "sync":
+            return _ok(_simulation_payload(req))
+        if execution_mode == "auto" and len(req.scenarios) <= sync_fast_path_limit:
+            return _ok(_simulation_payload(req))
+        submit_req = SimulationJobSubmitRequest(**req.model_dump())
+        return _submit_simulation_job(submit_req)
+
+    @router.post(
+        "/jobs/simulation",
+        response_model=JobAcceptedResponse,
+        summary="Submit simulation as asynchronous job",
+    )
+    def submit_simulation_job(req: SimulationJobSubmitRequest) -> dict:
+        return _submit_simulation_job(req)
+
+    @router.get(
+        "/jobs/{job_id}",
+        response_model=JobStatusResponse,
+        summary="Get asynchronous job status",
+    )
+    def get_job_status(job_id: str) -> dict:
+        record = state.job_manager.get(job_id)
+        if record is None:
+            raise_api_error("http_not_found", message=f"Job not found for '{job_id}'.")
+        return _serialize_job(record)
+
+    @router.get(
+        "/jobs/{job_id}/result",
+        response_model=JobResultResponse,
+        summary="Fetch asynchronous job result payload",
+    )
+    def get_job_result(job_id: str) -> dict:
+        record = state.job_manager.get(job_id)
+        if record is None:
+            raise_api_error("http_not_found", message=f"Job not found for '{job_id}'.")
+        if record.status == "succeeded" and isinstance(record.result, dict):
+            return JobResultResponse(
+                job_id=job_id, status="succeeded", result=record.result
+            ).model_dump()
+        if record.status in TERMINAL_JOB_STATUSES:
+            raise_api_error(
+                "http_bad_request",
+                message=f"Job '{job_id}' completed with status '{record.status}' and has no result.",
+                details={"job": _serialize_job(record)},
             )
+        raise_api_error(
+            "http_bad_request",
+            message=f"Job '{job_id}' is not complete yet.",
+            details={"job": _serialize_job(record)},
         )
+
+    @router.post(
+        "/jobs/{job_id}/cancel",
+        response_model=JobStatusResponse,
+        summary="Request asynchronous job cancellation",
+    )
+    def cancel_job(job_id: str) -> dict:
+        record = state.job_manager.cancel(job_id)
+        if record is None:
+            raise_api_error("http_not_found", message=f"Job not found for '{job_id}'.")
+        return _serialize_job(record)
 
     @router.post("/replay/drift", summary="Replay historical payloads for drift")
     def replay_drift(req: ReplayDriftRequest) -> dict:

@@ -28,7 +28,18 @@ class EvaluateRequest(EvaluatePayload):
 
 
 class WebhookEvaluateRequest(BaseModel):
-    model_config = ConfigDict(json_schema_extra={"example": {"provider": "jira", "event_type": "issue_updated", "payload": {"id": "ISSUE-101"}, "facts": {}, "default_decision": "APPROVED", "strict_require_allow": False}})
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "provider": "jira",
+                "event_type": "issue_updated",
+                "payload": {"id": "ISSUE-101"},
+                "facts": {},
+                "default_decision": "APPROVED",
+                "strict_require_allow": False,
+            }
+        }
+    )
     provider: NonEmptyStr
     event_type: NonEmptyStr
     tenant_id: str | None = None
@@ -44,7 +55,18 @@ class WebhookEvaluateRequest(BaseModel):
 
 
 class BatchEvaluateRequest(BaseModel):
-    model_config = ConfigDict(json_schema_extra={"example": {"items": [{"action_type": "approve_vendor_payment", "attributes": {"amount": 500, "vendor_verified": True}}]}})
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "items": [
+                    {
+                        "action_type": "approve_vendor_payment",
+                        "attributes": {"amount": 500, "vendor_verified": True},
+                    }
+                ]
+            }
+        }
+    )
     items: list[EvaluateRequest] = Field(min_length=1, max_length=500)
 
 
@@ -80,6 +102,33 @@ class SimulationReplayRequest(BaseModel):
     proposed_policy_dir: NonEmptyStr
     window: Literal["last_1_hour", "last_1_day"] = "last_1_hour"
     max_samples: int = Field(default=10, ge=1, le=100)
+
+
+class SimulationJobSubmitRequest(SimulationRequest):
+    timeout_seconds: float | None = Field(default=None, gt=0)
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: Literal[
+        "queued", "running", "succeeded", "failed", "cancelled", "timed_out"
+    ]
+    submitted_at: str
+    started_at: str | None = None
+    completed_at: str | None = None
+    result_ref: str | None = None
+    error: dict[str, Any] | None = None
+
+
+class JobAcceptedResponse(BaseModel):
+    status: Literal["accepted"] = "accepted"
+    job: JobStatusResponse
+
+
+class JobResultResponse(BaseModel):
+    job_id: str
+    status: Literal["succeeded"] = "succeeded"
+    result: dict[str, Any]
 
 
 class ExceptionScopeRequest(BaseModel):
@@ -139,7 +188,9 @@ class BundleRegisterRequest(BaseModel):
     policy_dir: str | None = None
     bundle_name: str | None = None
     bundle_version: str | None = None
-    lifecycle: Literal["draft", "candidate", "approved", "active", "deprecated"] = "draft"
+    lifecycle: Literal["draft", "candidate", "approved", "active", "deprecated"] = (
+        "draft"
+    )
     created_by: NonEmptyStr = "system"
     creation_reason: str | None = None
     source_bundle_id: int | None = Field(default=None, gt=0)
@@ -185,7 +236,9 @@ class BundleRollbackRequest(BaseModel):
         if self.to_bundle_id is None and not self.version:
             raise ValueError("rollback requires either to_bundle_id or version")
         if self.to_bundle_id is not None and self.version:
-            raise ValueError("rollback target must specify only one of to_bundle_id or version")
+            raise ValueError(
+                "rollback target must specify only one of to_bundle_id or version"
+            )
         return self
 
 
