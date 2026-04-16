@@ -160,35 +160,24 @@ class PilotSQLiteIntegrationReliabilityStore:
     def mark_if_new(self, delivery_id: str) -> bool:
         observed_at = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
-            existing = conn.execute(
-                "SELECT seen_count, suppressed_count FROM delivery_idempotency_keys WHERE delivery_id = ?",
-                (delivery_id,),
-            ).fetchone()
-            if existing is None:
-                conn.execute(
-                    """
-                    INSERT INTO delivery_idempotency_keys (
-                        delivery_id, observed_at, last_seen_at, seen_count, suppressed_count
-                    )
-                    VALUES (?, ?, ?, 1, 0)
-                    """,
-                    (delivery_id, observed_at, observed_at),
-                )
-                return True
             conn.execute(
                 """
-                UPDATE delivery_idempotency_keys
-                SET last_seen_at = ?, seen_count = ?, suppressed_count = ?
-                WHERE delivery_id = ?
+                INSERT INTO delivery_idempotency_keys (
+                    delivery_id, observed_at, last_seen_at, seen_count, suppressed_count
+                )
+                VALUES (?, ?, ?, 1, 0)
+                ON CONFLICT(delivery_id) DO UPDATE SET
+                    last_seen_at = excluded.last_seen_at,
+                    seen_count = delivery_idempotency_keys.seen_count + 1,
+                    suppressed_count = delivery_idempotency_keys.suppressed_count + 1
                 """,
-                (
-                    observed_at,
-                    int(existing["seen_count"]) + 1,
-                    int(existing["suppressed_count"]) + 1,
-                    delivery_id,
-                ),
+                (delivery_id, observed_at, observed_at),
             )
-            return False
+            row = conn.execute(
+                "SELECT seen_count FROM delivery_idempotency_keys WHERE delivery_id = ?",
+                (delivery_id,),
+            ).fetchone()
+            return bool(row and int(row["seen_count"]) == 1)
 
     def mark_completed(
         self,
@@ -291,32 +280,18 @@ class PilotSQLiteIntegrationReliabilityStore:
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT suppressed_count, first_suppressed_at
-                FROM outbound_delivery_duplicate_suppression
-                WHERE operation_key = ?
-                """,
-                (operation_key,),
-            ).fetchone()
-            if row is None:
-                conn.execute(
-                    """
-                    INSERT INTO outbound_delivery_duplicate_suppression (
-                        operation_key, target, first_suppressed_at, last_suppressed_at, suppressed_count
-                    )
-                    VALUES (?, ?, ?, ?, 1)
-                    """,
-                    (operation_key, target, now, now),
-                )
-                return
             conn.execute(
                 """
-                UPDATE outbound_delivery_duplicate_suppression
-                SET last_suppressed_at = ?, suppressed_count = ?
-                WHERE operation_key = ?
+                INSERT INTO outbound_delivery_duplicate_suppression (
+                    operation_key, target, first_suppressed_at, last_suppressed_at, suppressed_count
+                )
+                VALUES (?, ?, ?, ?, 1)
+                ON CONFLICT(operation_key) DO UPDATE SET
+                    last_suppressed_at = excluded.last_suppressed_at,
+                    suppressed_count =
+                        outbound_delivery_duplicate_suppression.suppressed_count + 1
                 """,
-                (now, int(row["suppressed_count"]) + 1, operation_key),
+                (operation_key, target, now, now),
             )
 
     def items(self) -> list[DeadLetterItem]:
