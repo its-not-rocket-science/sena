@@ -313,6 +313,8 @@ class SQLitePolicyBundleRepository:
                         f"bundle id '{bundle_id}' not found"
                     )
                 source = row["lifecycle"]
+                if source == target_lifecycle:
+                    return
                 if (source, target_lifecycle) not in ALLOWED_TRANSITIONS:
                     raise PolicyBundleInvalidTransitionError(
                         f"invalid lifecycle transition '{source}' -> '{target_lifecycle}'"
@@ -737,4 +739,3 @@ class SQLitePolicyBundleRepository:
         hashes = sorted(cls._rule_hash(rule) for rule in rules)
         canonical = json.dumps(hashes, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-

@@ -18,6 +18,8 @@ class RuntimeStateStore(Protocol):
 
     def get_idempotency_response(self, key: str) -> str | None: ...
 
+    def get_idempotency_entry(self, key: str) -> tuple[str, str | None] | None: ...
+
     def store_idempotency_response(
         self, key: str, response_json: str, *, ttl_hours: int
     ) -> None: ...
@@ -45,11 +47,19 @@ class ProcessingStore:
                 CREATE TABLE IF NOT EXISTS idempotency_keys (
                     key TEXT PRIMARY KEY,
                     response_json TEXT NOT NULL,
+                    request_fingerprint TEXT,
                     expires_at TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 )
                 """
             )
+            columns = {
+                str(row["name"]) for row in conn.execute("PRAGMA table_info(idempotency_keys)")
+            }
+            if "request_fingerprint" not in columns:
+                conn.execute(
+                    "ALTER TABLE idempotency_keys ADD COLUMN request_fingerprint TEXT"
+                )
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS dead_letter_queue (
@@ -152,11 +162,15 @@ class ProcessingStore:
             return int(cur.lastrowid)
 
     def get_idempotency_response(self, key: str) -> str | None:
+        entry = self.get_idempotency_entry(key)
+        return entry[0] if entry else None
+
+    def get_idempotency_entry(self, key: str) -> tuple[str, str | None] | None:
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._conn() as conn:
             row = conn.execute(
                 """
-                SELECT response_json
+                SELECT response_json, request_fingerprint
                 FROM idempotency_keys
                 WHERE key = ? AND expires_at > ?
                 """,
@@ -169,20 +183,40 @@ class ProcessingStore:
             entity_id=key,
             metadata={"cache_hit": hit},
         )
-        return str(row["response_json"]) if row else None
+        if row is None:
+            return None
+        fingerprint = row["request_fingerprint"]
+        return str(row["response_json"]), str(fingerprint) if fingerprint is not None else None
 
     def store_idempotency_response(
-        self, key: str, response_json: str, *, ttl_hours: int
+        self,
+        key: str,
+        response_json: str,
+        *,
+        ttl_hours: int,
+        request_fingerprint: str | None = None,
     ) -> None:
         now = datetime.now(timezone.utc)
         expires_at = (now + timedelta(hours=ttl_hours)).isoformat()
         with self._lock, self._conn() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO idempotency_keys(key, response_json, expires_at, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT OR REPLACE INTO idempotency_keys(
+                    key,
+                    response_json,
+                    request_fingerprint,
+                    expires_at,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (key, response_json, expires_at, now.isoformat()),
+                (
+                    key,
+                    response_json,
+                    request_fingerprint,
+                    expires_at,
+                    now.isoformat(),
+                ),
             )
         self.record_data_access_event(
             event_type="write",
