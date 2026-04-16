@@ -5,6 +5,7 @@ from typing import Any, Callable
 from sena import __version__ as SENA_VERSION
 from sena.audit.chain import verify_audit_chain
 from sena.audit.verification_service import DailyAuditVerificationService
+from sena.api.auth import build_auth_manager
 from sena.api.config import ApiSettings, load_settings_from_env
 from sena.api.error_handlers import error_payload, register_error_handlers
 from sena.api.logging import configure_logging
@@ -75,14 +76,18 @@ def build_app(state):
         docs_url="/docs",
         description=(
             "Deterministic Jira + ServiceNow approval decisioning API with replayable audit evidence.\n\n"
-            "Authentication: pass `X-API-Key: <key>` on every protected request. "
-            "Set keys via `SENA_API_KEYS` (comma-separated) and role mappings via "
-            "`SENA_API_KEY_ROLES`."
+            "Authentication: pass either `X-API-Key: <key>` or `Authorization: Bearer <token>` "
+            "on protected requests. Configure API-key mode with `SENA_API_KEYS` and JWT mode with "
+            "`SENA_JWT_AUTH_ENABLED` + JWT verification settings."
         ),
     )
     app.state.engine_state = state
 
     api_key_roles = build_api_key_roles(state.settings)
+    auth_manager = build_auth_manager(
+        settings=state.settings,
+        api_key_roles=api_key_roles,
+    )
     rate_limiter = FixedWindowRateLimiter(
         max_requests=state.settings.rate_limit_requests,
         window_seconds=state.settings.rate_limit_window_seconds,
@@ -90,7 +95,7 @@ def build_app(state):
     register_request_middleware(
         app,
         state=state,
-        api_key_roles=api_key_roles,
+        auth_manager=auth_manager,
         rate_limiter=rate_limiter,
     )
     register_error_handlers(app)

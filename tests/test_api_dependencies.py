@@ -9,13 +9,13 @@ from sena.api.dependencies import verify_api_key
 
 
 def test_verify_api_key_accepts_configured_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SENA_API_KEYS", "alpha,beta,gamma")
+    monkeypatch.setenv("SENA_API_KEYS", "alpha:admin,beta:reviewer,gamma:auditor")
 
     assert asyncio.run(verify_api_key("beta")) == "beta"
 
 
 def test_verify_api_key_rejects_unconfigured_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SENA_API_KEYS", "alpha,beta")
+    monkeypatch.setenv("SENA_API_KEYS", "alpha:admin,beta:reviewer")
 
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(verify_api_key("delta"))

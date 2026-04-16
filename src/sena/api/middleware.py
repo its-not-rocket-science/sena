@@ -11,6 +11,11 @@ from fastapi.responses import JSONResponse
 
 from sena.api.error_handlers import error_payload
 from sena.api.logging import bind_request_context, clear_request_context, get_logger
+from sena.api.auth import (
+    AuthError,
+    AuthManager,
+    evaluate_policy_actor_identity,
+)
 from sena.api.runtime import EngineState, evaluate_abac_policy, is_role_allowed
 from sena.services.audit_service import AuditService
 
@@ -42,7 +47,7 @@ def register_request_middleware(
     app: FastAPI,
     *,
     state: EngineState,
-    api_key_roles: dict[str, str],
+    auth_manager: AuthManager,
     rate_limiter: FixedWindowRateLimiter,
 ) -> None:
     @app.middleware("http")
@@ -132,16 +137,18 @@ def register_request_middleware(
 
         request._receive = _receive  # type: ignore[attr-defined]
 
-        if state.settings.enable_api_key_auth:
-            provided = request.headers.get("x-api-key")
-            role = api_key_roles.get(provided or "")
-            if role is None:
-                return _json_error(401, "unauthorized", "Missing or invalid API key")
-            client_key = provided
-            request.state.api_role = role
+        try:
+            principal = auth_manager.authenticate_request(request)
+        except AuthError as exc:
+            return _json_error(exc.status_code, exc.code, exc.message)
+        request.state.auth_principal = principal
+        request.state.api_role = principal.role if principal else ""
+        if principal is not None:
+            client_key = principal.subject
+            role = principal.role
             if not is_role_allowed(role, request.method, request.url.path):
                 return _json_error(
-                    403, "forbidden", "API key role is not authorized for this endpoint"
+                    403, "forbidden", "Authenticated role is not authorized for this endpoint"
                 )
             body_payload: dict[str, Any] = {}
             if body:
@@ -160,6 +167,18 @@ def register_request_middleware(
                 or body_payload.get("bundle_name")
             )
             action_type = body_payload.get("action_type")
+            actor_identity_decision = evaluate_policy_actor_identity(
+                principal=principal,
+                request_path=request.url.path,
+                body_payload=body_payload,
+                enforce=state.settings.enforce_policy_actor_identity,
+            )
+            if not actor_identity_decision.allowed:
+                return _json_error(
+                    403,
+                    "forbidden",
+                    actor_identity_decision.reason or "Policy actor identity denied request",
+                )
             abac_allowed, abac_reason = evaluate_abac_policy(
                 role=role,
                 environment=environment,

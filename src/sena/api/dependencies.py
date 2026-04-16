@@ -18,7 +18,14 @@ def get_engine_state(request: Request) -> EngineState:
 
 def _load_valid_api_keys() -> tuple[str, ...]:
     raw_keys = os.getenv("SENA_API_KEYS", "")
-    return tuple(item.strip() for item in raw_keys.split(",") if item.strip())
+    keys: list[str] = []
+    for item in raw_keys.split(","):
+        entry = item.strip()
+        if not entry:
+            continue
+        key, sep, _ = entry.partition(":")
+        keys.append(key.strip() if sep else entry)
+    return tuple(key for key in keys if key)
 
 
 async def verify_api_key(api_key: str = Security(api_key_header)) -> str:

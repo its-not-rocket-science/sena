@@ -2228,7 +2228,10 @@ def test_startup_fails_when_api_key_set_but_disabled() -> None:
 def test_startup_fails_in_production_without_api_key_auth() -> None:
     with pytest.raises(
         RuntimeError,
-        match="SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true",
+        match=(
+            "SENA_RUNTIME_MODE=production requires "
+            "SENA_API_KEY_ENABLED=true or SENA_JWT_AUTH_ENABLED=true"
+        ),
     ):
         create_app(_settings(runtime_mode="production", enable_api_key_auth=False))
 
