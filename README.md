@@ -40,6 +40,7 @@ Supported code path:
 Start here for supported docs and operator flow:
 - `docs/FLAGSHIP_WORKFLOW.md`
 - `docs/INDEX.md`
+- `docs/ASYNC_EXECUTION.md`
 - `docs/CONTROL_PLANE.md`
 - `docs/READINESS.md`
 - `docs/ARCHITECTURE.md`

@@ -146,7 +146,9 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
             body["canonical_replay_payload"], sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
     ).hexdigest()
-    assert body["determinism_contract"]["canonical_replay_payload_hash"] == expected_hash
+    assert (
+        body["determinism_contract"]["canonical_replay_payload_hash"] == expected_hash
+    )
 
 
 def test_evaluate_tracks_downstream_outcome_and_incident(tmp_path) -> None:
@@ -575,7 +577,9 @@ def test_policy_author_cannot_promote_bundle_due_to_separation_of_duties() -> No
         },
     )
     assert response.status_code == 403
-    assert response.json()["error"]["details"]["reason"].startswith("separation_of_duties")
+    assert response.json()["error"]["details"]["reason"].startswith(
+        "separation_of_duties"
+    )
 
 
 def test_deployer_cannot_register_bundle_due_to_separation_of_duties() -> None:
@@ -589,7 +593,9 @@ def test_deployer_cannot_register_bundle_due_to_separation_of_duties() -> None:
         json={"policy_dir": "src/sena/examples/policies"},
     )
     assert response.status_code == 403
-    assert response.json()["error"]["details"]["reason"].startswith("separation_of_duties")
+    assert response.json()["error"]["details"]["reason"].startswith(
+        "separation_of_duties"
+    )
 
 
 def test_promotion_requires_step_up_and_dual_approval() -> None:
@@ -609,7 +615,9 @@ def test_promotion_requires_step_up_and_dual_approval() -> None:
         },
     )
     assert missing_step_up.status_code == 403
-    assert missing_step_up.json()["error"]["details"]["reason"] == "step_up_auth_required"
+    assert (
+        missing_step_up.json()["error"]["details"]["reason"] == "step_up_auth_required"
+    )
 
     duplicate_approver = client.post(
         "/v1/bundle/promote",
@@ -737,7 +745,9 @@ def test_outbound_admin_replay_is_idempotent_for_missing_ids(tmp_path) -> None:
     assert all(item["status"] == "not_found" for item in body["items"])
 
 
-def test_outbound_admin_manual_redrive_validates_note_and_reports_missing_storage() -> None:
+def test_outbound_admin_manual_redrive_validates_note_and_reports_missing_storage() -> (
+    None
+):
     app = create_app(
         _settings(
             jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
@@ -831,6 +841,159 @@ def test_simulation_endpoint() -> None:
     assert response.status_code == 200
     assert response.json()["total_scenarios"] == 1
     assert response.json()["grouped_changes"]["source_system"]["jira"]["total"] == 1
+
+
+def _wait_for_terminal_job(
+    client: TestClient, job_id: str, timeout_seconds: float = 2.0
+) -> dict:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        response = client.get(f"/v1/jobs/{job_id}")
+        assert response.status_code == 200
+        body = response.json()
+        if body["status"] in {"succeeded", "failed", "cancelled", "timed_out"}:
+            return body
+        time.sleep(0.01)
+    raise AssertionError(f"job '{job_id}' did not reach terminal state before timeout")
+
+
+def test_simulation_async_job_lifecycle_and_result() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    submit = client.post(
+        "/v1/jobs/simulation",
+        json={
+            "baseline_policy_dir": "src/sena/examples/policies",
+            "candidate_policy_dir": "src/sena/examples/policies",
+            "scenarios": [
+                {
+                    "scenario_id": "s1",
+                    "action_type": "approve_vendor_payment",
+                    "attributes": {"vendor_verified": False},
+                    "facts": {},
+                }
+            ],
+        },
+    )
+    assert submit.status_code == 200
+    accepted = submit.json()
+    assert accepted["status"] == "accepted"
+    job_id = accepted["job"]["job_id"]
+
+    first_poll = _wait_for_terminal_job(client, job_id)
+    second_poll = client.get(f"/v1/jobs/{job_id}")
+    assert second_poll.status_code == 200
+    assert second_poll.json() == first_poll
+
+    result = client.get(f"/v1/jobs/{job_id}/result")
+    assert result.status_code == 200
+    result_body = result.json()
+    assert result_body["job_id"] == job_id
+    assert result_body["result"]["status"] == "ok"
+    assert result_body["result"]["total_scenarios"] == 1
+
+
+def test_simulation_async_job_failure_payload() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    submit = client.post(
+        "/v1/jobs/simulation",
+        json={
+            "baseline_policy_dir": "src/sena/examples/policies",
+            "candidate_policy_dir": "src/sena/examples/does-not-exist",
+            "scenarios": [
+                {
+                    "scenario_id": "s1",
+                    "action_type": "approve_vendor_payment",
+                    "attributes": {"vendor_verified": False},
+                    "facts": {},
+                }
+            ],
+        },
+    )
+    assert submit.status_code == 200
+    job_id = submit.json()["job"]["job_id"]
+    job = _wait_for_terminal_job(client, job_id)
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "job_failed"
+
+    result = client.get(f"/v1/jobs/{job_id}/result")
+    assert result.status_code == 400
+    assert "has no result" in result.json()["error"]["message"]
+
+
+def test_simulation_async_job_timeout_and_cancellation(monkeypatch) -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    from sena.services import evaluation_service as evaluation_service_module
+
+    original_simulation = (
+        evaluation_service_module.EvaluationService.simulate_policy_change
+    )
+
+    def _slow_simulation(*_args, **_kwargs):
+        time.sleep(0.05)
+        return {
+            "total_scenarios": 1,
+            "changes": [],
+            "grouped_changes": {},
+        }
+
+    monkeypatch.setattr(
+        evaluation_service_module.EvaluationService,
+        "simulate_policy_change",
+        staticmethod(_slow_simulation),
+    )
+    try:
+        timed_out = client.post(
+            "/v1/jobs/simulation",
+            json={
+                "baseline_policy_dir": "src/sena/examples/policies",
+                "candidate_policy_dir": "src/sena/examples/policies",
+                "timeout_seconds": 0.001,
+                "scenarios": [
+                    {
+                        "scenario_id": "slow-timeout",
+                        "action_type": "approve_vendor_payment",
+                        "attributes": {"vendor_verified": False},
+                        "facts": {},
+                    }
+                ],
+            },
+        )
+        assert timed_out.status_code == 200
+        timeout_job_id = timed_out.json()["job"]["job_id"]
+        timeout_job = _wait_for_terminal_job(client, timeout_job_id)
+        assert timeout_job["status"] == "timed_out"
+
+        cancelled = client.post(
+            "/v1/jobs/simulation",
+            json={
+                "baseline_policy_dir": "src/sena/examples/policies",
+                "candidate_policy_dir": "src/sena/examples/policies",
+                "scenarios": [
+                    {
+                        "scenario_id": "slow-cancel",
+                        "action_type": "approve_vendor_payment",
+                        "attributes": {"vendor_verified": False},
+                        "facts": {},
+                    }
+                ],
+            },
+        )
+        assert cancelled.status_code == 200
+        cancel_job_id = cancelled.json()["job"]["job_id"]
+        cancel_response = client.post(f"/v1/jobs/{cancel_job_id}/cancel")
+        assert cancel_response.status_code == 200
+        final = _wait_for_terminal_job(client, cancel_job_id)
+        assert final["status"] == "cancelled"
+    finally:
+        monkeypatch.setattr(
+            evaluation_service_module.EvaluationService,
+            "simulate_policy_change",
+            original_simulation,
+        )
 
 
 def test_simulation_replay_endpoint(tmp_path) -> None:
@@ -1492,7 +1655,9 @@ def test_jira_webhook_dead_letter_redacts_headers_and_raw_body() -> None:
     assert recorded_event["headers"]["authorization"] == "<redacted>"
 
 
-def test_jira_webhook_signature_verification_accepts_current_and_previous_secret() -> None:
+def test_jira_webhook_signature_verification_accepts_current_and_previous_secret() -> (
+    None
+):
     app = create_app(
         _settings(
             jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
@@ -1990,7 +2155,10 @@ def test_metrics_endpoint_exposes_prometheus_metrics() -> None:
     metrics_body = metrics_response.text
     assert "request_count_total" in metrics_body
     assert "sena_decisions_total" in metrics_body
-    assert 'sena_decisions_total{outcome="BLOCKED",policy="enterprise-demo:2026.03"} 1.0' in metrics_body
+    assert (
+        'sena_decisions_total{outcome="BLOCKED",policy="enterprise-demo:2026.03"} 1.0'
+        in metrics_body
+    )
     assert "sena_evaluation_seconds_bucket" in metrics_body
     assert "sena_audit_entries_total" in metrics_body
     assert "sena_merkle_root_timestamp" in metrics_body
@@ -2218,9 +2386,7 @@ def test_startup_logs_storage_profile_warnings_in_production(tmp_path, caplog) -
         )
     )
 
-    assert any(
-        "pilot storage backend" in message for message in caplog.messages
-    )
+    assert any("pilot storage backend" in message for message in caplog.messages)
 
 
 def test_startup_fails_in_production_when_jira_enabled_without_mapping_config(
@@ -2248,9 +2414,7 @@ def test_startup_fails_in_production_when_servicenow_enabled_without_mapping_con
 ) -> None:
     keyring_dir = tmp_path / "keyring"
     keyring_dir.mkdir()
-    with pytest.raises(
-        RuntimeError, match="requires SENA_SERVICENOW_MAPPING_CONFIG"
-    ):
+    with pytest.raises(RuntimeError, match="requires SENA_SERVICENOW_MAPPING_CONFIG"):
         create_app(
             _settings(
                 runtime_mode="production",
@@ -2274,7 +2438,8 @@ def test_startup_fails_in_production_when_servicenow_mapping_invalid(tmp_path) -
     keyring_dir = tmp_path / "keyring"
     keyring_dir.mkdir()
     with pytest.raises(
-        RuntimeError, match="SENA_SERVICENOW_MAPPING_CONFIG is invalid for production startup"
+        RuntimeError,
+        match="SENA_SERVICENOW_MAPPING_CONFIG is invalid for production startup",
     ):
         create_app(
             _settings(
@@ -2539,7 +2704,9 @@ def test_bundle_rollback_by_version_endpoint(tmp_path) -> None:
 
     metadata.lifecycle = "draft"
     id1 = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(id1, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        id1, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
     repo.transition_bundle(
         id1,
         "active",
@@ -2551,7 +2718,9 @@ def test_bundle_rollback_by_version_endpoint(tmp_path) -> None:
     metadata.version = "2026.99"
     metadata.lifecycle = "draft"
     id2 = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(id2, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        id2, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
     repo.transition_bundle(
         id2,
         "active",
@@ -2583,7 +2752,9 @@ def test_bundle_rollback_by_version_endpoint(tmp_path) -> None:
     assert rollback.json()["active_bundle_id"] == id1
 
 
-def test_bundle_rollback_preview_returns_impact_without_mutating_active(tmp_path) -> None:
+def test_bundle_rollback_preview_returns_impact_without_mutating_active(
+    tmp_path,
+) -> None:
     from sena.policy.parser import load_policy_bundle
     from sena.policy.store import SQLitePolicyBundleRepository
 
@@ -2594,7 +2765,9 @@ def test_bundle_rollback_preview_returns_impact_without_mutating_active(tmp_path
 
     metadata.lifecycle = "draft"
     id1 = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(id1, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        id1, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
     repo.transition_bundle(
         id1,
         "active",
@@ -2607,7 +2780,9 @@ def test_bundle_rollback_preview_returns_impact_without_mutating_active(tmp_path
     metadata.version = "2026.98"
     metadata.lifecycle = "draft"
     id2 = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(id2, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        id2, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
     repo.transition_bundle(
         id2,
         "active",
@@ -2728,6 +2903,7 @@ def test_bundle_rollback_target_not_found_returns_machine_readable_failure(
     body = response.json()
     assert body["error"]["code"] == "promotion_validation_failed"
     assert body["error"]["details"]["errors"] == ["rollback target bundle not found"]
+
 
 def test_exception_endpoints_and_simulation_mode() -> None:
     app = create_app(_settings())

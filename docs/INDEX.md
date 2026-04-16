@@ -4,6 +4,9 @@ This is the default reader path.
 
 **Product statement:** SENA is for deterministic Jira + ServiceNow approval decisioning with replayable audit evidence.
 
+## Execution
+- [Asynchronous execution model](ASYNC_EXECUTION.md)
+
 Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 
 ## 1) Read this first (supported)

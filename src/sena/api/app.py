@@ -164,6 +164,7 @@ def build_app(state):
             state.dlq_worker.stop()
         if state.recovery_service is not None:
             state.recovery_service.stop()
+        state.job_manager.shutdown()
 
 
     deprecation_date = "2026-04-01"

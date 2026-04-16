@@ -14,6 +14,7 @@ from sena.api.processing_store import DeadLetterWorker, ProcessingStore
 from sena.services.production_processing_service import ProductionProcessingService
 from sena.services.automatic_recovery_service import AutomaticRecoveryService
 from sena.services.exception_service import ExceptionService
+from sena.services.async_jobs import InProcessJobManager
 from sena.services.reliability_service import (
     InMemoryIngestionQueue,
     RedisIngestionQueue,
@@ -59,6 +60,10 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("POST", "/v1/integrations/slack/interactions"),
         ("POST", "/v1/simulation"),
         ("POST", "/v1/simulation/replay"),
+        ("POST", "/v1/jobs/simulation"),
+        ("GET", "/v1/jobs/{job_id}"),
+        ("GET", "/v1/jobs/{job_id}/result"),
+        ("POST", "/v1/jobs/{job_id}/cancel"),
     },
     "deployer": {
         ("POST", "/v1/bundle/promote"),
@@ -83,9 +88,14 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("GET", "/v1/integrations/{connector}/admin/outbound/completions"),
         ("GET", "/v1/integrations/{connector}/admin/outbound/dead-letter"),
         ("POST", "/v1/integrations/{connector}/admin/outbound/dead-letter/replay"),
-        ("POST", "/v1/integrations/{connector}/admin/outbound/dead-letter/manual-redrive"),
+        (
+            "POST",
+            "/v1/integrations/{connector}/admin/outbound/dead-letter/manual-redrive",
+        ),
         ("GET", "/v1/integrations/{connector}/admin/outbound/duplicates/summary"),
         ("GET", "/v1/integrations/{connector}/admin/outbound/reliability/summary"),
+        ("GET", "/v1/jobs/{job_id}"),
+        ("GET", "/v1/jobs/{job_id}/result"),
     },
     "verifier": {
         ("GET", "/v1/decision/{decision_id}/attestations"),
@@ -161,12 +171,15 @@ class EngineState:
         self.connector_registry = _build_connector_registry()
         self.jira_connector: Any | None = None
         self.servicenow_connector: Any | None = None
-        self.processing_store: ProcessingStore = ProcessingStore(settings.processing_sqlite_path)
+        self.processing_store: ProcessingStore = ProcessingStore(
+            settings.processing_sqlite_path
+        )
         self.processing_service: ProductionProcessingService | None = None
         self.dlq_worker: DeadLetterWorker | None = None
         self.recovery_service: Any | None = None
         self.exception_service = ExceptionService()
         self.reliability_service: ReliabilityService | None = None
+        self.job_manager = InProcessJobManager(max_workers=4)
 
 
 def _build_connector_registry(**kwargs: Any) -> Any:
@@ -326,7 +339,9 @@ def _validate_runtime_mode_and_policy_store(runtime_settings: ApiSettings) -> No
 def _validate_data_regions(runtime_settings: ApiSettings) -> None:
     if not runtime_settings.data_allowed_regions:
         raise RuntimeError("SENA_DATA_ALLOWED_REGIONS must include at least one region")
-    if runtime_settings.data_default_region not in set(runtime_settings.data_allowed_regions):
+    if runtime_settings.data_default_region not in set(
+        runtime_settings.data_allowed_regions
+    ):
         raise RuntimeError(
             "SENA_DATA_DEFAULT_REGION must be present in SENA_DATA_ALLOWED_REGIONS"
         )
@@ -463,8 +478,7 @@ def _validate_production_startup_requirements(runtime_settings: ApiSettings) -> 
                 load_jira_mapping_config(runtime_settings.jira_mapping_config_path)
             except JiraIntegrationError as exc:
                 raise RuntimeError(
-                    "SENA_JIRA_MAPPING_CONFIG is invalid for production startup: "
-                    f"{exc}"
+                    f"SENA_JIRA_MAPPING_CONFIG is invalid for production startup: {exc}"
                 ) from exc
         if runtime_settings.servicenow_mapping_config_path:
             from sena.integrations.servicenow import (
@@ -492,9 +506,7 @@ def _validate_operational_limits(runtime_settings: ApiSettings) -> None:
             "SENA_AUDIT_VERIFY_ON_STARTUP_STRICT=true requires SENA_AUDIT_SINK_JSONL"
         )
     if not (0 < runtime_settings.auto_recovery_error_threshold <= 1):
-        raise RuntimeError(
-            "SENA_AUTO_RECOVERY_ERROR_THRESHOLD must be within (0, 1]"
-        )
+        raise RuntimeError("SENA_AUTO_RECOVERY_ERROR_THRESHOLD must be within (0, 1]")
     if runtime_settings.auto_recovery_window_seconds <= 0:
         raise RuntimeError("SENA_AUTO_RECOVERY_WINDOW_SECONDS must be > 0")
     if runtime_settings.ingestion_queue_backend not in {"memory", "redis"}:
@@ -583,7 +595,9 @@ def build_runtime_state(
         state.jira_connector = JiraConnector(
             config=load_jira_mapping_config(runtime_settings.jira_mapping_config_path),
             verifier=verifier,
-            reliability_db_path=_resolve_connector_reliability_db_path(runtime_settings),
+            reliability_db_path=_resolve_connector_reliability_db_path(
+                runtime_settings
+            ),
             require_durable_reliability=runtime_settings.runtime_mode == "production",
             delivery_client=delivery_client,
             reliability_observer=state.metrics.connector_reliability_observer(
@@ -628,14 +642,15 @@ def build_runtime_state(
                 runtime_settings.servicenow_mapping_config_path
             ),
             verifier=verifier,
-            reliability_db_path=_resolve_connector_reliability_db_path(runtime_settings),
+            reliability_db_path=_resolve_connector_reliability_db_path(
+                runtime_settings
+            ),
             require_durable_reliability=runtime_settings.runtime_mode == "production",
             delivery_client=delivery_client,
             reliability_observer=state.metrics.connector_reliability_observer(
                 connector="servicenow"
             ),
         )
-
 
     state.processing_service = ProductionProcessingService(state)
     if runtime_settings.auto_recovery_enabled:
