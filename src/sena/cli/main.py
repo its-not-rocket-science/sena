@@ -45,7 +45,7 @@ from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.evidence_pack import build_evidence_pack, stable_zip_dir
 from sena.examples import DEFAULT_POLICY_DIR
 from sena.policy.lifecycle import (
-    PromotionGatePolicy,
+    build_promotion_gate_policy,
     diff_rule_sets,
     evaluate_promotion_gate,
     validate_promotion,
@@ -623,33 +623,36 @@ def _run_registry_promote(args: argparse.Namespace) -> None:
         thresholds["max_changed_risk_categories"][risk] = int(raw_max)
 
     settings = load_settings_from_env()
-    regression_budget = dict(settings.promotion_gate_max_regressions_by_outcome_type)
-    if args.max_block_to_approve_regressions is not None:
-        regression_budget["BLOCKED->APPROVED"] = args.max_block_to_approve_regressions
+    regression_budget_overrides: dict[str, int] = {}
     for item in args.max_regression_budget or []:
         transition, _, raw_max = item.partition("=")
         if not transition or not raw_max:
             raise SystemExit(
                 "Invalid --max-regression-budget format. Use BEFORE->AFTER=max_count"
             )
-        regression_budget[transition] = int(raw_max)
+        regression_budget_overrides[transition] = int(raw_max)
     gate_failures = evaluate_promotion_gate(
         target_lifecycle=args.target_lifecycle,
         validation_artifact=args.validation_artifact,
         simulation_report=simulation_report,
         break_glass=args.break_glass,
         break_glass_reason=args.break_glass_reason,
-        policy=PromotionGatePolicy(
+        policy=build_promotion_gate_policy(
             require_validation_artifact=settings.promotion_gate_require_validation_artifact,
             require_simulation=settings.promotion_gate_require_simulation,
             required_scenario_ids=settings.promotion_gate_required_scenario_ids,
-            max_changed_outcomes=(
+            default_max_changed_outcomes=settings.promotion_gate_max_changed_outcomes,
+            default_max_regressions_by_outcome_type=dict(
+                settings.promotion_gate_max_regressions_by_outcome_type
+            ),
+            break_glass_enabled=settings.promotion_gate_break_glass_enabled,
+            override_max_changed_outcomes=(
                 args.max_changed_outcomes
                 if args.max_changed_outcomes is not None
-                else settings.promotion_gate_max_changed_outcomes
+                else None
             ),
-            max_regressions_by_outcome_type=regression_budget,
-            break_glass_enabled=settings.promotion_gate_break_glass_enabled,
+            override_max_regressions_by_outcome_type=regression_budget_overrides,
+            override_max_block_to_approve_regressions=args.max_block_to_approve_regressions,
         ),
     )
     must_block = (not args.break_glass) or any(

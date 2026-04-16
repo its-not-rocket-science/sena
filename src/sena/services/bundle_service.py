@@ -14,7 +14,7 @@ from sena.api.schemas import (
 )
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.policy.lifecycle import (
-    PromotionGatePolicy,
+    build_promotion_gate_policy,
     diff_rule_sets,
     evaluate_promotion_gate,
     validate_promotion,
@@ -221,27 +221,27 @@ class BundleService:
     def _effective_gate_policy(
         self,
         thresholds: BundlePromoteRequest.PromotionThresholds | None,
-    ) -> PromotionGatePolicy:
-        combined_regressions = dict(
-            self.settings.promotion_gate_max_regressions_by_outcome_type
-        )
-        if thresholds and thresholds.max_block_to_approve_regressions is not None:
-            combined_regressions["BLOCKED->APPROVED"] = (
-                thresholds.max_block_to_approve_regressions
-            )
-        if thresholds:
-            combined_regressions.update(thresholds.max_regressions_by_outcome_type)
-        return PromotionGatePolicy(
+    ):
+        return build_promotion_gate_policy(
             require_validation_artifact=self.settings.promotion_gate_require_validation_artifact,
             require_simulation=self.settings.promotion_gate_require_simulation,
             required_scenario_ids=self.settings.promotion_gate_required_scenario_ids,
-            max_changed_outcomes=(
+            default_max_changed_outcomes=self.settings.promotion_gate_max_changed_outcomes,
+            default_max_regressions_by_outcome_type=dict(
+                self.settings.promotion_gate_max_regressions_by_outcome_type
+            ),
+            break_glass_enabled=self.settings.promotion_gate_break_glass_enabled,
+            override_max_changed_outcomes=(
                 thresholds.max_changed_outcomes
                 if thresholds and thresholds.max_changed_outcomes is not None
-                else self.settings.promotion_gate_max_changed_outcomes
+                else None
             ),
-            max_regressions_by_outcome_type=combined_regressions,
-            break_glass_enabled=self.settings.promotion_gate_break_glass_enabled,
+            override_max_regressions_by_outcome_type=(
+                thresholds.max_regressions_by_outcome_type if thresholds else None
+            ),
+            override_max_block_to_approve_regressions=(
+                thresholds.max_block_to_approve_regressions if thresholds else None
+            ),
         )
 
     def _evaluate_thresholds(
