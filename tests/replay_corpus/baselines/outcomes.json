@@ -1,0 +1,302 @@
+{
+  "cases": {
+    "block_due_to_policy": {
+      "applied_exception_ids": [],
+      "baseline_outcome": "BLOCKED",
+      "decision_hash": "8ed78031ecb6cc4e449bddb103779d082d0cbdd202c3f2a019545716fe397b1c",
+      "matched_rule_ids": [
+        "payment_block_unverified_vendor"
+      ],
+      "missing_evidence": [],
+      "missing_fields": [
+        "ai_metadata.human_owner",
+        "ai_metadata.originating_model",
+        "ai_metadata.risk_classification.level",
+        "impact_scope"
+      ],
+      "outcome": "BLOCKED",
+      "proposal": {
+        "action_origin": "human",
+        "action_type": "approve_vendor_payment",
+        "actor_id": "actor-block",
+        "actor_role": "finance_analyst",
+        "ai_metadata": null,
+        "attributes": {
+          "amount": 500,
+          "source_system": "jira",
+          "vendor_verified": false
+        },
+        "autonomous_metadata": null,
+        "request_id": "req-block-1"
+      },
+      "scenario": "block due to policy"
+    },
+    "escalation_missing_evidence": {
+      "applied_exception_ids": [],
+      "baseline_outcome": "ESCALATE_FOR_HUMAN_REVIEW",
+      "decision_hash": "bc91a51eb16423af637d4c7d8859b538691959e03f5bf8092c05f0098b76c3a3",
+      "matched_rule_ids": [
+        "payment_ai_assisted_medium_risk_governance_evidence"
+      ],
+      "missing_evidence": [
+        "source_citations"
+      ],
+      "missing_fields": [
+        "evidence.source_citations",
+        "impact_scope"
+      ],
+      "outcome": "ESCALATE_FOR_HUMAN_REVIEW",
+      "proposal": {
+        "action_origin": "ai_suggested",
+        "action_type": "approve_vendor_payment",
+        "actor_id": "actor-ai",
+        "actor_role": "finance_manager",
+        "ai_metadata": {
+          "citation_references": [],
+          "confidence": null,
+          "evidence_references": [
+            "ev-1"
+          ],
+          "human_approver": null,
+          "human_owner": "owner-1",
+          "human_requester": "requester-1",
+          "originating_model": "gpt-model-v1",
+          "originating_system": "risk-assistant",
+          "prompt_context_ref": "ctx-123",
+          "requested_action": "approve_vendor_payment",
+          "requested_tool": null,
+          "risk_classification": {
+            "category": "payment_risk",
+            "level": "medium",
+            "rationale": "Medium risk recommendation",
+            "tags": [
+              "gov"
+            ]
+          },
+          "uncertainty": null
+        },
+        "attributes": {
+          "amount": 900,
+          "source_system": "jira",
+          "vendor_verified": true
+        },
+        "autonomous_metadata": null,
+        "request_id": "req-ai-medium-1"
+      },
+      "scenario": "escalation due to missing evidence"
+    },
+    "exception_overlay": {
+      "applied_exception_ids": [
+        "exc-payroll-1"
+      ],
+      "baseline_outcome": "ESCALATE_FOR_HUMAN_REVIEW",
+      "decision_hash": "184d3d1dc41fe09927683591519ada4af335d4376db8dd02eb8b74e8b72ce2cd",
+      "matched_rule_ids": [
+        "payment_escalate_high_amount_non_director"
+      ],
+      "missing_evidence": [],
+      "missing_fields": [
+        "ai_metadata.human_owner",
+        "ai_metadata.originating_model",
+        "ai_metadata.risk_classification.level",
+        "impact_scope"
+      ],
+      "outcome": "APPROVED",
+      "proposal": {
+        "action_origin": "human",
+        "action_type": "approve_vendor_payment",
+        "actor_id": "user-1",
+        "actor_role": "finance_analyst",
+        "ai_metadata": null,
+        "attributes": {
+          "amount": 50000,
+          "source_system": "jira",
+          "vendor_verified": true
+        },
+        "autonomous_metadata": null,
+        "request_id": "req-exc-1"
+      },
+      "scenario": "exception overlay"
+    },
+    "jira_case": {
+      "applied_exception_ids": [],
+      "baseline_outcome": "BLOCKED",
+      "decision_hash": "8b918da8696258143890de9afbbda89205d88732836ae9382e68b9f08d13c00e",
+      "matched_rule_ids": [
+        "payment_block_unverified_vendor",
+        "payment_escalate_high_amount_non_director"
+      ],
+      "missing_evidence": [],
+      "missing_fields": [
+        "ai_metadata.human_owner",
+        "ai_metadata.originating_model",
+        "ai_metadata.risk_classification.level",
+        "impact_scope"
+      ],
+      "outcome": "BLOCKED",
+      "proposal": {
+        "action_origin": "autonomous_tool",
+        "action_type": "approve_vendor_payment",
+        "actor_id": "acct-1",
+        "actor_role": null,
+        "ai_metadata": null,
+        "attributes": {
+          "amount": 12000,
+          "approval_workflow": "finance",
+          "business_unit": "finance",
+          "correlation_key": "RISK-9",
+          "escalation_deadline_at": "2026-04-10T18:00:00Z",
+          "evidence_references": [
+            "RISK-9"
+          ],
+          "external_state": "Pending Approval",
+          "idempotency_key": "replay-jira-1",
+          "jira_issue_key": "RISK-9",
+          "jira_transition": [
+            {
+              "field": "status",
+              "toString": "Pending Approval"
+            }
+          ],
+          "requested_action": "approve_vendor_payment",
+          "requester_role": "finance_analyst",
+          "risk_attributes": {
+            "approval_amount": 12000,
+            "vendor_verified": false
+          },
+          "sla_deadline_at": "2026-04-11T00:00:00Z",
+          "source_event_type": "jira:issue_updated",
+          "source_object_id": "10001",
+          "source_object_type": "jira_issue",
+          "source_system": "jira",
+          "tenant_id": "tenant-finance",
+          "ticket_priority": "P2",
+          "vendor_verified": false,
+          "workflow_id": "wf-ap-01",
+          "workflow_stage": "pending_approval"
+        },
+        "autonomous_metadata": {
+          "supervising_owner": "acct-1",
+          "tool_name": "jira",
+          "trigger_reference": "10001",
+          "trigger_type": "jira:issue_updated"
+        },
+        "request_id": "RISK-9"
+      },
+      "scenario": "jira mapped case"
+    },
+    "servicenow_case": {
+      "applied_exception_ids": [],
+      "baseline_outcome": "APPROVED",
+      "decision_hash": "ed800b6b56af5eda384df574004a221bf392bc346369f8a27c470e335a68c972",
+      "matched_rule_ids": [],
+      "missing_evidence": [],
+      "missing_fields": [
+        "ai_metadata.human_owner",
+        "ai_metadata.originating_model",
+        "ai_metadata.risk_classification.level",
+        "amount",
+        "impact_scope",
+        "vendor_verified"
+      ],
+      "outcome": "APPROVED",
+      "proposal": {
+        "action_origin": "autonomous_tool",
+        "action_type": "approve_vendor_payment",
+        "actor_id": "sn.user.001",
+        "actor_role": "change_manager",
+        "ai_metadata": null,
+        "attributes": {
+          "approval_workflow": "enterprise_change",
+          "approver_chain": [
+            "director_ops",
+            "security_lead"
+          ],
+          "approver_chain_missing": false,
+          "cab_review_evidence_id": "CAB-2026-0042",
+          "cab_review_missing": false,
+          "change_classification": "emergency",
+          "correlation_key": "CHG0091001",
+          "emergency_change": true,
+          "environment": "production",
+          "escalation_deadline_at": "2026-04-01T23:00:00Z",
+          "evidence_references": [
+            "CAB-2026-0042"
+          ],
+          "external_state": "change_approval.requested",
+          "fixture_version": "1",
+          "governance_model": "cab_and_role_chain",
+          "idempotency_key": "replay-sn-1",
+          "normalized_classification": "emergency",
+          "normalized_environment": "production",
+          "out_of_hours_change": true,
+          "privileged_change": false,
+          "requested_action": "approve_vendor_payment",
+          "requested_end": "2026-04-02T01:00:00Z",
+          "requested_start": "2026-04-01T23:00:00Z",
+          "risk_attributes": {
+            "emergency_change": true,
+            "out_of_hours_change": true,
+            "privileged_change": false,
+            "risk_level": "high"
+          },
+          "risk_level": "high",
+          "schedule_window": "out_of_hours",
+          "servicenow_change_number": "CHG0091001",
+          "servicenow_table": "change_request",
+          "sla_deadline_at": "2026-04-02T01:00:00Z",
+          "source_event_type": "change_approval.requested",
+          "source_object_id": "d0f1e2a3b4",
+          "source_object_type": "change_request",
+          "source_system": "servicenow",
+          "source_table": "change_request",
+          "workflow_stage": "requested"
+        },
+        "autonomous_metadata": {
+          "supervising_owner": "sn.user.001",
+          "tool_name": "servicenow",
+          "trigger_reference": "d0f1e2a3b4",
+          "trigger_type": "change_approval.requested"
+        },
+        "request_id": "CHG0091001"
+      },
+      "scenario": "servicenow mapped case"
+    },
+    "simple_approval": {
+      "applied_exception_ids": [],
+      "baseline_outcome": "APPROVED",
+      "decision_hash": "95d1da19629ece3dc6980870144def2a03ba7b3dcc1a0a3668c922f16cbd0344",
+      "matched_rule_ids": [],
+      "missing_evidence": [],
+      "missing_fields": [
+        "ai_metadata.human_owner",
+        "ai_metadata.originating_model",
+        "ai_metadata.risk_classification.level",
+        "impact_scope"
+      ],
+      "outcome": "APPROVED",
+      "proposal": {
+        "action_origin": "human",
+        "action_type": "approve_vendor_payment",
+        "actor_id": "actor-simple",
+        "actor_role": "finance_director",
+        "ai_metadata": null,
+        "attributes": {
+          "amount": 250,
+          "source_system": "jira",
+          "vendor_verified": true
+        },
+        "autonomous_metadata": null,
+        "request_id": "req-simple-1"
+      },
+      "scenario": "simple approval"
+    }
+  },
+  "duplicate_delivery": {
+    "duplicate_delivery": {
+      "error": "duplicate delivery 'duplicate-delivery-1'",
+      "scenario": "duplicate delivery"
+    }
+  },
+  "schema": "sena.replay_corpus.baseline.v1"
+}
