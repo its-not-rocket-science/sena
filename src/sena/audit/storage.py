@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
 from sena.audit.chain import append_audit_record
@@ -18,15 +17,27 @@ class AuditStorageError(RuntimeError):
     """Raised when an audit storage backend is misconfigured or unavailable."""
 
 
-class AuditStorage(ABC):
-    @abstractmethod
+ENTRY_ID_FIELDS = ("storage_entry_id", "decision_id", "chain_hash")
+
+
+class AuditStorage(Protocol):
     def append(self, entry: dict[str, Any]) -> str: ...
 
-    @abstractmethod
     def read(self, entry_id: str) -> dict[str, Any]: ...
 
-    @abstractmethod
     def verify_immutable(self) -> bool: ...
+
+
+def _storage_entry_id(entry: dict[str, Any], *, prefix: str) -> str:
+    return str(entry.get("decision_id") or f"{prefix}-{uuid4().hex}")
+
+
+def _read_record_by_id(rows: list[dict[str, Any]], entry_id: str) -> dict[str, Any]:
+    for row in rows:
+        keys = tuple(str(row.get(field) or "") for field in ENTRY_ID_FIELDS)
+        if entry_id in keys:
+            return row
+    raise KeyError(f"audit entry not found: {entry_id}")
 
 
 @dataclass
@@ -35,21 +46,13 @@ class DevelopmentJsonlAuditStorage(AuditStorage):
 
     def append(self, entry: dict[str, Any]) -> str:
         payload = dict(entry)
-        payload.setdefault("storage_entry_id", payload.get("decision_id") or f"loc-{uuid4().hex}")
+        payload.setdefault("storage_entry_id", _storage_entry_id(payload, prefix="loc"))
         persisted = append_audit_record(JsonlFileAuditSink(path=self.path), payload)
-        return str(persisted.get("storage_entry_id") or persisted.get("decision_id") or persisted.get("chain_hash"))
+        return _storage_entry_id(persisted, prefix="loc")
 
     def read(self, entry_id: str) -> dict[str, Any]:
         sink = JsonlFileAuditSink(path=self.path)
-        for row in sink.load_records():
-            keys = (
-                str(row.get("storage_entry_id") or ""),
-                str(row.get("decision_id") or ""),
-                str(row.get("chain_hash") or ""),
-            )
-            if entry_id in keys:
-                return row
-        raise KeyError(f"audit entry not found: {entry_id}")
+        return _read_record_by_id(sink.load_records(), entry_id)
 
     def verify_immutable(self) -> bool:
         # Local JSONL development sink is append-focused but not WORM-enforced.
@@ -68,24 +71,14 @@ class PilotSQLiteAppendOnlyAuditStorage(AuditStorage):
 
     def append(self, entry: dict[str, Any]) -> str:
         payload = dict(entry)
-        payload.setdefault("storage_entry_id", payload.get("decision_id") or f"sqlite-{uuid4().hex}")
-        persisted = append_audit_record(self._sink(), payload)
-        return str(
-            persisted.get("storage_entry_id")
-            or persisted.get("decision_id")
-            or persisted.get("chain_hash")
+        payload.setdefault(
+            "storage_entry_id", _storage_entry_id(payload, prefix="sqlite")
         )
+        persisted = append_audit_record(self._sink(), payload)
+        return _storage_entry_id(persisted, prefix="sqlite")
 
     def read(self, entry_id: str) -> dict[str, Any]:
-        for row in self._sink().load_records():
-            keys = (
-                str(row.get("storage_entry_id") or ""),
-                str(row.get("decision_id") or ""),
-                str(row.get("chain_hash") or ""),
-            )
-            if entry_id in keys:
-                return row
-        raise KeyError(f"audit entry not found: {entry_id}")
+        return _read_record_by_id(self._sink().load_records(), entry_id)
 
     def verify_immutable(self) -> bool:
         # SQLite triggers reject UPDATE/DELETE operations for append-only chain table.
@@ -109,7 +102,7 @@ class S3ObjectLockStorage(AuditStorage):
         return boto3.client("s3")
 
     def append(self, entry: dict[str, Any]) -> str:
-        entry_id = str(entry.get("decision_id") or f"s3-{uuid4().hex}")
+        entry_id = _storage_entry_id(entry, prefix="s3")
         key = f"{self.prefix.rstrip('/')}/{datetime.now(tz=timezone.utc).strftime('%Y/%m/%d')}/{entry_id}.json"
         body = json.dumps(entry, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
         retain_until = datetime.now(tz=timezone.utc) + timedelta(days=self.retention_days)
@@ -165,7 +158,7 @@ class AzureImmutableBlobStorage(AuditStorage):
         return BlobServiceClient.from_connection_string(conn)
 
     def append(self, entry: dict[str, Any]) -> str:
-        entry_id = str(entry.get("decision_id") or f"azure-{uuid4().hex}")
+        entry_id = _storage_entry_id(entry, prefix="azure")
         blob_name = f"{self.prefix.rstrip('/')}/{datetime.now(tz=timezone.utc).strftime('%Y/%m/%d')}/{entry_id}.json"
         container = self._client().get_container_client(self.container)
         body = json.dumps(entry, sort_keys=True, separators=(",", ":"), default=str)

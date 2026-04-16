@@ -40,6 +40,53 @@ class PromotionGatePolicy:
     max_regressions_by_outcome_type: dict[str, int] = field(default_factory=dict)
     break_glass_enabled: bool = True
 
+
+def build_promotion_gate_policy(
+    *,
+    require_validation_artifact: bool,
+    require_simulation: bool,
+    required_scenario_ids: tuple[str, ...],
+    default_max_changed_outcomes: int | None,
+    default_max_regressions_by_outcome_type: dict[str, int],
+    break_glass_enabled: bool,
+    override_max_changed_outcomes: int | None = None,
+    override_max_regressions_by_outcome_type: dict[str, int] | None = None,
+    override_max_block_to_approve_regressions: int | None = None,
+) -> PromotionGatePolicy:
+    """Create one canonical promotion gate policy from defaults plus optional overrides."""
+    merged_regressions = dict(default_max_regressions_by_outcome_type)
+    if override_max_block_to_approve_regressions is not None:
+        merged_regressions["BLOCKED->APPROVED"] = (
+            override_max_block_to_approve_regressions
+        )
+    if override_max_regressions_by_outcome_type:
+        merged_regressions.update(override_max_regressions_by_outcome_type)
+    return PromotionGatePolicy(
+        require_validation_artifact=require_validation_artifact,
+        require_simulation=require_simulation,
+        required_scenario_ids=required_scenario_ids,
+        max_changed_outcomes=(
+            override_max_changed_outcomes
+            if override_max_changed_outcomes is not None
+            else default_max_changed_outcomes
+        ),
+        max_regressions_by_outcome_type=merged_regressions,
+        break_glass_enabled=break_glass_enabled,
+    )
+
+
+def _count_transition_changes(
+    simulation_report: dict[str, object], *, before: str, after: str
+) -> int:
+    return sum(
+        1
+        for item in simulation_report.get("changes", [])
+        if isinstance(item, dict)
+        and item.get("before_outcome") == before
+        and item.get("after_outcome") == after
+        and item.get("before_outcome") != item.get("after_outcome")
+    )
+
 def _parse_non_negative_int(value: object) -> int | None:
     if value is None:
         return None
@@ -347,13 +394,8 @@ def evaluate_promotion_gate(
                 )
             )
             continue
-        observed = sum(
-            1
-            for item in simulation_report.get("changes", [])
-            if isinstance(item, dict)
-            and item.get("before_outcome") == before
-            and item.get("after_outcome") == after
-            and item.get("before_outcome") != item.get("after_outcome")
+        observed = _count_transition_changes(
+            simulation_report, before=before, after=after
         )
         if observed > max_allowed:
             failures.append(
