@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any
 from sena.api.config import ApiSettings
+from sena.api.auth import VALID_APP_ROLES
 from sena.api.metrics import ApiMetrics
 from sena.core.enums import DecisionOutcome
 from sena.core.models import PolicyBundleMetadata
@@ -24,14 +25,7 @@ from sena.storage_backends import get_capability
 
 logger = logging.getLogger(__name__)
 
-VALID_API_ROLES = {
-    "admin",
-    "policy_author",
-    "reviewer",
-    "deployer",
-    "auditor",
-    "verifier",
-}
+VALID_API_ROLES = VALID_APP_ROLES
 VALID_RUNTIME_MODES = {"development", "pilot", "production"}
 VALID_POLICY_STORE_BACKENDS = {"filesystem", "sqlite"}
 ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
@@ -353,9 +347,10 @@ def _validate_api_auth_settings(runtime_settings: ApiSettings) -> None:
     if (
         runtime_settings.runtime_mode == "production"
         and not runtime_settings.enable_api_key_auth
+        and not runtime_settings.enable_jwt_auth
     ):
         raise RuntimeError(
-            "SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true"
+            "SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true or SENA_JWT_AUTH_ENABLED=true"
         )
     if runtime_settings.api_keys and runtime_settings.api_key:
         raise RuntimeError("Set only one of SENA_API_KEY or SENA_API_KEYS")
@@ -372,6 +367,17 @@ def _validate_api_auth_settings(runtime_settings: ApiSettings) -> None:
             raise RuntimeError(
                 f"SENA_API_KEYS contains unsupported role '{role}'. Expected one of: {sorted(VALID_API_ROLES)}"
             )
+    for _, role in runtime_settings.jwt_role_mapping:
+        if role not in VALID_API_ROLES:
+            raise RuntimeError(
+                f"SENA_JWT_ROLE_MAPPING contains unsupported target role '{role}'. Expected one of: {sorted(VALID_API_ROLES)}"
+            )
+    if runtime_settings.enable_jwt_auth and not runtime_settings.jwt_hs256_secret:
+        raise RuntimeError(
+            "SENA_JWT_AUTH_ENABLED=true requires SENA_JWT_HS256_SECRET for local/dev verification"
+        )
+    if runtime_settings.enable_jwt_auth and not runtime_settings.jwt_role_claim.strip():
+        raise RuntimeError("SENA_JWT_ROLE_CLAIM must not be empty when JWT auth is enabled")
     if bool(runtime_settings.slack_bot_token) != bool(runtime_settings.slack_channel):
         raise RuntimeError(
             "SENA_SLACK_BOT_TOKEN and SENA_SLACK_CHANNEL must be set together when enabling Slack integration"

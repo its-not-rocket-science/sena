@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
+from sena.api.auth import evaluate_sensitive_operation
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState
 from sena.api.schemas import ExceptionApproveRequest, ExceptionCreateRequest
@@ -49,7 +50,15 @@ def create_exceptions_router(state: EngineState) -> APIRouter:
         return {"exception": _serialize_exception(created)}
 
     @router.post("/approve", summary="Approve governed exception request")
-    def approve_exception(req: ExceptionApproveRequest) -> dict:
+    def approve_exception(req: ExceptionApproveRequest, request: Request) -> dict:
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="exception_approval",
+            principal=principal,
+            headers=request.headers,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
         try:
             approved = state.exception_service.approve(
                 exception_id=req.exception_id,

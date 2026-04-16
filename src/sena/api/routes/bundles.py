@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from sena.api.auth import evaluate_sensitive_operation
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, verify_bundle_signature
 from sena.api.schemas import (
@@ -48,41 +49,17 @@ def create_bundles_router(state: EngineState) -> APIRouter:
 
     @router.post("/bundle/promote", summary="Promote policy bundle lifecycle")
     def promote_bundle(payload: BundlePromoteRequest, request: Request) -> dict[str, Any]:
-        role = getattr(request.state, "api_role", "")
-        if role == "policy_author":
-            raise_api_error(
-                "forbidden",
-                details={"reason": "separation_of_duties: policy_author cannot approve or deploy"},
-            )
-        if role == "reviewer":
-            raise_api_error(
-                "forbidden",
-                details={"reason": "separation_of_duties: reviewer cannot deploy"},
-            )
-        if role and not request.headers.get("x-step-up-auth"):
-            raise_api_error(
-                "forbidden",
-                details={
-                    "reason": "step_up_auth_required",
-                    "required_header": "x-step-up-auth",
-                },
-            )
-        primary_approver = request.headers.get("x-approver-id")
-        secondary_approver = request.headers.get("x-secondary-approver-id")
-        if role and (not primary_approver or not secondary_approver):
-            raise_api_error(
-                "forbidden",
-                details={
-                    "reason": "dual_approval_required",
-                    "required_headers": ["x-approver-id", "x-secondary-approver-id"],
-                },
-            )
-        if role and len({primary_approver, secondary_approver}) != 2:
-            raise_api_error(
-                "forbidden",
-                details={"reason": "dual_approval_requires_distinct_approvers"},
-            )
-        if role:
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="bundle_promotion",
+            principal=principal,
+            headers=request.headers,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
+        if principal:
+            primary_approver = request.headers.get("x-approver-id")
+            secondary_approver = request.headers.get("x-secondary-approver-id")
             merged_attestations = sorted(
                 {
                     *(payload.approver_attestations or []),
@@ -124,7 +101,15 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             )
 
     @router.post("/bundle/rollback", summary="Rollback bundle to known version")
-    def rollback_bundle(payload: BundleRollbackRequest) -> dict[str, Any]:
+    def rollback_bundle(payload: BundleRollbackRequest, request: Request) -> dict[str, Any]:
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="bundle_rollback",
+            principal=principal,
+            headers=request.headers,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
         try:

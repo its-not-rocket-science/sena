@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 
+from sena.api.auth import evaluate_sensitive_operation
 from sena.api.dependencies import check_idempotency_key, persist_idempotency_response
 from sena.api.error_handlers import error_payload
 from sena.api.errors import raise_api_error
@@ -551,30 +552,14 @@ def create_integrations_router(state: EngineState) -> APIRouter:
 
     @router.post("/admin/audit/config", summary="Update audit verification controls")
     def admin_audit_config(payload: dict[str, bool], request: Request) -> dict:
-        role = getattr(request.state, "api_role", "")
-        if role in {"policy_author", "deployer"}:
-            raise_api_error(
-                "forbidden",
-                details={
-                    "reason": "separation_of_duties: only reviewer or auditor may change audit configuration"
-                },
-            )
-        if role and not request.headers.get("x-step-up-auth"):
-            raise_api_error(
-                "forbidden",
-                details={
-                    "reason": "step_up_auth_required",
-                    "required_header": "x-step-up-auth",
-                },
-            )
-        if role and not request.headers.get("x-secondary-approver-id"):
-            raise_api_error(
-                "forbidden",
-                details={
-                    "reason": "secondary_approval_required",
-                    "required_header": "x-secondary-approver-id",
-                },
-            )
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="audit_config_change",
+            principal=principal,
+            headers=request.headers,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
         return _ok(
             {
             "status": "accepted",

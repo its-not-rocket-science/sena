@@ -22,6 +22,14 @@ class ApiSettings:
     enable_api_key_auth: bool = False
     api_key: str | None = None
     api_keys: tuple[tuple[str, str], ...] = ()
+    enable_jwt_auth: bool = False
+    jwt_issuer: str | None = None
+    jwt_audience: str | None = None
+    jwt_hs256_secret: str | None = None
+    jwt_required_claims: tuple[str, ...] = ("sub",)
+    jwt_role_claim: str = "roles"
+    jwt_role_mapping: tuple[tuple[str, str], ...] = ()
+    enforce_policy_actor_identity: bool = False
     audit_sink_jsonl: str | None = None
     audit_storage_backend: str = "local_file"
     audit_ship_destination: str | None = None
@@ -122,6 +130,26 @@ def _parse_csv(raw: str | None) -> tuple[str, ...]:
     return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
+
+
+def _parse_mapping(raw: str | None, *, env_name: str) -> tuple[tuple[str, str], ...]:
+    if not raw:
+        return ()
+    pairs: list[tuple[str, str]] = []
+    for item in raw.split(","):
+        entry = item.strip()
+        if not entry:
+            continue
+        source, sep, target = entry.partition(":")
+        if not sep:
+            raise ValueError(f"{env_name} entries must use source:target format")
+        source_norm = source.strip()
+        target_norm = target.strip()
+        if not source_norm or not target_norm:
+            raise ValueError(f"{env_name} entries must include both source and target")
+        pairs.append((source_norm, target_norm))
+    return tuple(pairs)
+
 def _parse_regression_budgets(raw: str | None) -> tuple[tuple[str, int], ...]:
     if raw is None:
         return ()
@@ -153,6 +181,16 @@ def load_settings_from_env() -> ApiSettings:
         ),
         api_key=os.getenv("SENA_API_KEY"),
         api_keys=_parse_api_keys(os.getenv("SENA_API_KEYS")),
+        enable_jwt_auth=_parse_bool(os.getenv("SENA_JWT_AUTH_ENABLED"), default=False),
+        jwt_issuer=os.getenv("SENA_JWT_ISSUER"),
+        jwt_audience=os.getenv("SENA_JWT_AUDIENCE"),
+        jwt_hs256_secret=os.getenv("SENA_JWT_HS256_SECRET"),
+        jwt_required_claims=_parse_csv(os.getenv("SENA_JWT_REQUIRED_CLAIMS") or "sub"),
+        jwt_role_claim=os.getenv("SENA_JWT_ROLE_CLAIM", "roles"),
+        jwt_role_mapping=_parse_mapping(os.getenv("SENA_JWT_ROLE_MAPPING"), env_name="SENA_JWT_ROLE_MAPPING"),
+        enforce_policy_actor_identity=_parse_bool(
+            os.getenv("SENA_ENFORCE_POLICY_ACTOR_IDENTITY"), default=False
+        ),
         audit_sink_jsonl=os.getenv("SENA_AUDIT_SINK_JSONL"),
         audit_storage_backend=os.getenv("SENA_AUDIT_STORAGE_BACKEND", "local_file"),
         audit_ship_destination=os.getenv("SENA_AUDIT_SHIP_DESTINATION"),

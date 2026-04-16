@@ -69,7 +69,14 @@ sena production-check --format both
 - `SENA_API_KEY_ENABLED`: enable API key auth
 - `SENA_API_KEY`: single admin key mode
 - `SENA_API_KEYS`: `key:role,key2:role2` mode
-  - roles: `admin`, `policy_author`, `reviewer`, `deployer`, `auditor`
+  - roles: `admin`, `policy_author`, `reviewer`, `deployer`, `auditor`, `verifier`
+- `SENA_JWT_AUTH_ENABLED`: enable JWT bearer-token auth
+- `SENA_JWT_HS256_SECRET`: shared secret for local/dev HS256 verification
+- `SENA_JWT_ISSUER`, `SENA_JWT_AUDIENCE`: optional claim constraints
+- `SENA_JWT_REQUIRED_CLAIMS`: required token claims (CSV, default `sub`)
+- `SENA_JWT_ROLE_CLAIM`: claim containing external role(s)
+- `SENA_JWT_ROLE_MAPPING`: external-to-internal mapping (`idp-role:reviewer,...`)
+- `SENA_ENFORCE_POLICY_ACTOR_IDENTITY`: optionally bind policy payload `actor_id` to JWT `sub` on evaluation endpoints
   - enforced ABAC attributes: `environment`, `bundle_name`, `action_type`
 
 ### Request safety controls
