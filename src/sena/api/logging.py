@@ -39,6 +39,7 @@ class JsonFormatter(logging.Formatter):
             "path",
             "status_code",
             "duration_ms",
+            "error_code",
             "decision_id",
             "outcome",
             "policy_bundle",
@@ -46,10 +47,17 @@ class JsonFormatter(logging.Formatter):
             "endpoint",
             "errors",
             "connector",
+            "provider",
+            "event_type",
+            "action",
             "target",
             "delivery_id",
             "dead_letter_id",
             "note",
+            "applied_exception_count",
+            "job_id",
+            "job_type",
+            "job_status",
         ):
             if hasattr(record, field_name):
                 payload[field_name] = getattr(record, field_name)
@@ -113,6 +121,9 @@ class _StdlibJsonLogger:
 
     def warning(self, event: str, **fields: Any) -> None:
         self._logger.warning(event, extra=fields)
+
+    def exception(self, event: str, **fields: Any) -> None:
+        self._logger.exception(event, extra=fields)
 
 
 def get_logger(name: str):

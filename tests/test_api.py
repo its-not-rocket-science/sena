@@ -100,6 +100,54 @@ def test_readiness_endpoint() -> None:
     assert response.json()["mode"] == "development"
 
 
+def test_operations_overview_exposes_operator_snapshot() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    response = client.get("/v1/operations/overview")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["readiness"]["status"] == "ready"
+    assert "operator_view" in payload
+    assert "inbound_events_received" in payload["operator_view"]
+    assert "outcomes_by_connector_policy_bundle" in payload["operator_view"]
+    assert "exception_overlays_applied" in payload["operator_view"]
+    assert "dead_letters" in payload["operator_view"]
+
+
+def test_simulation_jobs_emit_metrics() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    response = client.post(
+        "/v1/jobs/simulation",
+        json={
+            "baseline_policy_dir": "src/sena/examples/policies",
+            "candidate_policy_dir": "src/sena/examples/policies",
+            "scenarios": [
+                {
+                    "scenario_id": "s-1",
+                    "action_type": "approve_vendor_payment",
+                    "request_id": "req-1",
+                    "attributes": {"amount": 10, "vendor_verified": True},
+                    "facts": {},
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job"]["job_id"]
+    for _ in range(20):
+        status = client.get(f"/v1/jobs/{job_id}")
+        assert status.status_code == 200
+        if status.json()["status"] in {"succeeded", "failed", "timed_out", "cancelled"}:
+            break
+        time.sleep(0.05)
+    metrics_body = client.get("/v1/metrics/prometheus").text
+    assert 'sena_jobs_submitted_total{job_type="simulation"} 1.0' in metrics_body
+    assert 'sena_jobs_terminal_total{job_type="simulation",status="succeeded"} 1.0' in metrics_body
+
+
 def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     app = create_app(_settings())
     client = TestClient(app)

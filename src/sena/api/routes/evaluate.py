@@ -89,6 +89,7 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
     def _submit_simulation_job(req: SimulationJobSubmitRequest) -> dict:
         record = state.job_manager.submit(
             runner=lambda: _ok(_simulation_payload(req)),
+            job_type="simulation",
             timeout_seconds=req.timeout_seconds,
         )
         return JobAcceptedResponse(
