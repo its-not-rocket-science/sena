@@ -44,6 +44,7 @@ Start here for supported docs and operator flow:
 - `docs/CONTROL_PLANE.md`
 - `docs/READINESS.md`
 - `docs/ARCHITECTURE.md`
+- `docs/REPLAY_CORPUS.md`
 - `examples/README.md` (supported examples first)
 
 ## Explicit scope boundaries
