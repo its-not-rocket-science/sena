@@ -132,6 +132,30 @@ Break-glass promotions must set `break_glass=true` **and** provide `break_glass_
 
 Because SENA fails startup on invalid critical settings, readiness reflects a **post-validation healthy process** rather than a best-effort degraded state.
 
+### 5.1) Operator-ready daily view (supported path)
+
+Use `GET /v1/operations/overview` as the opinionated daily operator entrypoint. It summarizes:
+
+- inbound events received (`inbound_events_received`)
+- duplicate suppression (`/v1/integrations/{connector}/admin/outbound/duplicates/summary` and Prometheus duplicate counters)
+- outcomes by connector + policy bundle (`outcomes_by_connector_policy_bundle`)
+- exception overlays applied (`exception_overlays_applied`)
+- dead-letter growth (`dead_letters.connector_dead_letter_volume`)
+- simulation/replay job behavior (`jobs`, `job_status_counts`)
+
+Prometheus metric names used by this view:
+
+- `sena_connector_inbound_events_received_total{connector,event_type}`
+- `sena_connector_inbound_duplicate_suppression_total{connector}`
+- `sena_connector_outbound_duplicate_suppression_total{connector,target}`
+- `sena_connector_decision_outcomes_total{connector,policy_bundle,outcome}`
+- `sena_exception_overlays_applied_total{connector,policy_bundle,outcome}`
+- `sena_connector_outbound_dead_letter_total{connector,target}`
+- `sena_connector_outbound_dead_letter_volume{connector}`
+- `sena_connector_outbound_replay_total{connector,target,status}`
+- `sena_jobs_submitted_total{job_type}`
+- `sena_jobs_terminal_total{job_type,status}`
+
 ## 6) Secure integration and secret handling guidance
 
 - Keep all secrets out of repo and image layers.
@@ -188,6 +212,43 @@ curl -fsS "$SENA_BASE_URL/v1/ready" \
    - `GET /v1/integrations/{connector}/admin/outbound/duplicates/summary`
 4. Replay only explicit dead-letter IDs after root-cause fix:
    - `POST /v1/integrations/{connector}/admin/outbound/dead-letter/replay`
+
+### Detecting common failure classes quickly
+
+The following checks are designed to answer “is SENA working correctly today?” in minutes.
+
+1. **Broken mapping configs**
+   - Symptoms: webhook requests fail with
+     - `jira_invalid_mapping`, `jira_missing_required_fields`
+     - `servicenow_invalid_mapping`, `servicenow_missing_required_fields`
+   - Confirm by checking API error rates (`api_errors_total`) and a rise in runtime dead-letter items for webhook event types.
+   - Action: validate mapping file paths and required route fields, then replay affected dead-letter IDs.
+
+2. **Auth failures**
+   - Symptoms: `jira_authentication_failed` / `servicenow_authentication_failed` errors; no corresponding rise in connector outcomes.
+   - Logs/events: check structured events with stable names (`request_processed`, connector webhook error responses) and `error_code`.
+   - Action: rotate/verify webhook secrets and retry a known-good fixture.
+
+3. **Delivery retries (outbound pressure)**
+   - Signals:
+     - `sena_connector_outbound_replay_total{status="failure"}` increasing
+     - completion records showing `attempts` close to `max_attempts`
+   - Action: inspect remote dependency health and replay dead-letter records after fix.
+
+4. **Dead-letter growth**
+   - Signals:
+     - `sena_connector_outbound_dead_letter_volume{connector}` trending up
+     - `/v1/operations/overview.operator_view.dead_letters.connector_dead_letter_volume` non-zero and rising
+   - Action: triage newest dead-letter items first, group by repeated `error`, replay in batches, escalate if growth persists.
+
+5. **Policy drift or outcome shifts**
+   - Signals:
+     - unexpected mix changes in `sena_connector_decision_outcomes_total{connector,policy_bundle,outcome}`
+     - elevated `sena_exception_overlays_applied_total` indicating temporary exception pressure
+   - Action:
+     - run replay/simulation (`/v1/simulation`, `/v1/simulation/replay`)
+     - compare candidate vs baseline outcomes before promotions
+     - verify no unplanned bundle rollout occurred.
 
 ### Recovery decision rules
 

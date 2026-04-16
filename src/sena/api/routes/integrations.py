@@ -235,6 +235,16 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                         status_code=200,
                     )
             try:
+                state.metrics.observe_connector_inbound_event_received(
+                    connector="webhook",
+                    event_type=req.event_type,
+                )
+                logger.info(
+                    "connector_inbound_event_received",
+                    connector="webhook",
+                    event_type=req.event_type,
+                    provider=req.provider,
+                )
                 result = state.processing_service.enqueue_and_process(
                     {
                         "event_type": "webhook",
@@ -307,6 +317,15 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                         status_code=200,
                     )
             try:
+                state.metrics.observe_connector_inbound_event_received(
+                    connector="jira",
+                    event_type=str(payload.get("webhookEvent") or "unknown"),
+                )
+                logger.info(
+                    "connector_inbound_event_received",
+                    connector="jira",
+                    event_type=str(payload.get("webhookEvent") or "unknown"),
+                )
                 result = state.processing_service.enqueue_and_process(
                     {
                         "event_type": "jira_webhook",
@@ -421,6 +440,15 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                         status_code=200,
                     )
             try:
+                state.metrics.observe_connector_inbound_event_received(
+                    connector="servicenow",
+                    event_type=str(payload.get("event_type") or payload.get("type") or "unknown"),
+                )
+                logger.info(
+                    "connector_inbound_event_received",
+                    connector="servicenow",
+                    event_type=str(payload.get("event_type") or payload.get("type") or "unknown"),
+                )
                 result = state.processing_service.enqueue_and_process(
                     {
                         "event_type": "servicenow_webhook",

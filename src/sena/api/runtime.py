@@ -38,6 +38,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("GET", "/v1/bundles/by-version"),
     },
     "reviewer": {
+        ("GET", "/v1/operations/overview"),
         ("GET", "/v1/analytics/policy-efficacy"),
         ("POST", "/v1/bundle/promote"),
         ("POST", "/v1/admin/audit/config"),
@@ -67,6 +68,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("GET", "/v1/bundles/by-version"),
     },
     "auditor": {
+        ("GET", "/v1/operations/overview"),
         ("GET", "/v1/analytics/policy-efficacy"),
         ("GET", "/v1/audit/verify"),
         ("GET", "/v1/decision/{decision_id}/explanation"),
@@ -173,7 +175,15 @@ class EngineState:
         self.recovery_service: Any | None = None
         self.exception_service = ExceptionService()
         self.reliability_service: ReliabilityService | None = None
-        self.job_manager = InProcessJobManager(max_workers=4)
+        self.job_manager = InProcessJobManager(
+            max_workers=4,
+            on_submitted=lambda job_type: self.metrics.observe_job_submitted(
+                job_type=job_type
+            ),
+            on_terminal=lambda job_type, status: self.metrics.observe_job_terminal(
+                job_type=job_type, status=status
+            ),
+        )
 
 
 def _build_connector_registry(**kwargs: Any) -> Any:

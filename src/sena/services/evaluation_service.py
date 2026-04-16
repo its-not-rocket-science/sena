@@ -103,6 +103,7 @@ class EvaluationService:
         proposal: ActionProposal,
         facts: dict[str, Any],
         endpoint: str,
+        source_connector: str = "api",
         default_decision: Any,
         strict_require_allow: bool,
         notify_on_escalation: bool = True,
@@ -132,6 +133,11 @@ class EvaluationService:
             outcome=trace.outcome.value,
             policy=policy_bundle,
         )
+        self.state.metrics.observe_connector_outcome(
+            connector=source_connector,
+            policy_bundle=policy_bundle,
+            outcome=trace.outcome.value,
+        )
         logger.info(
             "decision_evaluated",
             decision_id=trace.decision_id,
@@ -139,6 +145,7 @@ class EvaluationService:
             policy_bundle=policy_bundle,
             evaluation_ms=evaluation_ms,
             endpoint=endpoint,
+            connector=source_connector,
         )
         payload = trace.to_dict()
         canonical_replay_payload = dict(trace.canonical_replay_payload or {})
@@ -185,6 +192,20 @@ class EvaluationService:
                 },
                 "changed": baseline_trace.outcome != trace.outcome,
             }
+        if trace.applied_exceptions:
+            self.state.metrics.observe_exception_overlay_applied(
+                connector=source_connector,
+                policy_bundle=policy_bundle,
+                outcome=trace.outcome.value,
+            )
+            logger.info(
+                "exception_overlay_applied",
+                connector=source_connector,
+                decision_id=trace.decision_id,
+                policy_bundle=policy_bundle,
+                outcome=trace.outcome.value,
+                applied_exception_count=len(trace.applied_exceptions),
+            )
         if replay_input is not None and "audit_record" in payload:
             payload["audit_record"]["replay_input"] = replay_input
         if "audit_record" in payload:

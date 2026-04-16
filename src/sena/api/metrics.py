@@ -62,6 +62,31 @@ class ApiMetrics:
             connector=connector
         )
 
+    def observe_connector_inbound_event_received(
+        self, *, connector: str, event_type: str
+    ) -> None:
+        self.traction.observe_connector_inbound_event_received(
+            connector=connector, event_type=event_type
+        )
+
+    def observe_connector_outcome(
+        self, *, connector: str, policy_bundle: str, outcome: str
+    ) -> None:
+        self.traction.observe_connector_outcome(
+            connector=connector,
+            policy_bundle=policy_bundle,
+            outcome=outcome,
+        )
+
+    def observe_exception_overlay_applied(
+        self, *, connector: str, policy_bundle: str, outcome: str
+    ) -> None:
+        self.traction.observe_exception_overlay_applied(
+            connector=connector,
+            policy_bundle=policy_bundle,
+            outcome=outcome,
+        )
+
     def observe_connector_outbound_duplicate_suppression(
         self, *, connector: str, target: str
     ) -> None:
@@ -103,6 +128,15 @@ class ApiMetrics:
             connector=connector,
             target=target,
         )
+
+    def observe_job_submitted(self, *, job_type: str) -> None:
+        self.traction.observe_job_submitted(job_type=job_type)
+
+    def observe_job_terminal(self, *, job_type: str, status: str) -> None:
+        self.traction.observe_job_terminal(job_type=job_type, status=status)
+
+    def observability_snapshot(self) -> dict[str, object]:
+        return self.traction.observability_snapshot()
 
     def exposition(self) -> bytes:
         return generate_latest(self.registry)
