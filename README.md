@@ -29,11 +29,17 @@ PYTHONPATH=src python examples/flagship/run_flagship.py
 - Deterministic replay contract + hash-linked audit chain
 
 Supported code path:
+- `src/sena/core_policy_engine/*` (entrypoint package)
 - `src/sena/policy/*`
 - `src/sena/engine/*`
+- `src/sena/core/*`
+- `src/sena/runtime/*` (entrypoint package)
 - `src/sena/api/*`
 - `src/sena/cli/*`
+- `src/sena/services/*`
+- `src/sena/audit_evidence/*` (entrypoint package)
 - `src/sena/audit/*`
+- `src/sena/supported_integrations/*` (entrypoint package)
 - `src/sena/integrations/jira.py`
 - `src/sena/integrations/servicenow.py`
 
@@ -46,6 +52,18 @@ Start here for supported docs and operator flow:
 - `docs/ARCHITECTURE.md`
 - `docs/REPLAY_CORPUS.md`
 - `examples/README.md` (supported examples first)
+
+## Package map for contributors
+
+To make the supported product path obvious from package layout, start from these import roots:
+
+- `sena.core_policy_engine` → core policy engine (`sena.core`, `sena.policy`, `sena.engine`)
+- `sena.supported_integrations` → Jira + ServiceNow + reliability persistence
+- `sena.runtime` → API, CLI, and service runtime wiring
+- `sena.audit_evidence` → audit chain + evidence pack + attestation verification
+- `sena.experimental` → unstable, evaluation-only surfaces
+
+`src/sena/MODULE_STATUS.md` contains the authoritative support/experimental/legacy mapping.
 
 ## Explicit scope boundaries
 
