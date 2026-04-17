@@ -1,0 +1,60 @@
+{
+  "bundle": {
+    "expected_name": "enterprise-compliance-controls",
+    "expected_version": "2026.03",
+    "path": "src/sena/examples/policies"
+  },
+  "case_id": "escalation",
+  "description": "High-value payment by non-director should escalate.",
+  "expected": {
+    "applied_exception_ids": [],
+    "baseline_outcome": "ESCALATE_FOR_HUMAN_REVIEW",
+    "bundle_identity": {
+      "name": "enterprise-compliance-controls",
+      "version": "2026.03"
+    },
+    "decision_hash": "55d0d086636774289d08d76e184e3ab27caa1291ef4f770962c117af2a4b6f27",
+    "matched_rules": [
+      "payment_escalate_high_amount_non_director"
+    ],
+    "missing_evidence": [],
+    "missing_fields": [
+      "ai_metadata.human_owner",
+      "ai_metadata.originating_model",
+      "ai_metadata.risk_classification.level",
+      "impact_scope"
+    ],
+    "normalized_proposal": {
+      "action_origin": "human",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "actor-escalate",
+      "actor_role": "finance_manager",
+      "ai_metadata": null,
+      "attributes": {
+        "amount": 12000,
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "autonomous_metadata": null,
+      "request_id": "req-escalate-1"
+    },
+    "outcome": "ESCALATE_FOR_HUMAN_REVIEW"
+  },
+  "fixture_schema": "sena.replay_fixture.v1",
+  "input": {
+    "facts": {},
+    "mode": "normalized_proposal",
+    "proposal": {
+      "action_origin": "human",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "actor-escalate",
+      "actor_role": "finance_manager",
+      "attributes": {
+        "amount": 12000,
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "request_id": "req-escalate-1"
+    }
+  }
+}

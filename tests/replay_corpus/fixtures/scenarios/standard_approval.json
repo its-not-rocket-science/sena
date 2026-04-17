@@ -1,0 +1,58 @@
+{
+  "bundle": {
+    "expected_name": "enterprise-compliance-controls",
+    "expected_version": "2026.03",
+    "path": "src/sena/examples/policies"
+  },
+  "case_id": "standard_approval",
+  "description": "Standard human payment approval under low risk should approve.",
+  "expected": {
+    "applied_exception_ids": [],
+    "baseline_outcome": "APPROVED",
+    "bundle_identity": {
+      "name": "enterprise-compliance-controls",
+      "version": "2026.03"
+    },
+    "decision_hash": "c265ce7c57fcc51b836990a0080a80e9a7ddc40cd170966bbf3685d7bb9332e7",
+    "matched_rules": [],
+    "missing_evidence": [],
+    "missing_fields": [
+      "ai_metadata.human_owner",
+      "ai_metadata.originating_model",
+      "ai_metadata.risk_classification.level",
+      "impact_scope"
+    ],
+    "normalized_proposal": {
+      "action_origin": "human",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "actor-standard",
+      "actor_role": "finance_director",
+      "ai_metadata": null,
+      "attributes": {
+        "amount": 250,
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "autonomous_metadata": null,
+      "request_id": "req-standard-1"
+    },
+    "outcome": "APPROVED"
+  },
+  "fixture_schema": "sena.replay_fixture.v1",
+  "input": {
+    "facts": {},
+    "mode": "normalized_proposal",
+    "proposal": {
+      "action_origin": "human",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "actor-standard",
+      "actor_role": "finance_director",
+      "attributes": {
+        "amount": 250,
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "request_id": "req-standard-1"
+    }
+  }
+}

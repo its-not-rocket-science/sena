@@ -1,0 +1,103 @@
+{
+  "bundle": {
+    "expected_name": "enterprise-compliance-controls",
+    "expected_version": "2026.03",
+    "path": "src/sena/examples/policies"
+  },
+  "case_id": "ai_missing_governance_evidence",
+  "description": "AI-originated medium-risk payment without citations should escalate.",
+  "expected": {
+    "applied_exception_ids": [],
+    "baseline_outcome": "ESCALATE_FOR_HUMAN_REVIEW",
+    "bundle_identity": {
+      "name": "enterprise-compliance-controls",
+      "version": "2026.03"
+    },
+    "decision_hash": "bc91a51eb16423af637d4c7d8859b538691959e03f5bf8092c05f0098b76c3a3",
+    "matched_rules": [
+      "payment_ai_assisted_medium_risk_governance_evidence"
+    ],
+    "missing_evidence": [
+      "source_citations"
+    ],
+    "missing_fields": [
+      "evidence.source_citations",
+      "impact_scope"
+    ],
+    "normalized_proposal": {
+      "action_origin": "ai_suggested",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "actor-ai",
+      "actor_role": "finance_manager",
+      "ai_metadata": {
+        "citation_references": [],
+        "confidence": null,
+        "evidence_references": [
+          "ev-1"
+        ],
+        "human_approver": null,
+        "human_owner": "owner-1",
+        "human_requester": "requester-1",
+        "originating_model": "gpt-model-v1",
+        "originating_system": "risk-assistant",
+        "prompt_context_ref": "ctx-123",
+        "requested_action": "approve_vendor_payment",
+        "requested_tool": null,
+        "risk_classification": {
+          "category": "payment_risk",
+          "level": "medium",
+          "rationale": "Medium risk recommendation",
+          "tags": [
+            "gov"
+          ]
+        },
+        "uncertainty": null
+      },
+      "attributes": {
+        "amount": 900,
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "autonomous_metadata": null,
+      "request_id": "req-ai-medium-1"
+    },
+    "outcome": "ESCALATE_FOR_HUMAN_REVIEW"
+  },
+  "fixture_schema": "sena.replay_fixture.v1",
+  "input": {
+    "facts": {},
+    "mode": "normalized_proposal",
+    "proposal": {
+      "action_origin": "ai_suggested",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "actor-ai",
+      "actor_role": "finance_manager",
+      "ai_metadata": {
+        "citation_references": [],
+        "evidence_references": [
+          "ev-1"
+        ],
+        "human_owner": "owner-1",
+        "human_requester": "requester-1",
+        "originating_model": "gpt-model-v1",
+        "originating_system": "risk-assistant",
+        "prompt_context_ref": "ctx-123",
+        "requested_action": "approve_vendor_payment",
+        "risk_classification": {
+          "category": "payment_risk",
+          "level": "medium",
+          "rationale": "Medium risk recommendation",
+          "tags": [
+            "gov"
+          ]
+        }
+      },
+      "attributes": {
+        "amount": 900,
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "request_id": "req-ai-medium-1"
+    }
+  }
+}
