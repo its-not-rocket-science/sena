@@ -2,6 +2,10 @@
 
 Terminology in this document follows README: `supported`, `experimental`, `labs/demo`, and `legacy`.
 
+## Positioning companion
+
+For precise market/category boundaries and comparison to generic policy engines, see `POSITIONING.md`.
+
 ## Architecture anchor: Jira + ServiceNow first
 
 The supported architecture is built around **deterministic decisioning for Jira + ServiceNow approval workflows**.
