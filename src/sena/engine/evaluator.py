@@ -320,10 +320,17 @@ class PolicyEvaluator:
         list[InvariantEvaluationResult],
         list[str],
     ]:
-        matched = [result for result in evaluated if result.matched]
+        matched = sorted(
+            [result for result in evaluated if result.matched],
+            key=lambda result: result.rule_id,
+        )
         matched_invariants = [
             result for result in evaluated_invariants if result.matched
         ]
+        matched_invariants = sorted(
+            matched_invariants,
+            key=lambda result: result.invariant_id,
+        )
 
         inviolable_blocks = [
             r for r in matched if r.inviolable and r.decision == RuleDecision.BLOCK
@@ -367,7 +374,7 @@ class PolicyEvaluator:
             )
             summary = (
                 "BLOCKED due to invariant violation(s) "
-                f"({', '.join(result.invariant_id for result in matched_invariants)})."
+                f"({', '.join(sorted(result.invariant_id for result in matched_invariants))})."
             )
             precedence_steps.append(
                 PrecedenceResolutionStep(
@@ -387,7 +394,7 @@ class PolicyEvaluator:
             )
             summary = (
                 "BLOCKED due to inviolable policy constraints "
-                f"({', '.join(r.rule_id for r in inviolable_blocks)})."
+                f"({', '.join(sorted(r.rule_id for r in inviolable_blocks))})."
             )
             precedence_steps.append(
                 PrecedenceResolutionStep(
@@ -405,7 +412,7 @@ class PolicyEvaluator:
             )
             summary = (
                 "BLOCKED by policy rule(s) "
-                f"({', '.join(r.rule_id for r in blocks)})."
+                f"({', '.join(sorted(r.rule_id for r in blocks))})."
             )
             precedence_steps.append(
                 PrecedenceResolutionStep(
@@ -423,7 +430,7 @@ class PolicyEvaluator:
             )
             summary = (
                 "ESCALATE_FOR_HUMAN_REVIEW for "
-                f"rule(s) ({', '.join(r.rule_id for r in escalations)})."
+                f"rule(s) ({', '.join(sorted(r.rule_id for r in escalations))})."
             )
             precedence_steps.append(
                 PrecedenceResolutionStep(
