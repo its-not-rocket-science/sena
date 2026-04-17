@@ -16,6 +16,7 @@ Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 - `CONTROL_PLANE.md` — implemented runtime contract.
 - `READINESS.md` — explicit maturity model (implemented, pilot-ready, not production-grade).
 - `ARCHITECTURE.md` — supported boundaries and non-goals.
+- `POSITIONING.md` — what SENA is and is not vs generic policy engines.
 - `CANONICAL_WORKFLOW.md` — end-to-end supported workflow + evidence chain.
 - `integrations/JIRA.md` and `integrations/SERVICENOW.md` — supported connector contracts.
 - `OPERATIONS.md` — day-2 operator runbooks for supported surfaces.
