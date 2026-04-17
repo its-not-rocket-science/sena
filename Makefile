@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack durability-evidence-pack demo-k8s demo-monitoring integration-matrix-check
+.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack durability-evidence-pack demo-k8s demo-monitoring integration-matrix-check replay-refresh
 
 install:
 	pip install -e .
@@ -68,3 +68,7 @@ demo-monitoring:
 
 integration-matrix-check:
 	PYTHONPATH=src python scripts/generate_integration_confidence_matrix.py --check
+
+
+replay-refresh:
+	PYTHONPATH=src python scripts/refresh_replay_corpus.py

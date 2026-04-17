@@ -1,0 +1,99 @@
+{
+  "bundle": {
+    "expected_name": "enterprise-compliance-controls",
+    "expected_version": "2026.03",
+    "path": "src/sena/examples/policies"
+  },
+  "case_id": "servicenow_originated_normalized_event",
+  "description": "ServiceNow event should normalize into supported action proposal and evaluate deterministically.",
+  "expected": {
+    "applied_exception_ids": [],
+    "baseline_outcome": "APPROVED",
+    "bundle_identity": {
+      "name": "enterprise-compliance-controls",
+      "version": "2026.03"
+    },
+    "decision_hash": "ed800b6b56af5eda384df574004a221bf392bc346369f8a27c470e335a68c972",
+    "matched_rules": [],
+    "missing_evidence": [],
+    "missing_fields": [
+      "ai_metadata.human_owner",
+      "ai_metadata.originating_model",
+      "ai_metadata.risk_classification.level",
+      "amount",
+      "impact_scope",
+      "vendor_verified"
+    ],
+    "normalized_proposal": {
+      "action_origin": "autonomous_tool",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "sn.user.001",
+      "actor_role": "change_manager",
+      "ai_metadata": null,
+      "attributes": {
+        "approval_workflow": "enterprise_change",
+        "approver_chain": [
+          "director_ops",
+          "security_lead"
+        ],
+        "approver_chain_missing": false,
+        "cab_review_evidence_id": "CAB-2026-0042",
+        "cab_review_missing": false,
+        "change_classification": "emergency",
+        "correlation_key": "CHG0091001",
+        "emergency_change": true,
+        "environment": "production",
+        "escalation_deadline_at": "2026-04-01T23:00:00Z",
+        "evidence_references": [
+          "CAB-2026-0042"
+        ],
+        "external_state": "change_approval.requested",
+        "fixture_version": "1",
+        "governance_model": "cab_and_role_chain",
+        "idempotency_key": "replay-sn-1",
+        "normalized_classification": "emergency",
+        "normalized_environment": "production",
+        "out_of_hours_change": true,
+        "privileged_change": false,
+        "requested_action": "approve_vendor_payment",
+        "requested_end": "2026-04-02T01:00:00Z",
+        "requested_start": "2026-04-01T23:00:00Z",
+        "risk_attributes": {
+          "emergency_change": true,
+          "out_of_hours_change": true,
+          "privileged_change": false,
+          "risk_level": "high"
+        },
+        "risk_level": "high",
+        "schedule_window": "out_of_hours",
+        "servicenow_change_number": "CHG0091001",
+        "servicenow_table": "change_request",
+        "sla_deadline_at": "2026-04-02T01:00:00Z",
+        "source_event_type": "change_approval.requested",
+        "source_object_id": "d0f1e2a3b4",
+        "source_object_type": "change_request",
+        "source_system": "servicenow",
+        "source_table": "change_request",
+        "workflow_stage": "requested"
+      },
+      "autonomous_metadata": {
+        "supervising_owner": "sn.user.001",
+        "tool_name": "servicenow",
+        "trigger_reference": "d0f1e2a3b4",
+        "trigger_type": "change_approval.requested"
+      },
+      "request_id": "CHG0091001"
+    },
+    "outcome": "APPROVED"
+  },
+  "fixture_schema": "sena.replay_fixture.v1",
+  "input": {
+    "event_fixture_path": "tests/replay_corpus/fixtures/events/servicenow_emergency_change.json",
+    "facts": {},
+    "headers": {
+      "x-servicenow-delivery-id": "replay-sn-1"
+    },
+    "mode": "mapped_event",
+    "source_system": "servicenow"
+  }
+}

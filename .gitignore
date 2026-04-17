@@ -107,6 +107,8 @@ checkpoints/
 !examples/*.json
 !tests/fixtures/integrations/confidence_assertions.json
 !docs/artifacts/integrations/jira_servicenow_confidence_matrix.json
+!tests/replay_corpus/fixtures/events/*.json
+!tests/replay_corpus/fixtures/scenarios/*.json
 
 # =========================
 # 🐳 Docker

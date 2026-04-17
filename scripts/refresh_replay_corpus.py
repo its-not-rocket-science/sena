@@ -10,20 +10,18 @@ for candidate in (ROOT, ROOT / "src"):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from tests.replay_corpus.helpers import (
-    evaluate_corpus_cases,
-    evaluate_duplicate_delivery_cases,
-    write_baseline,
-)
+from tests.replay_corpus.helpers import build_drift_report, refresh_fixture_expectations
 
 
 def main() -> None:
+    updated = refresh_fixture_expectations()
+    report = build_drift_report()
     payload = {
-        "schema": "sena.replay_corpus.baseline.v1",
-        "cases": evaluate_corpus_cases(),
-        "duplicate_delivery": evaluate_duplicate_delivery_cases(),
+        "schema": "sena.replay_refresh_report.v1",
+        "updated_fixtures": updated,
+        "semantic_drift_summary": report["semantic_drift_summary"],
+        "remaining_mismatches": report["mismatches"],
     }
-    write_baseline(payload)
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
