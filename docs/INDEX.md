@@ -21,6 +21,8 @@ Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 - `integrations/JIRA.md` and `integrations/SERVICENOW.md` — supported connector contracts.
 - `integrations/SUPPORTED_PATH_READINESS_CHECKLIST.md` — Jira + ServiceNow supported-path pass/fail readiness gates.
 - `OPERATIONS.md` — day-2 operator runbooks for supported surfaces.
+- `RUNBOOKS.md` — failure-mode runbooks with copy/paste commands and pass/fail interpretation.
+- `DAY2_OPERATIONS.md` — daily and incident safety checklist for on-call operators.
 - `API_IDEMPOTENCY_CONTRACT.md` — payload-binding idempotency semantics and error contract.
 - `PILOT_ACCEPTANCE.md` — measurable acceptance criteria.
 

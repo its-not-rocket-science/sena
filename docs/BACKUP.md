@@ -76,3 +76,16 @@ Set:
 - optional `SENA_AUDIT_VERIFY_ALERT_WEBHOOK=https://...`
 
 Service writes `audit-verify-YYYY-MM-DD.json` reports and updates metric `sena_audit_verification_passed`.
+
+## Automated restore drill helper
+
+For a single-command backup->restore->verify drill, run:
+
+```bash
+python scripts/registry_backup_restore_drill.py \
+  --sqlite-path /var/lib/sena/policy-registry.db \
+  --audit-chain /var/lib/sena/audit/decisions.jsonl \
+  --work-dir /tmp/sena-drill
+```
+
+Use `--dry-run` to print all underlying registry commands without changing files.

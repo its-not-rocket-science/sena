@@ -519,3 +519,13 @@ python -m sena.cli.main audit --audit-path /var/log/sena/audit.jsonl locate-deci
 - `locate-decision`: finds the decision id and returns record index, segment location, sequence number, and chain links for rapid incident triage.
 
 Corruption diagnostics are precise and actionable, with record and segment identifiers (for example: malformed record location, missing segment file, manifest sequence mismatch).
+
+## 8) Dedicated runbooks and day-2 checklist
+
+Use these command-first documents for incident execution:
+
+- `docs/RUNBOOKS.md`
+- `docs/DAY2_OPERATIONS.md`
+
+For dead-letter replay/manual-redrive API actions, use `python scripts/dead_letter_admin.py --help`.
+For backup/restore verification drills, use `python scripts/registry_backup_restore_drill.py --help`.
