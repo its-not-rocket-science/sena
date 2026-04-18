@@ -214,7 +214,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         details.update(extra)
         return details
 
-    @router.post("/integrations/webhook", summary="Generic webhook policy evaluation")
+    @router.post("/integrations/webhook", summary="[EXPERIMENTAL] Generic webhook policy evaluation")
     def integrations_webhook(
         req: WebhookEvaluateRequest,
         request: Request,
@@ -294,10 +294,12 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                 )
                 raise_api_error("webhook_evaluation_error", details={"reason": str(exc)})
 
-    @router.post("/integrations/jira/webhook", summary="Jira webhook policy evaluation")
+    @router.post("/integrations/jira/webhook", summary="[SUPPORTED] Jira webhook policy evaluation")
     async def integrations_jira_webhook(
         request: Request,
+        response: Response,
     ) -> dict | Response:
+        response.headers["x-sena-surface-stage"] = "supported"
         if state.jira_connector is None:
             raise_api_error("jira_mapping_not_configured")
         raw_body = await request.body()
@@ -454,11 +456,13 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     ),
                 )
 
-    @router.post("/integrations/servicenow/webhook", summary="ServiceNow webhook policy evaluation")
+    @router.post("/integrations/servicenow/webhook", summary="[SUPPORTED] ServiceNow webhook policy evaluation")
     async def integrations_servicenow_webhook(
         request: Request,
+        response: Response,
         strict_require_allow: bool = False,
     ) -> dict | Response:
+        response.headers["x-sena-surface-stage"] = "supported"
         if state.servicenow_connector is None:
             raise_api_error("servicenow_mapping_not_configured")
         raw_body = await request.body()
@@ -806,7 +810,7 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             }
         )
 
-    @router.post("/integrations/slack/interactions", summary="Handle Slack interactive callbacks")
+    @router.post("/integrations/slack/interactions", summary="[EXPERIMENTAL] Handle Slack interactive callbacks")
     async def slack_interactions(request: Request, response: Response) -> dict:
         response.headers["x-sena-surface-stage"] = "experimental"
         try:
