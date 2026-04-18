@@ -46,6 +46,7 @@ Supported code path:
 Start here for supported docs and operator flow:
 - `docs/FLAGSHIP_WORKFLOW.md`
 - `docs/INDEX.md`
+- `docs/SUPPORTED_VS_EXPERIMENTAL_INVENTORY.md`
 - `docs/ASYNC_EXECUTION.md`
 - `docs/CONTROL_PLANE.md`
 - `docs/READINESS.md`
@@ -92,7 +93,7 @@ Guarantees:
 - Jira webhook normalization + evaluation (`POST /v1/integrations/jira/webhook`)
 - ServiceNow webhook normalization + evaluation (`POST /v1/integrations/servicenow/webhook`)
 
-**Experimental integrations (evaluation only, subject to change):**
+**Non-default integrations (evaluation only, subject to change):**
 - Generic webhook mapping (`POST /v1/integrations/webhook`)
 - Slack interactions (`POST /v1/integrations/slack/interactions`)
 - LangChain callback interception (`sena.integrations.langchain.SenaApprovalCallback`)
@@ -106,8 +107,9 @@ Current package/API version: `0.3.0` (single source: `src/sena/__init__.py`).
 ```bash
 pip install -e .
 pip install -e .[api,dev]
-pip install -e .[langchain]  # optional callback integration
 ```
+
+Experimental-only optional extras are intentionally out of the default path (see `docs/EXPERIMENTAL_INDEX.md`).
 
 ## Local quality checks
 
@@ -117,11 +119,12 @@ ruff check src tests
 pytest
 ```
 
-## CLI quickstart
+## CLI quickstart (supported)
 
 ```bash
 python -m sena.cli.main \
-  src/sena/examples/scenarios/demo_vendor_payment_block_unverified.json \
+  examples/flagship/evaluate_payload.json \
+  --policy-dir examples/design_partner_reference/policy_bundles/active \
   --json
 ```
 

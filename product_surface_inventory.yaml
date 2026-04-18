@@ -1,140 +1,49 @@
-version: 1
-generated_on: 2026-04-13
+version: 2
+generated_on: 2026-04-18
 product_statement: "deterministic Jira + ServiceNow approval decisioning with replayable audit evidence"
 classification_legend:
   supported: "Contract-backed and implementation-backed default path."
   experimental: "Implemented but not a compatibility commitment."
   labs_demo: "Demo, investor, or exploratory collateral."
   legacy: "Historical or deprecated material; not part of current guarantees."
+  remove: "Actively remove from default operator flow (keep only if needed internally)."
 inventory:
-  top_level_docs:
+  docs_default_path:
     - path: README.md
       classification: supported
-      default_reader_path: true
-      rationale: "Primary product entrypoint with explicit supported boundaries."
     - path: docs/INDEX.md
       classification: supported
-      default_reader_path: true
-      rationale: "Primary documentation index for supported operation."
+    - path: docs/FLAGSHIP_WORKFLOW.md
+      classification: supported
     - path: docs/CONTROL_PLANE.md
       classification: supported
-      default_reader_path: true
-      rationale: "Defines the supported runtime contract."
-    - path: docs/ARCHITECTURE.md
-      classification: supported
-      default_reader_path: true
-      rationale: "Defines supported architecture and explicit boundaries."
-    - path: docs/CANONICAL_WORKFLOW.md
-      classification: supported
-      default_reader_path: true
-      rationale: "Canonical end-to-end Jira + ServiceNow workflow."
-    - path: docs/integrations/JIRA.md
-      classification: supported
-      default_reader_path: true
-      rationale: "Supported Jira integration behavior and contracts."
-    - path: docs/integrations/SERVICENOW.md
-      classification: supported
-      default_reader_path: true
-      rationale: "Supported ServiceNow integration behavior and contracts."
     - path: docs/OPERATIONS.md
       classification: supported
-      default_reader_path: true
-      rationale: "Operator playbooks for supported runtime."
+    - path: docs/integrations/JIRA.md
+      classification: supported
+    - path: docs/integrations/SERVICENOW.md
+      classification: supported
+    - path: docs/SUPPORTED_VS_EXPERIMENTAL_INVENTORY.md
+      classification: supported
+  docs_non_default:
     - path: docs/EXPERIMENTAL_INDEX.md
       classification: experimental
-      default_reader_path: false
-      rationale: "Single index for non-core material."
-    - path: docs/LABS.md
-      classification: labs_demo
-      default_reader_path: false
-      rationale: "Labs/demo index only."
     - path: docs/COOKBOOK.md
       classification: experimental
-      default_reader_path: false
-      rationale: "Contains non-supported LangChain and K8s demo recipes."
-    - path: docs/THIRTY_DAY_WEDGE_PLAN.md
-      classification: legacy
-      default_reader_path: false
-      rationale: "Historical planning document with superseded scope statements."
+    - path: docs/LABS.md
+      classification: labs_demo
+    - path: docs/labs/
+      classification: labs_demo
+    - path: docs/blog/langchain_integration.md
+      classification: labs_demo
     - path: docs/archive/legacy_vision.md
       classification: legacy
-      default_reader_path: false
-      rationale: "Archived historical vision document."
-  packages:
-    - path: src/sena/policy
-      classification: supported
-    - path: src/sena/engine
-      classification: supported
-    - path: src/sena/api
-      classification: supported
-    - path: src/sena/cli
-      classification: supported
-    - path: src/sena/audit
-      classification: supported
-    - path: src/sena/services
-      classification: supported
-    - path: src/sena/integrations/jira.py
-      classification: supported
-    - path: src/sena/integrations/servicenow.py
-      classification: supported
-    - path: src/sena/integrations/persistence.py
-      classification: supported
-    - path: src/sena/integrations/webhook.py
-      classification: experimental
-    - path: src/sena/integrations/slack.py
-      classification: experimental
-    - path: src/sena/integrations/langchain
-      classification: experimental
-    - path: src/sena/llm
-      classification: experimental
-    - path: src/sena/evolutionary
-      classification: experimental
-    - path: src/sena/production_systems
-      classification: experimental
-    - path: src/sena/orchestrator
-      classification: experimental
-    - path: src/sena/legacy
+    - path: docs/THIRTY_DAY_WEDGE_PLAN.md
       classification: legacy
-      notes: "May not exist in all branches; reserved as legacy namespace."
-  api_routes:
-    - route: /v1/integrations/jira/webhook
-      module: src/sena/api/routes/integrations.py
-      classification: supported
-    - route: /v1/integrations/servicenow/webhook
-      module: src/sena/api/routes/integrations.py
-      classification: supported
-    - route: /v1/evaluate
-      module: src/sena/api/routes/evaluate.py
-      classification: supported
-    - route: /v1/bundle
-      module: src/sena/api/routes/bundles.py
-      classification: supported
-    - route: /v1/health
-      module: src/sena/api/routes/health.py
-      classification: supported
-    - route: /v1/ready
-      module: src/sena/api/routes/health.py
-      classification: supported
-    - route: /v1/integrations/webhook
-      module: src/sena/api/routes/integrations.py
-      classification: experimental
-    - route: /v1/integrations/slack/interactions
-      module: src/sena/api/routes/integrations.py
-      classification: experimental
-    - route: /health
-      module: src/sena/api/app.py
-      classification: legacy
-      notes: "Deprecated unversioned compatibility endpoint (returns 410)."
-    - route: /bundle
-      module: src/sena/api/app.py
-      classification: legacy
-      notes: "Deprecated unversioned compatibility endpoint (returns 410)."
-    - route: /evaluate
-      module: src/sena/api/app.py
-      classification: legacy
-      notes: "Deprecated unversioned compatibility endpoint (returns 410)."
   examples:
-    - path: examples/design_partner_reference
+    - path: examples/flagship/
+      classification: supported
+    - path: examples/design_partner_reference/
       classification: supported
     - path: examples/basic_usage.py
       classification: supported
@@ -142,29 +51,71 @@ inventory:
       classification: supported
     - path: examples/simulation_scenarios.json
       classification: supported
-    - path: examples/k8s_admission_demo
-      classification: labs_demo
-    - path: examples/langchain_demo
-      classification: labs_demo
-  move_out_of_default_reader_path:
-    - path: docs/COOKBOOK.md
-      reason: "Leads with experimental recipes and dilutes the supported Jira + ServiceNow narrative."
-      destination: docs/EXPERIMENTAL_INDEX.md
-    - path: docs/LABS.md
-      reason: "Labs/investor collateral should not compete with supported onboarding docs."
-      destination: docs/EXPERIMENTAL_INDEX.md
-    - path: docs/labs/
-      reason: "Investor/fundraising content is non-contractual."
-      destination: docs/EXPERIMENTAL_INDEX.md
-    - path: docs/blog/langchain_integration.md
-      reason: "LangChain integration is experimental-only."
-      destination: docs/EXPERIMENTAL_INDEX.md
     - path: examples/k8s_admission_demo/
-      reason: "Exploratory demo path, not supported product surface."
-      destination: docs/EXPERIMENTAL_INDEX.md
+      classification: labs_demo
     - path: examples/langchain_demo/
-      reason: "Exploratory demo path, not supported product surface."
-      destination: docs/EXPERIMENTAL_INDEX.md
-    - path: docs/THIRTY_DAY_WEDGE_PLAN.md
-      reason: "Historical plan includes superseded positioning statements."
-      destination: docs/EXPERIMENTAL_INDEX.md
+      classification: labs_demo
+  api_surface:
+    - route: /v1/integrations/jira/webhook
+      classification: supported
+      notes: "Flagship ingress path."
+    - route: /v1/integrations/servicenow/webhook
+      classification: supported
+      notes: "Flagship ingress path."
+    - route: /v1/integrations/webhook
+      classification: experimental
+      notes: "Generic mapping surface; intentionally non-default."
+    - route: /v1/integrations/slack/interactions
+      classification: experimental
+      notes: "Interactive Slack callback; intentionally non-default."
+    - route: /health
+      classification: legacy
+      notes: "Deprecated unversioned endpoint (410)."
+    - route: /bundle
+      classification: legacy
+      notes: "Deprecated unversioned endpoint (410)."
+    - route: /evaluate
+      classification: legacy
+      notes: "Deprecated unversioned endpoint (410)."
+  scripts:
+    - path: scripts/check_design_partner_ready.py
+      classification: supported
+    - path: scripts/generate_evidence_pack.py
+      classification: supported
+    - path: scripts/generate_integration_pilot_pack.py
+      classification: supported
+    - path: scripts/verify_policy_registry.py
+      classification: supported
+    - path: scripts/refresh_replay_corpus.py
+      classification: supported
+    - path: scripts/backup.py
+      classification: supported
+    - path: scripts/restore.py
+      classification: supported
+    - path: scripts/backup_policy_registry.py
+      classification: supported
+    - path: scripts/restore_policy_registry.py
+      classification: supported
+    - path: scripts/migrate_policy_registry.py
+      classification: supported
+    - path: scripts/generate_pilot_evidence.py
+      classification: supported
+    - path: scripts/generate_integration_confidence_matrix.py
+      classification: supported
+    - path: scripts/benchmark_embedded_rules_vs_sena.py
+      classification: labs_demo
+      notes: "Useful internally, but can distract from productized governance path."
+    - path: scripts/load_test.py
+      classification: experimental
+    - path: scripts/generate_traffic.py
+      classification: experimental
+  recommendations:
+    - path: README.md#install
+      action: remove
+      note: "Do not lead with LangChain extra in default install path."
+    - path: README.md#cli-quickstart
+      action: remove
+      note: "Do not lead with demo scenario fixtures in the first CLI run."
+    - path: docs/INDEX.md
+      action: supported
+      note: "Keep inventory and flagship workflow in top section."
