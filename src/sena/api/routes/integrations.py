@@ -670,7 +670,20 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         "/integrations/{connector}/admin/outbound/dead-letter/replay",
         summary="Replay outbound dead-letter records",
     )
-    def admin_outbound_dead_letter_replay(connector: str, ids: list[int]) -> dict:
+    def admin_outbound_dead_letter_replay(
+        connector: str, ids: list[int], request: Request
+    ) -> dict:
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="integration_dead_letter_replay",
+            principal=principal,
+            headers=request.headers,
+            require_signed_step_up=state.settings.require_signed_step_up,
+            step_up_hs256_secret=state.settings.step_up_hs256_secret,
+            step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
         return _bulk_dead_letter_action(
             connector=connector,
             ids=ids,
@@ -685,8 +698,22 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         summary="Manually mark outbound dead-letter records as redriven",
     )
     def admin_outbound_dead_letter_manual_redrive(
-        connector: str, ids: list[int], note: str = "manually redriven"
+        connector: str,
+        ids: list[int],
+        request: Request,
+        note: str = "manually redriven",
     ) -> dict:
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="integration_dead_letter_manual_redrive",
+            principal=principal,
+            headers=request.headers,
+            require_signed_step_up=state.settings.require_signed_step_up,
+            step_up_hs256_secret=state.settings.step_up_hs256_secret,
+            step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
         normalized_note = _normalize_note(note)
         result = _bulk_dead_letter_action(
             connector=connector,
@@ -738,7 +765,20 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         return _list_response(items)
 
     @router.post("/admin/data/payloads/{payload_id}/hold", summary="Apply legal hold to governed payload")
-    def admin_data_payload_hold(payload_id: int, reason: str = "legal_hold") -> dict:
+    def admin_data_payload_hold(
+        payload_id: int, request: Request, reason: str = "legal_hold"
+    ) -> dict:
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="payload_legal_hold",
+            principal=principal,
+            headers=request.headers,
+            require_signed_step_up=state.settings.require_signed_step_up,
+            step_up_hs256_secret=state.settings.step_up_hs256_secret,
+            step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
         updated = state.processing_store.apply_governed_payload_legal_hold(
             payload_id,
             reason=reason,
@@ -752,6 +792,9 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             operation="audit_config_change",
             principal=principal,
             headers=request.headers,
+            require_signed_step_up=state.settings.require_signed_step_up,
+            step_up_hs256_secret=state.settings.step_up_hs256_secret,
+            step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
         )
         if not decision.allowed:
             raise_api_error("forbidden", details=decision.details())

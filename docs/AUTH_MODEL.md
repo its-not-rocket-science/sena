@@ -29,6 +29,7 @@ SENA supports a provider abstraction (`AuthManager`) that can load one or both p
 - **JWT bearer provider** (OIDC-ready path):
   - `SENA_JWT_AUTH_ENABLED=true`
   - Local/dev verifier currently supports **HS256** signature verification.
+  - Verification is intentionally narrow today (shared-secret HS256 only). It is not a complete enterprise OIDC/JWKS validation plane.
   - Future IdP-backed validation can replace provider internals without changing route authorization wiring.
 
 If both providers are enabled, exactly one credential type may be presented per request.
@@ -42,6 +43,9 @@ If both providers are enabled, exactly one credential type may be presented per 
 - `SENA_JWT_REQUIRED_CLAIMS`: comma-separated required claims (default `sub`).
 - `SENA_JWT_ROLE_CLAIM`: claim carrying external role(s) (default `roles`).
 - `SENA_JWT_ROLE_MAPPING`: external-to-internal mappings (`idp_role:reviewer,...`).
+- `SENA_REQUIRE_SIGNED_STEP_UP`: when `true`, sensitive operations require signed step-up assertions (not header presence only).
+- `SENA_STEP_UP_HS256_SECRET`: shared secret used to verify signed step-up assertions.
+- `SENA_STEP_UP_MAX_AGE_SECONDS`: max assertion age in seconds (default `300`).
 
 Internal supported roles are unchanged:
 `admin`, `policy_author`, `reviewer`, `deployer`, `auditor`, `verifier`.
@@ -54,8 +58,21 @@ The following operations now use explicit structured checks:
 - `bundle_rollback`
 - `audit_config_change`
 - `exception_approval`
+- `audit_legal_hold`
+- `payload_legal_hold`
+- `integration_dead_letter_replay`
+- `integration_dead_letter_manual_redrive`
 
-These checks enforce separation-of-duties and step-up/approver headers where required.
+These checks enforce separation-of-duties and step-up controls. With `SENA_REQUIRE_SIGNED_STEP_UP=true`, signed assertions are bound to caller identity + operation and include explicit expiry.
+
+### Signed step-up assertion contract (when enabled)
+
+- Header: `X-Step-Up-Auth: v1.<base64url-json-payload>.<base64url-hmac-sha256-signature>`
+- Payload fields:
+  - `subject`: must match authenticated principal subject.
+  - `operation`: must equal the sensitive operation (or `*`).
+  - `iat`: issued-at epoch seconds, bounded by `SENA_STEP_UP_MAX_AGE_SECONDS`.
+  - `secondary_approver` (required where dual approval applies): must match header-provided secondary approver identity.
 
 ## 5) App auth vs policy actor identity
 

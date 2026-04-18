@@ -26,7 +26,7 @@ from sena.api.runtime import (
 )
 
 try:
-    from fastapi import APIRouter, FastAPI
+    from fastapi import APIRouter, FastAPI, Request
     from fastapi.responses import JSONResponse, Response
 except ModuleNotFoundError:  # pragma: no cover
     FastAPI = None  # type: ignore
@@ -133,7 +133,21 @@ def build_app(state):
         return result
 
     @api_v1.post("/audit/hold/{decision_id}")
-    def audit_place_hold(decision_id: str) -> dict:
+    def audit_place_hold(decision_id: str, request: Request) -> dict:
+        from sena.api.auth import evaluate_sensitive_operation
+        from sena.api.errors import raise_api_error
+
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="audit_legal_hold",
+            principal=principal,
+            headers=request.headers,
+            require_signed_step_up=state.settings.require_signed_step_up,
+            step_up_hs256_secret=state.settings.step_up_hs256_secret,
+            step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
         audit_service = AuditService(state.settings.audit_sink_jsonl)
         return {"hold": audit_service.place_legal_hold(decision_id)}
 
