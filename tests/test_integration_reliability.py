@@ -271,8 +271,8 @@ def test_sqlite_reliability_store_persists_idempotency_completion_and_dlq_across
     db_path = tmp_path / "integration_reliability.db"
     first = SQLiteIntegrationReliabilityStore(str(db_path))
 
-    assert first.mark_if_new("delivery-1") is True
-    assert first.mark_if_new("delivery-1") is False
+    assert first.mark_if_new("delivery-1") == "new"
+    assert first.mark_if_new("delivery-1") == "duplicate"
 
     first.mark_completed(
         "op-1",
@@ -296,7 +296,7 @@ def test_sqlite_reliability_store_persists_idempotency_completion_and_dlq_across
     )
 
     after_restart = SQLiteIntegrationReliabilityStore(str(db_path))
-    assert after_restart.mark_if_new("delivery-1") is False
+    assert after_restart.mark_if_new("delivery-1") == "duplicate"
     completion = after_restart.get_completion("op-1")
     assert completion is not None
     assert completion.target == "comment"

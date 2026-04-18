@@ -5,7 +5,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from sena.integrations.approval import DeadLetterItem
 
@@ -36,7 +36,9 @@ class OutboundDeadLetterRecord:
 
 
 class IntegrationReliabilityStore(Protocol):
-    def mark_if_new(self, delivery_id: str) -> bool: ...
+    def mark_if_new(
+        self, delivery_id: str, *, payload_fingerprint: str | None = None
+    ) -> Literal["new", "duplicate", "conflict"]: ...
 
     def mark_completed(
         self,
@@ -84,7 +86,9 @@ class PilotSQLiteIntegrationReliabilityStore:
                     observed_at TEXT NOT NULL,
                     last_seen_at TEXT,
                     seen_count INTEGER NOT NULL DEFAULT 1,
-                    suppressed_count INTEGER NOT NULL DEFAULT 0
+                    suppressed_count INTEGER NOT NULL DEFAULT 0,
+                    conflict_count INTEGER NOT NULL DEFAULT 0,
+                    payload_fingerprint TEXT
                 )
                 """
             )
@@ -156,28 +160,61 @@ class PilotSQLiteIntegrationReliabilityStore:
                 conn.execute(
                     "ALTER TABLE delivery_idempotency_keys ADD COLUMN suppressed_count INTEGER NOT NULL DEFAULT 0"
                 )
+            if "conflict_count" not in columns:
+                conn.execute(
+                    "ALTER TABLE delivery_idempotency_keys ADD COLUMN conflict_count INTEGER NOT NULL DEFAULT 0"
+                )
+            if "payload_fingerprint" not in columns:
+                conn.execute(
+                    "ALTER TABLE delivery_idempotency_keys ADD COLUMN payload_fingerprint TEXT"
+                )
 
-    def mark_if_new(self, delivery_id: str) -> bool:
+    def mark_if_new(
+        self, delivery_id: str, *, payload_fingerprint: str | None = None
+    ) -> Literal["new", "duplicate", "conflict"]:
         observed_at = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO delivery_idempotency_keys (
-                    delivery_id, observed_at, last_seen_at, seen_count, suppressed_count
+                    delivery_id,
+                    observed_at,
+                    last_seen_at,
+                    seen_count,
+                    suppressed_count,
+                    conflict_count,
+                    payload_fingerprint
                 )
-                VALUES (?, ?, ?, 1, 0)
+                VALUES (?, ?, ?, 1, 0, 0, ?)
                 ON CONFLICT(delivery_id) DO UPDATE SET
                     last_seen_at = excluded.last_seen_at,
                     seen_count = delivery_idempotency_keys.seen_count + 1,
-                    suppressed_count = delivery_idempotency_keys.suppressed_count + 1
+                    suppressed_count = delivery_idempotency_keys.suppressed_count
+                        + CASE
+                            WHEN delivery_idempotency_keys.payload_fingerprint IS excluded.payload_fingerprint
+                            THEN 1
+                            ELSE 0
+                        END,
+                    conflict_count = delivery_idempotency_keys.conflict_count
+                        + CASE
+                            WHEN delivery_idempotency_keys.payload_fingerprint IS excluded.payload_fingerprint
+                            THEN 0
+                            ELSE 1
+                        END
                 """,
-                (delivery_id, observed_at, observed_at),
+                (delivery_id, observed_at, observed_at, payload_fingerprint),
             )
             row = conn.execute(
-                "SELECT seen_count FROM delivery_idempotency_keys WHERE delivery_id = ?",
+                "SELECT seen_count, payload_fingerprint FROM delivery_idempotency_keys WHERE delivery_id = ?",
                 (delivery_id,),
             ).fetchone()
-            return bool(row and int(row["seen_count"]) == 1)
+            if row is None:
+                return "duplicate"
+            if int(row["seen_count"]) == 1:
+                return "new"
+            if row["payload_fingerprint"] == payload_fingerprint:
+                return "duplicate"
+            return "conflict"
 
     def mark_completed(
         self,
@@ -432,6 +469,7 @@ class PilotSQLiteIntegrationReliabilityStore:
                 """
                 SELECT COALESCE(SUM(suppressed_count), 0) AS suppressed_total,
                        COALESCE(SUM(seen_count), 0) AS seen_total,
+                       COALESCE(SUM(conflict_count), 0) AS conflict_total,
                        COUNT(*) AS unique_delivery_ids
                 FROM delivery_idempotency_keys
                 """
@@ -456,6 +494,7 @@ class PilotSQLiteIntegrationReliabilityStore:
                 "unique_delivery_ids": int(inbound["unique_delivery_ids"]),
                 "seen_total": int(inbound["seen_total"]),
                 "suppressed_total": int(inbound["suppressed_total"]),
+                "conflict_total": int(inbound["conflict_total"]),
             },
             "outbound": {
                 "unique_operation_keys": int(outbound["unique_operation_keys"]),

@@ -355,6 +355,13 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                             "jira_duplicate_delivery", reason, request.state.request_id
                         ),
                     }
+                if "idempotency payload conflict" in reason:
+                    raise_api_error(
+                        "validation_error",
+                        message="Delivery idempotency key has already been used with a different semantic payload.",
+                        details={"reason": "delivery_idempotency_payload_conflict"},
+                        status_code=409,
+                    )
                 if "unsupported jira event type" in reason:
                     raise_api_error(
                         "jira_unsupported_event_type", details={"reason": reason}
@@ -481,6 +488,13 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                             request.state.request_id,
                         ),
                     }
+                if "idempotency payload conflict" in reason:
+                    raise_api_error(
+                        "validation_error",
+                        message="Delivery idempotency key has already been used with a different semantic payload.",
+                        details={"reason": "delivery_idempotency_payload_conflict"},
+                        status_code=409,
+                    )
                 if "unsupported servicenow event type" in reason:
                     raise_api_error(
                         "servicenow_unsupported_event_type", details={"reason": reason}

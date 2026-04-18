@@ -148,8 +148,8 @@ def main() -> None:
     checks = {
         "connector_reliability_db_created": db_path.exists() and len(created_tables) >= 5,
         "inbound_duplicate_suppression_persists_after_restart": (
-            first_seen is True
-            and second_seen is False
+            first_seen == "new"
+            and second_seen == "duplicate"
             and duplicate_summary["inbound"]["suppressed_total"] == 1
         ),
         "outbound_completion_persists_after_restart": completion_after_restart is not None,
