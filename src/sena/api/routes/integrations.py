@@ -199,6 +199,21 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             event["strict_require_allow"] = strict_require_allow
         return event
 
+    def _connector_error_details(
+        *,
+        connector: str,
+        stage: str,
+        reason: str,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        details: dict[str, Any] = {
+            "connector": connector,
+            "stage": stage,
+            "reason": reason,
+        }
+        details.update(extra)
+        return details
+
     @router.post("/integrations/webhook", summary="Generic webhook policy evaluation")
     def integrations_webhook(
         req: WebhookEvaluateRequest,
@@ -341,10 +356,13 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             except LookupError as exc:
                 raise_api_error(
                     "jira_policy_bundle_not_found",
-                    details={
-                        "required_bundle": str(exc),
-                        "loaded_bundle": state.metadata.bundle_name,
-                    },
+                    details=_connector_error_details(
+                        connector="jira",
+                        stage="bundle_resolution",
+                        reason="mapped policy bundle is not loaded",
+                        required_bundle=str(exc),
+                        loaded_bundle=state.metadata.bundle_name,
+                    ),
                 )
             except JiraIntegrationError as exc:
                 reason = str(exc)
@@ -352,7 +370,14 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     return {
                         "status": "duplicate_ignored",
                         **error_payload(
-                            "jira_duplicate_delivery", reason, request.state.request_id
+                            "jira_duplicate_delivery",
+                            reason,
+                            request.state.request_id,
+                            details=_connector_error_details(
+                                connector="jira",
+                                stage="idempotency",
+                                reason=reason,
+                            ),
                         ),
                     }
                 if "idempotency payload conflict" in reason:
@@ -371,7 +396,12 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     or "missing actor identity" in reason
                 ):
                     raise_api_error(
-                        "jira_missing_required_fields", details={"reason": reason}
+                        "jira_missing_required_fields",
+                        details=_connector_error_details(
+                            connector="jira",
+                            stage="normalization",
+                            reason=reason,
+                        ),
                     )
                 if "signature" in reason:
                     signature_error = (
@@ -381,10 +411,12 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     )
                     raise_api_error(
                         "jira_authentication_failed",
-                        details={
-                            "reason": reason,
-                            "signature_error": signature_error,
-                        },
+                        details=_connector_error_details(
+                            connector="jira",
+                            stage="verification",
+                            reason=reason,
+                            signature_error=signature_error,
+                        ),
                     )
                 state.processing_store.enqueue_dead_letter(
                     _integration_dead_letter_event(
@@ -395,7 +427,14 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     ),
                     reason,
                 )
-                raise_api_error("jira_invalid_mapping", details={"reason": reason})
+                raise_api_error(
+                    "jira_invalid_mapping",
+                    details=_connector_error_details(
+                        connector="jira",
+                        stage="normalization",
+                        reason=reason,
+                    ),
+                )
             except Exception as exc:  # pragma: no cover
                 state.processing_store.enqueue_dead_letter(
                     _integration_dead_letter_event(
@@ -406,7 +445,14 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     ),
                     str(exc),
                 )
-                raise_api_error("jira_evaluation_error", details={"reason": str(exc)})
+                raise_api_error(
+                    "jira_evaluation_error",
+                    details=_connector_error_details(
+                        connector="jira",
+                        stage="evaluation",
+                        reason=str(exc),
+                    ),
+                )
 
     @router.post("/integrations/servicenow/webhook", summary="ServiceNow webhook policy evaluation")
     async def integrations_servicenow_webhook(
@@ -472,10 +518,13 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             except LookupError as exc:
                 raise_api_error(
                     "servicenow_policy_bundle_not_found",
-                    details={
-                        "required_bundle": str(exc),
-                        "loaded_bundle": state.metadata.bundle_name,
-                    },
+                    details=_connector_error_details(
+                        connector="servicenow",
+                        stage="bundle_resolution",
+                        reason="mapped policy bundle is not loaded",
+                        required_bundle=str(exc),
+                        loaded_bundle=state.metadata.bundle_name,
+                    ),
                 )
             except ServiceNowIntegrationError as exc:
                 reason = str(exc)
@@ -486,6 +535,11 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                             "servicenow_duplicate_delivery",
                             reason,
                             request.state.request_id,
+                            details=_connector_error_details(
+                                connector="servicenow",
+                                stage="idempotency",
+                                reason=reason,
+                            ),
                         ),
                     }
                 if "idempotency payload conflict" in reason:
@@ -497,14 +551,24 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     )
                 if "unsupported servicenow event type" in reason:
                     raise_api_error(
-                        "servicenow_unsupported_event_type", details={"reason": reason}
+                        "servicenow_unsupported_event_type",
+                        details=_connector_error_details(
+                            connector="servicenow",
+                            stage="normalization",
+                            reason=reason,
+                        ),
                     )
                 if (
                     "missing required fields" in reason
                     or "missing actor identity" in reason
                 ):
                     raise_api_error(
-                        "servicenow_missing_required_fields", details={"reason": reason}
+                        "servicenow_missing_required_fields",
+                        details=_connector_error_details(
+                            connector="servicenow",
+                            stage="normalization",
+                            reason=reason,
+                        ),
                     )
                 if "signature" in reason:
                     signature_error = (
@@ -514,10 +578,12 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     )
                     raise_api_error(
                         "servicenow_authentication_failed",
-                        details={
-                            "reason": reason,
-                            "signature_error": signature_error,
-                        },
+                        details=_connector_error_details(
+                            connector="servicenow",
+                            stage="verification",
+                            reason=reason,
+                            signature_error=signature_error,
+                        ),
                     )
                 state.processing_store.enqueue_dead_letter(
                     _integration_dead_letter_event(
@@ -529,7 +595,14 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     ),
                     reason,
                 )
-                raise_api_error("servicenow_invalid_mapping", details={"reason": reason})
+                raise_api_error(
+                    "servicenow_invalid_mapping",
+                    details=_connector_error_details(
+                        connector="servicenow",
+                        stage="normalization",
+                        reason=reason,
+                    ),
+                )
             except Exception as exc:  # pragma: no cover
                 state.processing_store.enqueue_dead_letter(
                     _integration_dead_letter_event(
@@ -541,7 +614,14 @@ def create_integrations_router(state: EngineState) -> APIRouter:
                     ),
                     str(exc),
                 )
-                raise_api_error("servicenow_evaluation_error", details={"reason": str(exc)})
+                raise_api_error(
+                    "servicenow_evaluation_error",
+                    details=_connector_error_details(
+                        connector="servicenow",
+                        stage="evaluation",
+                        reason=str(exc),
+                    ),
+                )
 
     @router.get("/admin/dlq", summary="List dead-letter queue items")
     def admin_dlq(limit: int = 100) -> dict:

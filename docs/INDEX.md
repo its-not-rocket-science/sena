@@ -19,6 +19,7 @@ Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 - `POSITIONING.md` — what SENA is and is not vs generic policy engines.
 - `CANONICAL_WORKFLOW.md` — end-to-end supported workflow + evidence chain.
 - `integrations/JIRA.md` and `integrations/SERVICENOW.md` — supported connector contracts.
+- `integrations/SUPPORTED_PATH_READINESS_CHECKLIST.md` — Jira + ServiceNow supported-path pass/fail readiness gates.
 - `OPERATIONS.md` — day-2 operator runbooks for supported surfaces.
 - `API_IDEMPOTENCY_CONTRACT.md` — payload-binding idempotency semantics and error contract.
 - `PILOT_ACCEPTANCE.md` — measurable acceptance criteria.
