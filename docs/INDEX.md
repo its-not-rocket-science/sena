@@ -25,6 +25,8 @@ Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 - `DAY2_OPERATIONS.md` — daily and incident safety checklist for on-call operators.
 - `API_IDEMPOTENCY_CONTRACT.md` — payload-binding idempotency semantics and error contract.
 - `PILOT_ACCEPTANCE.md` — measurable acceptance criteria.
+- `INTERNAL_SOUNDNESS_GAP_ANALYSIS.md` — implementation-backed alpha→internally-sound gaps and milestones.
+- `INTERNAL_SOUNDNESS_REQUIRED_NOW_TASKS.md` — issue-ready required-now execution backlog.
 
 ## 2) Supported engineering references
 
