@@ -9,6 +9,17 @@ This is a **supported** integration for high-risk, auditable ServiceNow change a
 3. SENA maps that event to `ActionProposal` and evaluates policies.
 4. SENA returns a deterministic decision response and a callback payload shape suitable for source workflow consumption.
 
+### Response contract visibility (supported)
+- `policy_bundle` is present on successful responses with:
+  - `schema_version`
+  - `bundle_name`
+  - `version`
+  - `integrity_sha256`
+- `supported_contract` is included for stable replay/audit linkage and includes:
+  - connector identity (`connector=servicenow`)
+  - normalization artifact hash (`normalization_artifact.canonical_replay_payload_hash`)
+  - decision artifact hash (`decision_artifact.canonical_replay_payload_hash`) and `decision_hash`
+
 ## Configuration
 ```bash
 export SENA_SERVICENOW_MAPPING_CONFIG=src/sena/examples/integrations/servicenow_mappings.yaml
@@ -107,6 +118,7 @@ It is generated from committed mappings (`src/sena/examples/integrations/*_mappi
   - HTTP `200`
   - Top-level `status=duplicate_ignored`
   - Error code `servicenow_duplicate_delivery`
+  - Structured error details (`connector`, `stage`, `reason`)
 - Delivery-id payload binding is enforced:
   - Reusing the same delivery id with a different canonical replay payload fails with HTTP `409`.
   - Stable machine-readable reason: `delivery_idempotency_payload_conflict`.

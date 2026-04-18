@@ -12,6 +12,17 @@ It is not a Jira workflow-engine replacement; unsupported events and malformed p
 4. SENA evaluates mapped `ActionProposal` against active policy bundle.
 5. SENA returns machine-readable result and optionally sends outbound Jira decision payloads.
 
+### Response contract visibility (supported)
+- `policy_bundle` is always present on successful responses with:
+  - `schema_version`
+  - `bundle_name`
+  - `version`
+  - `integrity_sha256`
+- `supported_contract` is included for stable replay/audit linkage and includes:
+  - connector identity (`connector=jira`)
+  - normalization artifact hash (`normalization_artifact.canonical_replay_payload_hash`)
+  - decision artifact hash (`decision_artifact.canonical_replay_payload_hash`) and `decision_hash`
+
 ## Webhook headers and signature formats (supported)
 ### Delivery identity headers
 - Preferred: `x-atlassian-webhook-identifier`
@@ -92,6 +103,7 @@ This lets `approve_vendor_payment` rules evaluate Jira-native approval requests 
   - HTTP `200`
   - Top-level `status=duplicate_ignored`
   - Error code `jira_duplicate_delivery`
+  - Structured error details (`connector`, `stage`, `reason`)
 - Delivery-id payload binding is enforced:
   - Reusing the same delivery id with a different canonical replay payload fails with HTTP `409`.
   - Stable machine-readable reason: `delivery_idempotency_payload_conflict`.

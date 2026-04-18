@@ -64,6 +64,46 @@ class IntegrationService:
             merkle_proof=decision.get("decision_hash"),
         )
 
+    def _policy_bundle_info(self) -> dict[str, Any]:
+        metadata = self.state.metadata
+        return {
+            "schema_version": "1",
+            "bundle_name": getattr(metadata, "bundle_name", "unknown"),
+            "version": getattr(metadata, "version", "unknown"),
+            "integrity_sha256": getattr(metadata, "integrity_sha256", None),
+        }
+
+    def _supported_contract(
+        self,
+        *,
+        connector: str,
+        normalization: dict[str, Any],
+        decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        decision_determinism = dict(decision.get("determinism_contract") or {})
+        normalization_determinism = dict(normalization.get("determinism_contract") or {})
+        normalized_event = dict(normalization.get("normalized_event") or {})
+        return {
+            "schema_version": "1",
+            "connector": connector,
+            "policy_bundle": self._policy_bundle_info(),
+            "decision_artifact": {
+                "decision_id": decision.get("decision_id"),
+                "outcome": decision.get("outcome"),
+                "decision_hash": decision.get("decision_hash"),
+                "canonical_replay_payload_hash": decision_determinism.get(
+                    "canonical_replay_payload_hash"
+                ),
+            },
+            "normalization_artifact": {
+                "source_event_type": normalized_event.get("source_event_type"),
+                "request_id": normalized_event.get("request_id"),
+                "canonical_replay_payload_hash": normalization_determinism.get(
+                    "canonical_replay_payload_hash"
+                ),
+            },
+        }
+
     def handle_webhook_event(
         self,
         *,
@@ -168,6 +208,7 @@ class IntegrationService:
             )
         return {
             "status": "evaluated",
+            "policy_bundle": self._policy_bundle_info(),
             "normalization": normalization,
             "normalized_event": normalized,
             "mapped_action_proposal": self._build_mapped_action_proposal(
@@ -175,6 +216,11 @@ class IntegrationService:
             ),
             "decision": decision,
             "outbound_delivery": outbound,
+            "supported_contract": self._supported_contract(
+                connector="jira",
+                normalization=normalization,
+                decision=decision,
+            ),
         }
 
     def handle_servicenow_event(
@@ -236,6 +282,7 @@ class IntegrationService:
             )
         return {
             "status": "evaluated",
+            "policy_bundle": self._policy_bundle_info(),
             "normalization": normalization,
             "normalized_event": normalized,
             "mapped_action_proposal": self._build_mapped_action_proposal(
@@ -243,6 +290,11 @@ class IntegrationService:
             ),
             "decision": decision,
             "outbound_delivery": outbound,
+            "supported_contract": self._supported_contract(
+                connector="servicenow",
+                normalization=normalization,
+                decision=decision,
+            ),
         }
 
     def handle_slack_interaction(self, payload_json: str) -> dict[str, Any]:
