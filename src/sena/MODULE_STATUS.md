@@ -51,3 +51,18 @@ Experimental modules may change without compatibility guarantees.
 
 - `sena.legacy.*` is intentionally not shipped in this repository state.
 - Historical docs are in `docs/archive/`.
+
+## Architecture drift guardrails (supported modules)
+
+To keep core supported modules maintainable, CI runs
+`scripts/check_architecture_concentration.py` and reports concentration risk for:
+
+- evaluator (`sena.engine.evaluator*`)
+- API app/runtime wiring (`sena.api.app`, `sena.api.runtime`, `sena.api.dependencies`)
+- policy store and migrations (`sena.policy.store`, `sena.policy.migrations`, `scripts/migrations/*`)
+- integration connectors (`sena.integrations.{jira,servicenow,approval,persistence,registry}*`)
+
+These checks use coarse signals (largest-file LOC, file concentration ratio, and
+branch density hotspots) to prevent architectural drift. They are guardrails, not
+a quality score: if a module keeps growing, prefer splitting by responsibility
+inside supported namespaces rather than adding implicit fallback behavior.

@@ -76,3 +76,31 @@ def test_dead_letter_admin_dry_run_manual_redrive() -> None:
     assert payload["status"] == "dry_run"
     assert payload["method"] == "POST"
     assert payload["body"] == {"ids": [5, 6], "note": "INC-42"}
+
+
+def test_architecture_concentration_guardrails_report() -> None:
+    result = _run_script(
+        [
+            "scripts/check_architecture_concentration.py",
+        ]
+    )
+    result.check_returncode()
+    assert "architecture concentration guardrails" in result.stdout
+    assert "evaluator" in result.stdout
+
+
+def test_architecture_concentration_guardrails_check_with_output_json(tmp_path) -> None:
+    output = tmp_path / "architecture_concentration.json"
+    result = _run_script(
+        [
+            "scripts/check_architecture_concentration.py",
+            "--check",
+            "--output-json",
+            str(output),
+        ]
+    )
+    result.check_returncode()
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "pass"
+    assert payload["violation_count"] == 0
+    assert payload["guardrail_areas"]

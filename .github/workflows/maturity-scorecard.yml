@@ -34,6 +34,9 @@ jobs:
       - name: Run style checks
         run: ruff check src tests
 
+      - name: Check architecture concentration guardrails
+        run: python scripts/check_architecture_concentration.py --check --output-json artifacts/architecture_concentration.json
+
       - name: Ensure artifacts directory exists
         run: mkdir -p artifacts
 
@@ -74,6 +77,13 @@ jobs:
         with:
           name: benchmark-${{ github.run_id }}
           path: artifacts/benchmark.json
+          if-no-files-found: error
+
+      - name: Upload architecture concentration artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-concentration-${{ github.run_id }}
+          path: artifacts/architecture_concentration.json
           if-no-files-found: error
 
       - name: Upload bandit report artifact
