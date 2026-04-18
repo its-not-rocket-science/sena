@@ -35,8 +35,8 @@ def test_sqlite_reliability_persists_inbound_completion_and_dead_letter_across_r
     db_path = tmp_path / "reliability.db"
     first = SQLiteIntegrationReliabilityStore(str(db_path))
 
-    assert first.mark_if_new("delivery-1") is True
-    assert first.mark_if_new("delivery-1") is False
+    assert first.mark_if_new("delivery-1") == "new"
+    assert first.mark_if_new("delivery-1") == "duplicate"
 
     first.mark_completed(
         "operation-1",

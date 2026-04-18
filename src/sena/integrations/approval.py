@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -52,7 +52,9 @@ class ApprovalEventRoute:
 
 
 class DeliveryIdempotencyStore(Protocol):
-    def mark_if_new(self, delivery_id: str) -> bool: ...
+    def mark_if_new(
+        self, delivery_id: str, *, payload_fingerprint: str | None = None
+    ) -> Literal["new", "duplicate", "conflict"]: ...
 
 
 class DeliveryCompletionStore(Protocol):
@@ -94,13 +96,18 @@ class ConnectorReliabilityObserver(Protocol):
 
 class InMemoryDeliveryIdempotencyStore:
     def __init__(self) -> None:
-        self._seen: set[str] = set()
+        self._seen: dict[str, str | None] = {}
 
-    def mark_if_new(self, delivery_id: str) -> bool:
-        if delivery_id in self._seen:
-            return False
-        self._seen.add(delivery_id)
-        return True
+    def mark_if_new(
+        self, delivery_id: str, *, payload_fingerprint: str | None = None
+    ) -> Literal["new", "duplicate", "conflict"]:
+        existing = self._seen.get(delivery_id)
+        if existing is None:
+            self._seen[delivery_id] = payload_fingerprint
+            return "new"
+        if existing == payload_fingerprint:
+            return "duplicate"
+        return "conflict"
 
 
 class NormalizedActor(BaseModel):
@@ -461,7 +468,21 @@ class ApprovalConnectorBase(Connector):
             event_type=event_type,
             route=route,
         )
-        if not self._idempotency.mark_if_new(delivery_id):
+        normalized = self.build_normalized_event(
+            payload=payload, event_type=event_type, route=route, delivery_id=delivery_id
+        )
+        replay_fingerprint = hashlib.sha256(
+            json.dumps(
+                normalized.canonical_replay_payload(),
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        idempotency_result = self._idempotency.mark_if_new(
+            delivery_id,
+            payload_fingerprint=replay_fingerprint,
+        )
+        if idempotency_result == "duplicate":
             if self._reliability_observer is not None:
                 self._reliability_observer.record_inbound_duplicate_suppression()
             logger.warning(
@@ -470,9 +491,16 @@ class ApprovalConnectorBase(Connector):
                 delivery_id=delivery_id,
             )
             raise self.error_cls(f"duplicate delivery '{delivery_id}'")
-        return self.build_normalized_event(
-            payload=payload, event_type=event_type, route=route, delivery_id=delivery_id
-        )
+        if idempotency_result == "conflict":
+            logger.warning(
+                "connector_inbound_idempotency_conflict",
+                connector=self.source_system,
+                delivery_id=delivery_id,
+            )
+            raise self.error_cls(
+                f"idempotency payload conflict for delivery '{delivery_id}'"
+            )
+        return normalized
 
     def map_to_proposal(self, event: NormalizedApprovalEvent) -> ActionProposal:
         route = self._config.routes[event.source_event_type]

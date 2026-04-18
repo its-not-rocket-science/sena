@@ -93,6 +93,55 @@ def test_jira_connector_duplicate_delivery_is_replay_safe() -> None:
         connector.handle_event(envelope)
 
 
+def test_jira_connector_duplicate_delivery_with_envelope_variance_is_still_duplicate() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+    payload = _payload()
+    connector.handle_event(
+        {
+            "headers": {"x-atlassian-webhook-identifier": "delivery-3-variance"},
+            "payload": payload,
+            "raw_body": json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        }
+    )
+
+    with pytest.raises(JiraIntegrationError, match="duplicate delivery"):
+        connector.handle_event(
+            {
+                "headers": {
+                    "x-atlassian-webhook-identifier": "delivery-3-variance",
+                    "x-random-debug-header": "noop",
+                },
+                "payload": payload,
+                "raw_body": json.dumps(payload, indent=2).encode("utf-8"),
+            }
+        )
+
+
+def test_jira_connector_duplicate_delivery_with_payload_change_conflicts() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+    first_payload = _payload()
+    second_payload = _payload()
+    second_payload["issue"]["fields"]["customfield_vendor_verified"] = True
+
+    connector.handle_event(
+        {
+            "headers": {"x-atlassian-webhook-identifier": "delivery-3-conflict"},
+            "payload": first_payload,
+            "raw_body": json.dumps(first_payload).encode("utf-8"),
+        }
+    )
+    with pytest.raises(JiraIntegrationError, match="idempotency payload conflict"):
+        connector.handle_event(
+            {
+                "headers": {"x-atlassian-webhook-identifier": "delivery-3-conflict"},
+                "payload": second_payload,
+                "raw_body": json.dumps(second_payload).encode("utf-8"),
+            }
+        )
+
+
 def test_jira_verifier_rejects_invalid_signature() -> None:
     cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
     connector = JiraConnector(

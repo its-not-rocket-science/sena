@@ -78,6 +78,58 @@ def test_servicenow_connector_duplicate_delivery_is_replay_safe() -> None:
         connector.handle_event(envelope)
 
 
+def test_servicenow_duplicate_delivery_with_envelope_variance_is_still_duplicate() -> None:
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    connector = ServiceNowConnector(config=cfg)
+    payload = _fixture("emergency_change")
+    connector.handle_event(
+        {
+            "headers": {"x-servicenow-delivery-id": "delivery-dup-variance"},
+            "payload": payload,
+            "raw_body": json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        }
+    )
+    with pytest.raises(ServiceNowIntegrationError, match="duplicate delivery"):
+        connector.handle_event(
+            {
+                "headers": {
+                    "x-servicenow-delivery-id": "delivery-dup-variance",
+                    "x-trace-id": "trace-123",
+                },
+                "payload": payload,
+                "raw_body": json.dumps(payload, indent=2).encode("utf-8"),
+            }
+        )
+
+
+def test_servicenow_duplicate_delivery_with_payload_change_conflicts() -> None:
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    connector = ServiceNowConnector(config=cfg)
+    first_payload = _fixture("emergency_change")
+    second_payload = _fixture("emergency_change")
+    second_payload["requested_by"]["user_id"] = "u.change.999"
+
+    connector.handle_event(
+        {
+            "headers": {"x-servicenow-delivery-id": "delivery-dup-conflict"},
+            "payload": first_payload,
+            "raw_body": json.dumps(first_payload).encode("utf-8"),
+        }
+    )
+    with pytest.raises(ServiceNowIntegrationError, match="idempotency payload conflict"):
+        connector.handle_event(
+            {
+                "headers": {"x-servicenow-delivery-id": "delivery-dup-conflict"},
+                "payload": second_payload,
+                "raw_body": json.dumps(second_payload).encode("utf-8"),
+            }
+        )
+
+
 def test_servicenow_connector_returns_stable_error_for_mapping_mismatch() -> None:
     cfg = load_servicenow_mapping_config(
         "src/sena/examples/integrations/servicenow_mappings.yaml"

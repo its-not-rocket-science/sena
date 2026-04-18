@@ -352,6 +352,7 @@ curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/duplicates/s
 Interpretation guide:
 - `inbound.seen_total - inbound.unique_delivery_ids` approximates duplicate webhook deliveries observed.
 - `inbound.suppressed_total` counts inbound duplicates safely ignored by idempotency.
+- `inbound.conflict_total` counts delivery-id reuse attempts with semantically different payloads (rejected).
 - `outbound.suppressed_total` counts outbound duplicate sends prevented.
 - `outbound.by_target` isolates suppression by delivery target (`comment`, `status`, `callback`).
 

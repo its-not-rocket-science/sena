@@ -1622,6 +1622,54 @@ def test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response() -> 
     datetime.fromisoformat(second.json()["error"]["timestamp"])
 
 
+def test_jira_webhook_duplicate_delivery_with_payload_change_returns_conflict() -> None:
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+    first_payload = {
+        "webhookEvent": "jira:issue_updated",
+        "timestamp": 1711982000,
+        "issue": {
+            "id": "10001",
+            "key": "RISK-9",
+            "fields": {
+                "customfield_approval_amount": 25000,
+                "customfield_requester_role": "finance_analyst",
+                "customfield_vendor_verified": False,
+            },
+        },
+        "user": {"accountId": "acct-99"},
+        "changelog": {"items": [{"field": "status", "toString": "Pending Approval"}]},
+    }
+    second_payload = {
+        **first_payload,
+        "issue": {
+            **first_payload["issue"],
+            "fields": {
+                **first_payload["issue"]["fields"],
+                "customfield_vendor_verified": True,
+            },
+        },
+    }
+    headers = {"x-atlassian-webhook-identifier": "jira-delivery-dup-conflict"}
+
+    first = client.post(
+        "/v1/integrations/jira/webhook", json=first_payload, headers=headers
+    )
+    second = client.post(
+        "/v1/integrations/jira/webhook", json=second_payload, headers=headers
+    )
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert (
+        second.json()["detail"]["details"]["reason"]
+        == "delivery_idempotency_payload_conflict"
+    )
+
+
 def test_jira_webhook_missing_actor_identity_returns_deterministic_error() -> None:
     app = create_app(
         _settings(
@@ -1879,6 +1927,33 @@ def test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response
     assert second.json()["error"]["code"] == "servicenow_duplicate_delivery"
     assert second.json()["error"]["request_id"].startswith("req_")
     datetime.fromisoformat(second.json()["error"]["timestamp"])
+
+
+def test_servicenow_webhook_duplicate_delivery_with_payload_change_returns_conflict() -> None:
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+    first_payload = _servicenow_fixture("emergency_change")
+    second_payload = _servicenow_fixture("emergency_change")
+    second_payload["requested_by"]["user_id"] = "u.change.999"
+    headers = {"x-servicenow-delivery-id": "sn-delivery-dup-conflict"}
+
+    first = client.post(
+        "/v1/integrations/servicenow/webhook", json=first_payload, headers=headers
+    )
+    second = client.post(
+        "/v1/integrations/servicenow/webhook", json=second_payload, headers=headers
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert (
+        second.json()["detail"]["details"]["reason"]
+        == "delivery_idempotency_payload_conflict"
+    )
 
 
 def test_webhook_endpoint_rejects_unknown_provider_fail_closed() -> None:

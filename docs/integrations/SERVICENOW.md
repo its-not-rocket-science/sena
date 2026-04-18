@@ -107,6 +107,9 @@ It is generated from committed mappings (`src/sena/examples/integrations/*_mappi
   - HTTP `200`
   - Top-level `status=duplicate_ignored`
   - Error code `servicenow_duplicate_delivery`
+- Delivery-id payload binding is enforced:
+  - Reusing the same delivery id with a different canonical replay payload fails with HTTP `409`.
+  - Stable machine-readable reason: `delivery_idempotency_payload_conflict`.
 - Outbound duplicates are suppressed by operation key (`decision_id + callback + request_id`) and reported in duplicate counters.
 - Test-backed evidence:
   - Inbound duplicate handling: `tests/test_api.py::test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response`

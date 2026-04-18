@@ -4,7 +4,7 @@ import hashlib
 import hmac
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from sena.integrations.approval import (
     ApprovalConnectorBase,
@@ -105,7 +105,9 @@ def _extract_jira_signature(*, headers: dict[str, str], signature_header: str) -
 
 
 class JiraIdempotencyStore(Protocol):
-    def mark_if_new(self, delivery_id: str) -> bool: ...
+    def mark_if_new(
+        self, delivery_id: str, *, payload_fingerprint: str | None = None
+    ) -> Literal["new", "duplicate", "conflict"]: ...
 
 
 InMemoryJiraIdempotencyStore = InMemoryDeliveryIdempotencyStore

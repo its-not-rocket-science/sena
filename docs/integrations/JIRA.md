@@ -92,6 +92,9 @@ This lets `approve_vendor_payment` rules evaluate Jira-native approval requests 
   - HTTP `200`
   - Top-level `status=duplicate_ignored`
   - Error code `jira_duplicate_delivery`
+- Delivery-id payload binding is enforced:
+  - Reusing the same delivery id with a different canonical replay payload fails with HTTP `409`.
+  - Stable machine-readable reason: `delivery_idempotency_payload_conflict`.
 - Outbound duplicates are suppressed by operation key (`decision_id + target + issue_key`) and reported in duplicate counters.
 - Test-backed evidence:
   - Inbound duplicate handling: `tests/test_api.py::test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response`

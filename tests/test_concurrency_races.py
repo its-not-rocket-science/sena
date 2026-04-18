@@ -30,7 +30,7 @@ def _settings(tmp_path):
 def test_same_inbound_delivery_concurrent_is_safely_suppressed(tmp_path) -> None:
     db_path = tmp_path / "integration_reliability.db"
     barrier = threading.Barrier(2)
-    results: list[bool] = []
+    results: list[str] = []
     errors: list[str] = []
 
     def worker() -> None:
@@ -48,7 +48,7 @@ def test_same_inbound_delivery_concurrent_is_safely_suppressed(tmp_path) -> None
         thread.join()
 
     assert errors == []
-    assert sorted(results) == [False, True]
+    assert sorted(results) == ["duplicate", "new"]
     summary = SQLiteIntegrationReliabilityStore(str(db_path)).duplicate_suppression_summary()
     assert summary["inbound"]["seen_total"] == 2
     assert summary["inbound"]["suppressed_total"] == 1
