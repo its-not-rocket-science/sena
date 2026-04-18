@@ -1,36 +1,72 @@
-# Repository Maturity Scorecard
+# Hard-Signal Engineering Scorecard
 
-SENA includes a repository-derived scorecard to measure **technical maturity progress from alpha toward pilot-ready**.
+This repository uses a **hard-signal scorecard** as a pre-validation go/no-go gate for the supported SENA path (`src/sena/*` with Jira + ServiceNow).
 
-It is not a claim that SENA is enterprise-complete today.
+The scorecard replaces vague maturity language with executable evidence checks.
 
 ## Run locally
 
 ```bash
-python scripts/maturity_scorecard.py --output-json artifacts/maturity_scorecard.json
+python scripts/maturity_scorecard.py \
+  --output-json artifacts/maturity_scorecard.json \
+  --output-markdown artifacts/maturity_scorecard.md
 ```
 
-## What the scorecard is for
+## What this scorecard measures
 
-- Keep contributors focused on supported architecture (`src/sena/*`).
-- Track objective progress on determinism, lifecycle governance, testing, and operational recovery.
-- Prevent vanity metrics from being mistaken for product maturity.
+Every signal is repository-derived and tied to engineering outcomes, not output volume:
 
-## Metrics
+1. **Replay corpus coverage on supported path**
+   - Verifies replay fixtures include both Jira and ServiceNow supported connectors.
+   - Verifies replay contract tests exist and fixtures are valid JSON.
+2. **Adversarial audit verification coverage**
+   - Verifies adversarial audit-chain tests exist and assert expected tamper/failure diagnostics.
+3. **End-to-end supported-path test coverage**
+   - Verifies explicit Jira + ServiceNow E2E webhook flow tests exist.
+4. **Backup/restore verification drill coverage**
+   - Verifies backup/restore drill script exists and executes in dry-run mode.
+   - Verifies restore validation tests are present.
+5. **Idempotency conflict handling coverage**
+   - Verifies conflict semantics (`409`, stable conflict reason) are asserted in tests.
+   - Verifies persistence layer exposes explicit `new/duplicate/conflict` outcomes.
+6. **Authorization coverage on privileged routes**
+   - Verifies privileged admin routes are explicitly tested for step-up and signed assertion enforcement.
+7. **Migration safety test coverage**
+   - Verifies migration checksum, rollback-boundary, duplicate-version, and legacy-forward tests exist.
 
-The scorecard reports these metrics (0-100 each), then computes an unweighted average:
+## Anti-gaming design
 
-1. API layer complexity / file concentration
-2. Service-layer coverage
-3. Failure-mode test count
-4. Migration coverage
-5. Persistence/audit recovery coverage
-6. Documentation completeness for flagship workflows
-7. Evidence-pack generation success
-8. Replay/drift coverage for AI-assisted actions
+The scorecard intentionally **does not** use:
 
-## Interpretation guidance
+- raw LOC,
+- documentation count,
+- total test count.
 
-- High scorecard results indicate stronger **pilot-readiness trajectory**.
-- They do **not** by themselves imply full enterprise controls (for example: built-in OIDC/RBAC tenancy, WORM storage, or full control-plane UX).
-- Product positioning remains anchored to deterministic Jira + ServiceNow governance depth, with generic webhook and Slack marked experimental.
+These are easy to inflate without improving safety or release quality.
+
+## How to use for go/no-go decisions
+
+Use the `gate.decision` field from `artifacts/maturity_scorecard.json`:
+
+- `GO`: all required hard signals meet threshold.
+- `NO_GO`: at least one required signal failed; external validation should be blocked until remediated.
+
+Recommended release behavior before external validation:
+
+1. Run the scorecard in CI.
+2. Attach JSON + Markdown artifacts to the release candidate.
+3. Treat any required signal failure as a blocker.
+4. Record remediation PR(s), rerun scorecard, and require `GO` before proceeding.
+
+## What the score means
+
+A high score means the repository currently contains stronger executable evidence for supported-path determinism, verification, and recovery contracts.
+
+## What the score does **not** mean
+
+A high score does **not** prove:
+
+- enterprise-complete security/compliance posture,
+- environment-specific deployment correctness,
+- elimination of manual security/legal/compliance review,
+- elimination of independent external validation.
