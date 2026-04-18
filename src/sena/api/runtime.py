@@ -71,6 +71,7 @@ ROLE_ALLOWED_ENDPOINTS: dict[str, set[tuple[str, str]]] = {
         ("GET", "/v1/operations/overview"),
         ("GET", "/v1/analytics/policy-efficacy"),
         ("GET", "/v1/audit/verify"),
+        ("POST", "/v1/audit/hold/{decision_id}"),
         ("GET", "/v1/decision/{decision_id}/explanation"),
         ("GET", "/v1/decision/{decision_id}/attestations"),
         ("POST", "/v1/audit/verify/tree"),
@@ -388,6 +389,12 @@ def _validate_api_auth_settings(runtime_settings: ApiSettings) -> None:
         )
     if runtime_settings.enable_jwt_auth and not runtime_settings.jwt_role_claim.strip():
         raise RuntimeError("SENA_JWT_ROLE_CLAIM must not be empty when JWT auth is enabled")
+    if runtime_settings.step_up_max_age_seconds <= 0:
+        raise RuntimeError("SENA_STEP_UP_MAX_AGE_SECONDS must be greater than 0")
+    if runtime_settings.require_signed_step_up and not runtime_settings.step_up_hs256_secret:
+        raise RuntimeError(
+            "SENA_REQUIRE_SIGNED_STEP_UP=true requires SENA_STEP_UP_HS256_SECRET"
+        )
     if bool(runtime_settings.slack_bot_token) != bool(runtime_settings.slack_channel):
         raise RuntimeError(
             "SENA_SLACK_BOT_TOKEN and SENA_SLACK_CHANNEL must be set together when enabling Slack integration"

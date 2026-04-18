@@ -29,6 +29,9 @@ class ApiSettings:
     jwt_required_claims: tuple[str, ...] = ("sub",)
     jwt_role_claim: str = "roles"
     jwt_role_mapping: tuple[tuple[str, str], ...] = ()
+    require_signed_step_up: bool = False
+    step_up_hs256_secret: str | None = None
+    step_up_max_age_seconds: int = 300
     enforce_policy_actor_identity: bool = False
     audit_sink_jsonl: str | None = None
     audit_storage_backend: str = "local_file"
@@ -188,6 +191,13 @@ def load_settings_from_env() -> ApiSettings:
         jwt_required_claims=_parse_csv(os.getenv("SENA_JWT_REQUIRED_CLAIMS") or "sub"),
         jwt_role_claim=os.getenv("SENA_JWT_ROLE_CLAIM", "roles"),
         jwt_role_mapping=_parse_mapping(os.getenv("SENA_JWT_ROLE_MAPPING"), env_name="SENA_JWT_ROLE_MAPPING"),
+        require_signed_step_up=_parse_bool(
+            os.getenv("SENA_REQUIRE_SIGNED_STEP_UP"), default=False
+        ),
+        step_up_hs256_secret=os.getenv("SENA_STEP_UP_HS256_SECRET"),
+        step_up_max_age_seconds=_parse_int(
+            os.getenv("SENA_STEP_UP_MAX_AGE_SECONDS"), default=300
+        ),
         enforce_policy_actor_identity=_parse_bool(
             os.getenv("SENA_ENFORCE_POLICY_ACTOR_IDENTITY"), default=False
         ),

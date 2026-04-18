@@ -74,10 +74,16 @@ def register_request_middleware(
             client_host = request.client.host if request.client else "unknown"
             client_key = f"anonymous:{client_host}"
 
-        def _json_error(status_code: int, code: str, message: str) -> JSONResponse:
+        def _json_error(
+            status_code: int,
+            code: str,
+            message: str,
+            *,
+            details: dict[str, Any] | None = None,
+        ) -> JSONResponse:
             error_response = JSONResponse(
                 status_code=status_code,
-                content=error_payload(code, message, request_id),
+                content=error_payload(code, message, request_id, details=details),
             )
             error_response.headers["x-request-id"] = request_id
             error_response.headers["x-trace-id"] = trace_id
@@ -148,7 +154,15 @@ def register_request_middleware(
             role = principal.role
             if not is_role_allowed(role, request.method, request.url.path):
                 return _json_error(
-                    403, "forbidden", "Authenticated role is not authorized for this endpoint"
+                    403,
+                    "forbidden",
+                    "Authenticated role is not authorized for this endpoint",
+                    details={
+                        "reason": "route_not_allowed",
+                        "role": role,
+                        "method": request.method,
+                        "path": request.url.path,
+                    },
                 )
             body_payload: dict[str, Any] = {}
             if body:
@@ -178,6 +192,7 @@ def register_request_middleware(
                     403,
                     "forbidden",
                     actor_identity_decision.reason or "Policy actor identity denied request",
+                    details=actor_identity_decision.details() or None,
                 )
             abac_allowed, abac_reason = evaluate_abac_policy(
                 role=role,
@@ -187,7 +202,17 @@ def register_request_middleware(
                 expected_bundle_name=state.settings.bundle_name,
             )
             if not abac_allowed:
-                return _json_error(403, "forbidden", abac_reason or "ABAC policy denied request")
+                return _json_error(
+                    403,
+                    "forbidden",
+                    abac_reason or "ABAC policy denied request",
+                    details={
+                        "reason": "abac_policy_denied",
+                        "environment": environment,
+                        "bundle_name": bundle_name or state.settings.bundle_name,
+                        "action_type": action_type,
+                    },
+                )
 
         if not rate_limiter.allow(client_key, time.monotonic()):
             return _json_error(429, "rate_limited", "Rate limit exceeded")

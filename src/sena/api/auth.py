@@ -67,6 +67,18 @@ class PermissionDecision:
         return payload
 
 
+SENSITIVE_OPERATION_ACTIONS = {
+    "bundle_promotion",
+    "bundle_rollback",
+    "audit_config_change",
+    "exception_approval",
+    "audit_legal_hold",
+    "payload_legal_hold",
+    "integration_dead_letter_replay",
+    "integration_dead_letter_manual_redrive",
+}
+
+
 class AuthProvider(Protocol):
     provider_name: str
 
@@ -308,6 +320,9 @@ def evaluate_sensitive_operation(
     operation: str,
     principal: Principal | None,
     headers: Mapping[str, str],
+    require_signed_step_up: bool = False,
+    step_up_hs256_secret: str | None = None,
+    step_up_max_age_seconds: int = 300,
 ) -> PermissionDecision:
     if principal is None:
         return PermissionDecision(allowed=True)
@@ -320,32 +335,57 @@ def evaluate_sensitive_operation(
                 allowed=False,
                 reason="separation_of_duties: role cannot deploy bundles",
             )
-        if not headers.get("x-step-up-auth"):
-            return PermissionDecision(
-                allowed=False,
-                reason="step_up_auth_required",
-                required_headers=("x-step-up-auth",),
-            )
-        primary_approver = headers.get("x-approver-id", "")
-        secondary_approver = headers.get("x-secondary-approver-id", "")
+        step_up_decision = _evaluate_step_up_assertion(
+            operation=operation,
+            principal=principal,
+            headers=headers,
+            require_signed_step_up=require_signed_step_up,
+            step_up_hs256_secret=step_up_hs256_secret,
+            step_up_max_age_seconds=step_up_max_age_seconds,
+        )
+        if not step_up_decision.allowed:
+            return step_up_decision
+        primary_approver = str(headers.get("x-approver-id", "")).strip()
+        secondary_approver = str(headers.get("x-secondary-approver-id", "")).strip()
         if not primary_approver or not secondary_approver:
             return PermissionDecision(
                 allowed=False,
                 reason="dual_approval_required",
                 required_headers=("x-approver-id", "x-secondary-approver-id"),
             )
+        if require_signed_step_up and primary_approver != principal.subject:
+            return PermissionDecision(
+                allowed=False,
+                reason="approver_identity_mismatch",
+            )
         if len({primary_approver, secondary_approver}) != 2:
             return PermissionDecision(
                 allowed=False,
                 reason="dual_approval_requires_distinct_approvers",
             )
+        if require_signed_step_up:
+            assertion = _parse_step_up_assertion(
+                str(headers.get("x-step-up-auth", "")),
+                secret=step_up_hs256_secret or "",
+                max_age_seconds=step_up_max_age_seconds,
+            )
+            if assertion.get("secondary_approver") != secondary_approver:
+                return PermissionDecision(
+                    allowed=False,
+                    reason="secondary_approver_mismatch",
+                )
 
-    if operation == "bundle_rollback" and not headers.get("x-step-up-auth"):
-        return PermissionDecision(
-            allowed=False,
-            reason="step_up_auth_required",
-            required_headers=("x-step-up-auth",),
+    if operation == "bundle_rollback":
+        step_up_decision = _evaluate_step_up_assertion(
+            operation=operation,
+            principal=principal,
+            headers=headers,
+            require_signed_step_up=require_signed_step_up,
+            step_up_hs256_secret=step_up_hs256_secret,
+            step_up_max_age_seconds=step_up_max_age_seconds,
         )
+        if not step_up_decision.allowed:
+            return step_up_decision
 
     if operation == "audit_config_change":
         if principal.role not in {"reviewer", "auditor"}:
@@ -353,18 +393,39 @@ def evaluate_sensitive_operation(
                 allowed=False,
                 reason="separation_of_duties: only reviewer or auditor may change audit configuration",
             )
-        if not headers.get("x-step-up-auth"):
-            return PermissionDecision(
-                allowed=False,
-                reason="step_up_auth_required",
-                required_headers=("x-step-up-auth",),
-            )
-        if not headers.get("x-secondary-approver-id"):
+        step_up_decision = _evaluate_step_up_assertion(
+            operation=operation,
+            principal=principal,
+            headers=headers,
+            require_signed_step_up=require_signed_step_up,
+            step_up_hs256_secret=step_up_hs256_secret,
+            step_up_max_age_seconds=step_up_max_age_seconds,
+        )
+        if not step_up_decision.allowed:
+            return step_up_decision
+        secondary_approver = str(headers.get("x-secondary-approver-id", "")).strip()
+        if not secondary_approver:
             return PermissionDecision(
                 allowed=False,
                 reason="secondary_approval_required",
                 required_headers=("x-secondary-approver-id",),
             )
+        if require_signed_step_up and secondary_approver == principal.subject:
+            return PermissionDecision(
+                allowed=False,
+                reason="dual_approval_requires_distinct_approvers",
+            )
+        if require_signed_step_up:
+            assertion = _parse_step_up_assertion(
+                str(headers.get("x-step-up-auth", "")),
+                secret=step_up_hs256_secret or "",
+                max_age_seconds=step_up_max_age_seconds,
+            )
+            if assertion.get("secondary_approver") != secondary_approver:
+                return PermissionDecision(
+                    allowed=False,
+                    reason="secondary_approver_mismatch",
+                )
 
     if operation == "exception_approval":
         if principal.role not in {"reviewer", "auditor"}:
@@ -372,14 +433,179 @@ def evaluate_sensitive_operation(
                 allowed=False,
                 reason="separation_of_duties: only reviewer or auditor may approve exceptions",
             )
-        if not headers.get("x-step-up-auth"):
+        step_up_decision = _evaluate_step_up_assertion(
+            operation=operation,
+            principal=principal,
+            headers=headers,
+            require_signed_step_up=require_signed_step_up,
+            step_up_hs256_secret=step_up_hs256_secret,
+            step_up_max_age_seconds=step_up_max_age_seconds,
+        )
+        if not step_up_decision.allowed:
+            return step_up_decision
+
+    if operation == "audit_legal_hold":
+        if principal.role != "auditor":
             return PermissionDecision(
                 allowed=False,
-                reason="step_up_auth_required",
-                required_headers=("x-step-up-auth",),
+                reason="separation_of_duties: only auditor may apply legal hold",
             )
+        step_up_decision = _evaluate_step_up_assertion(
+            operation=operation,
+            principal=principal,
+            headers=headers,
+            require_signed_step_up=require_signed_step_up,
+            step_up_hs256_secret=step_up_hs256_secret,
+            step_up_max_age_seconds=step_up_max_age_seconds,
+        )
+        if not step_up_decision.allowed:
+            return step_up_decision
+
+    if operation == "payload_legal_hold":
+        if principal.role != "auditor":
+            return PermissionDecision(
+                allowed=False,
+                reason="separation_of_duties: only auditor may apply payload legal hold",
+            )
+        step_up_decision = _evaluate_step_up_assertion(
+            operation=operation,
+            principal=principal,
+            headers=headers,
+            require_signed_step_up=require_signed_step_up,
+            step_up_hs256_secret=step_up_hs256_secret,
+            step_up_max_age_seconds=step_up_max_age_seconds,
+        )
+        if not step_up_decision.allowed:
+            return step_up_decision
+
+    if operation in {"integration_dead_letter_replay", "integration_dead_letter_manual_redrive"}:
+        if principal.role != "auditor":
+            return PermissionDecision(
+                allowed=False,
+                reason="separation_of_duties: only auditor may mutate integration dead-letter state",
+            )
+        step_up_decision = _evaluate_step_up_assertion(
+            operation=operation,
+            principal=principal,
+            headers=headers,
+            require_signed_step_up=require_signed_step_up,
+            step_up_hs256_secret=step_up_hs256_secret,
+            step_up_max_age_seconds=step_up_max_age_seconds,
+        )
+        if not step_up_decision.allowed:
+            return step_up_decision
 
     return PermissionDecision(allowed=True)
+
+
+def _evaluate_step_up_assertion(
+    *,
+    operation: str,
+    principal: Principal,
+    headers: Mapping[str, str],
+    require_signed_step_up: bool,
+    step_up_hs256_secret: str | None,
+    step_up_max_age_seconds: int,
+) -> PermissionDecision:
+    step_up = str(headers.get("x-step-up-auth", "")).strip()
+    if not step_up:
+        return PermissionDecision(
+            allowed=False,
+            reason="step_up_auth_required",
+            required_headers=("x-step-up-auth",),
+        )
+    if not require_signed_step_up:
+        return PermissionDecision(allowed=True)
+    if not step_up_hs256_secret:
+        return PermissionDecision(
+            allowed=False,
+            reason="step_up_verification_not_configured",
+        )
+    try:
+        assertion = _parse_step_up_assertion(
+            step_up,
+            secret=step_up_hs256_secret,
+            max_age_seconds=step_up_max_age_seconds,
+        )
+    except AuthError:
+        return PermissionDecision(
+            allowed=False,
+            reason="step_up_assertion_invalid",
+        )
+    if assertion.get("subject") != principal.subject:
+        return PermissionDecision(
+            allowed=False,
+            reason="step_up_subject_mismatch",
+        )
+    assertion_operation = assertion.get("operation")
+    if assertion_operation not in {"*", operation}:
+        return PermissionDecision(
+            allowed=False,
+            reason="step_up_operation_mismatch",
+        )
+    return PermissionDecision(allowed=True)
+
+
+def _parse_step_up_assertion(
+    token: str,
+    *,
+    secret: str,
+    max_age_seconds: int,
+) -> dict[str, Any]:
+    parts = token.split(".")
+    if len(parts) != 3 or parts[0] != "v1":
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Malformed step-up assertion token",
+        )
+    _, payload_segment, signature_segment = parts
+    signing_input = f"v1.{payload_segment}".encode("utf-8")
+    expected_sig = base64.urlsafe_b64encode(
+        hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    ).rstrip(b"=").decode("utf-8")
+    if not hmac.compare_digest(expected_sig, signature_segment):
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Step-up assertion signature verification failed",
+        )
+    try:
+        payload = json.loads(_decode_segment(payload_segment).decode("utf-8"))
+    except Exception as exc:
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Step-up assertion payload must be valid JSON",
+        ) from exc
+    if not isinstance(payload, dict):
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Step-up assertion payload must be an object",
+        )
+    issued_at = payload.get("iat")
+    if issued_at is None:
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Step-up assertion missing iat",
+        )
+    now = int(time.time())
+    issued = int(issued_at)
+    if issued > now + 30:
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Step-up assertion iat is in the future",
+        )
+    if now - issued > max_age_seconds:
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Step-up assertion is expired",
+        )
+    return payload
 
 
 def _decode_segment(segment: str) -> bytes:

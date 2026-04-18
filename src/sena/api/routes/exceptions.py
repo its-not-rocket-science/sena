@@ -56,6 +56,9 @@ def create_exceptions_router(state: EngineState) -> APIRouter:
             operation="exception_approval",
             principal=principal,
             headers=request.headers,
+            require_signed_step_up=state.settings.require_signed_step_up,
+            step_up_hs256_secret=state.settings.step_up_hs256_secret,
+            step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
         )
         if not decision.allowed:
             raise_api_error("forbidden", details=decision.details())

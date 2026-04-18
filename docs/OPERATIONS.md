@@ -76,6 +76,9 @@ sena production-check --format both
 - `SENA_JWT_REQUIRED_CLAIMS`: required token claims (CSV, default `sub`)
 - `SENA_JWT_ROLE_CLAIM`: claim containing external role(s)
 - `SENA_JWT_ROLE_MAPPING`: external-to-internal mapping (`idp-role:reviewer,...`)
+- `SENA_REQUIRE_SIGNED_STEP_UP`: require cryptographically signed step-up assertions for sensitive operations
+- `SENA_STEP_UP_HS256_SECRET`: HMAC secret for step-up assertion verification (required when signed step-up is enabled)
+- `SENA_STEP_UP_MAX_AGE_SECONDS`: max age for step-up assertions (default `300`)
 - `SENA_ENFORCE_POLICY_ACTOR_IDENTITY`: optionally bind policy payload `actor_id` to JWT `sub` on evaluation endpoints
   - enforced ABAC attributes: `environment`, `bundle_name`, `action_type`
 
