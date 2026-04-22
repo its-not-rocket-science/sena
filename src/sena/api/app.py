@@ -63,6 +63,12 @@ def initialize_runtime(settings: ApiSettings):
     return build_runtime_state(settings, rules, metadata, policy_repo)
 
 
+def _experimental_routes_enabled(settings: ApiSettings) -> bool:
+    if settings.experimental_routes_enabled is not None:
+        return settings.experimental_routes_enabled
+    return settings.runtime_mode == "development"
+
+
 def build_app(state):
     if FastAPI is None:
         raise RuntimeError(
@@ -106,7 +112,12 @@ def build_app(state):
     api_v1.include_router(create_evaluate_router(state))
     api_v1.include_router(create_exceptions_router(state))
     api_v1.include_router(create_bundles_router(state))
-    api_v1.include_router(create_integrations_router(state))
+    api_v1.include_router(
+        create_integrations_router(
+            state,
+            include_experimental=_experimental_routes_enabled(state.settings),
+        )
+    )
 
     @api_v1.get("/audit/verify")
     def audit_verify() -> dict:

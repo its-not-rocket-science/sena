@@ -98,6 +98,11 @@ Guarantees:
 - Slack interactions (`POST /v1/integrations/slack/interactions`)
 - LangChain callback interception (`sena.integrations.langchain.SenaApprovalCallback`)
 
+Experimental HTTP integrations are runtime-gated:
+- `development`: experimental routes are enabled by default.
+- `pilot` and `production`: experimental routes are disabled by default.
+- Override (explicit opt-in only): set `SENA_ENABLE_EXPERIMENTAL_ROUTES=true`.
+
 ## Version
 
 Current package/API version: `0.3.0` (single source: `src/sena/__init__.py`).

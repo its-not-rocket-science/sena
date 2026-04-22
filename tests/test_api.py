@@ -2740,6 +2740,47 @@ def test_pilot_mode_allows_inmemory_reliability_without_explicit_sqlite_path(
     assert not isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
 
 
+def test_pilot_mode_disables_experimental_integration_routes_by_default() -> None:
+    app = create_app(_settings(runtime_mode="pilot"))
+    client = TestClient(app)
+
+    webhook_response = client.post(
+        "/v1/integrations/webhook",
+        json={
+            "provider": "github",
+            "event_type": "pull_request_review",
+            "payload": {},
+        },
+    )
+    assert webhook_response.status_code == 404
+
+    slack_response = client.post("/v1/integrations/slack/interactions", data={})
+    assert slack_response.status_code == 404
+
+
+def test_pilot_mode_can_explicitly_enable_experimental_routes() -> None:
+    app = create_app(
+        _settings(
+            runtime_mode="pilot",
+            experimental_routes_enabled=True,
+        )
+    )
+    client = TestClient(app)
+
+    webhook_response = client.post(
+        "/v1/integrations/webhook",
+        json={
+            "provider": "github",
+            "event_type": "pull_request_review",
+            "payload": {},
+        },
+    )
+    assert webhook_response.status_code != 404
+
+    slack_response = client.post("/v1/integrations/slack/interactions", data={})
+    assert slack_response.status_code != 404
+
+
 def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
     from sena.policy.parser import load_policy_bundle
     from sena.policy.store import SQLitePolicyBundleRepository

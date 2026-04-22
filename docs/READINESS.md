@@ -27,6 +27,7 @@ Pilot-ready means bounded-scope deployments where operator expectations and cont
 Suitable pilot profile:
 - Single organization or tightly controlled small multi-tenant cohort.
 - Jira + ServiceNow approval decisioning as the primary integration path.
+- Experimental HTTP integration routes are disabled by default (explicit opt-in only).
 - Deterministic outcomes + replayable evidence used for governance reviews.
 - Named operators with runbooks for migrations, backup/restore, and incident handling.
 - Explicit acceptance that some platform controls are procedural or externally provided.
