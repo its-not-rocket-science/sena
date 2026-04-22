@@ -340,12 +340,50 @@ def parse_approval_routes(
         required_fields = route.get("required_fields", [])
         if not isinstance(required_fields, list):
             raise error_cls(f"route '{event_type}' required_fields must be a list")
+        static_attributes = route.get("static_attributes", {}) or {}
+        if not isinstance(static_attributes, dict):
+            raise error_cls(
+                f"route '{event_type}' static_attributes must be an object"
+            )
+        risk_attributes_raw = route.get("risk_attributes", {}) or {}
+        if not isinstance(risk_attributes_raw, dict):
+            raise error_cls(f"route '{event_type}' risk_attributes must be an object")
+        context_fields_raw = route.get("context_fields", {}) or {}
+        if not isinstance(context_fields_raw, dict):
+            raise error_cls(f"route '{event_type}' context_fields must be an object")
+        metadata_fields_raw = route.get("metadata_fields", {}) or {}
+        if not isinstance(metadata_fields_raw, dict):
+            raise error_cls(f"route '{event_type}' metadata_fields must be an object")
+        required_metadata_fields_raw = route.get("required_metadata_fields", []) or []
+        if not isinstance(required_metadata_fields_raw, list):
+            raise error_cls(
+                f"route '{event_type}' required_metadata_fields must be a list"
+            )
+        external_to_internal_state_raw = route.get("external_to_internal_state", {}) or {}
+        if not isinstance(external_to_internal_state_raw, dict):
+            raise error_cls(
+                f"route '{event_type}' external_to_internal_state must be an object"
+            )
+        internal_to_external_state_raw = route.get("internal_to_external_state", {}) or {}
+        if not isinstance(internal_to_external_state_raw, dict):
+            raise error_cls(
+                f"route '{event_type}' internal_to_external_state must be an object"
+            )
+        allowed_state_transitions_raw = route.get("allowed_state_transitions", {}) or {}
+        if not isinstance(allowed_state_transitions_raw, dict):
+            raise error_cls(
+                f"route '{event_type}' allowed_state_transitions must be an object"
+            )
+        if any(not isinstance(v, list) for v in allowed_state_transitions_raw.values()):
+            raise error_cls(
+                f"route '{event_type}' allowed_state_transitions values must be lists"
+            )
         routes[event_type] = ApprovalEventRoute(
             action_type=str(route["action_type"]),
             actor_id_path=str(route["actor_id_path"]),
             attributes={str(k): str(v) for k, v in attrs.items()},
             required_fields=[str(item) for item in required_fields],
-            static_attributes=route.get("static_attributes", {}) or {},
+            static_attributes=static_attributes,
             payload_path=route.get("payload_path"),
             request_id_path=route.get("request_id_path"),
             actor_role_path=route.get("actor_role_path"),
@@ -358,7 +396,7 @@ def parse_approval_routes(
             idempotency_key_path=route.get("idempotency_key_path"),
             risk_attributes={
                 str(k): str(v)
-                for k, v in (route.get("risk_attributes", {}) or {}).items()
+                for k, v in risk_attributes_raw.items()
             },
             evidence_references_path=route.get("evidence_references_path"),
             static_source_object_type=route.get("static_source_object_type"),
@@ -367,28 +405,23 @@ def parse_approval_routes(
             external_state_path=route.get("external_state_path"),
             previous_external_state_path=route.get("previous_external_state_path"),
             external_to_internal_state={
-                str(k): str(v)
-                for k, v in (route.get("external_to_internal_state", {}) or {}).items()
+                str(k): str(v) for k, v in external_to_internal_state_raw.items()
             },
             internal_to_external_state={
-                str(k): str(v)
-                for k, v in (route.get("internal_to_external_state", {}) or {}).items()
+                str(k): str(v) for k, v in internal_to_external_state_raw.items()
             },
             allowed_state_transitions={
                 str(k): [str(item) for item in v]
-                for k, v in (route.get("allowed_state_transitions", {}) or {}).items()
-                if isinstance(v, list)
+                for k, v in allowed_state_transitions_raw.items()
             },
             context_fields={
-                str(k): str(v)
-                for k, v in (route.get("context_fields", {}) or {}).items()
+                str(k): str(v) for k, v in context_fields_raw.items()
             },
             metadata_fields={
-                str(k): str(v)
-                for k, v in (route.get("metadata_fields", {}) or {}).items()
+                str(k): str(v) for k, v in metadata_fields_raw.items()
             },
             required_metadata_fields=[
-                str(item) for item in (route.get("required_metadata_fields", []) or [])
+                str(item) for item in required_metadata_fields_raw
             ],
             sla_deadline_path=route.get("sla_deadline_path"),
             escalation_deadline_path=route.get("escalation_deadline_path"),

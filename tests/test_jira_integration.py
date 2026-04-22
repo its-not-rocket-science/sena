@@ -44,6 +44,25 @@ def test_load_jira_mapping_config() -> None:
     assert cfg.outbound.mode == "both"
 
 
+def test_load_jira_mapping_rejects_non_list_required_metadata_fields(tmp_path) -> None:
+    config_path = tmp_path / "jira_bad_required_metadata.yaml"
+    config_path.write_text(
+        """
+routes:
+  jira:issue_updated:
+    action_type: approve_vendor_payment
+    actor_id_path: user.accountId
+    attributes: {}
+    required_metadata_fields: issue.fields.customfield_tenant_id
+""".strip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        JiraIntegrationError, match="required_metadata_fields must be a list"
+    ):
+        load_jira_mapping_config(str(config_path))
+
+
 def test_jira_connector_maps_payload_to_action_proposal() -> None:
     cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
     connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
