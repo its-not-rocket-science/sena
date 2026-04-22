@@ -45,6 +45,7 @@ class ApiSettings:
     servicenow_mapping_config_path: str | None = None
     servicenow_webhook_secret: str | None = None
     servicenow_webhook_secret_previous: str | None = None
+    experimental_routes_enabled: bool | None = None
     slack_bot_token: str | None = None
     slack_channel: str | None = None
     rate_limit_requests: int = 120
@@ -168,6 +169,7 @@ def _parse_regression_budgets(raw: str | None) -> tuple[tuple[str, int], ...]:
 
 
 def load_settings_from_env() -> ApiSettings:
+    experimental_routes_env = os.getenv("SENA_ENABLE_EXPERIMENTAL_ROUTES")
     return ApiSettings(
         runtime_mode=os.getenv("SENA_RUNTIME_MODE", "development").strip().lower(),
         host=os.getenv("SENA_API_HOST", "127.0.0.1"),
@@ -213,6 +215,11 @@ def load_settings_from_env() -> ApiSettings:
         servicenow_mapping_config_path=os.getenv("SENA_SERVICENOW_MAPPING_CONFIG"),
         servicenow_webhook_secret=os.getenv("SENA_SERVICENOW_WEBHOOK_SECRET"),
         servicenow_webhook_secret_previous=os.getenv("SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS"),
+        experimental_routes_enabled=(
+            _parse_bool(experimental_routes_env, default=False)
+            if experimental_routes_env is not None
+            else None
+        ),
         slack_bot_token=os.getenv("SENA_SLACK_BOT_TOKEN"),
         slack_channel=os.getenv("SENA_SLACK_CHANNEL"),
         rate_limit_requests=_parse_int(

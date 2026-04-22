@@ -363,6 +363,10 @@ Interpretation guide:
 
 - versioned API endpoints under `/v1/*`
 - unversioned compatibility routes are removed and return deprecation error payloads.
+- experimental integration routes are mode-gated:
+  - `development`: enabled by default
+  - `pilot`/`production`: disabled by default
+  - explicit opt-in: `SENA_ENABLE_EXPERIMENTAL_ROUTES=true`
 
 ### Gated promotion flow example
 
@@ -386,6 +390,13 @@ Legacy/historical path (not supported for enterprise use):
 Experimental integration surfaces (evaluation-only, no compatibility guarantees):
 - `/v1/integrations/webhook`
 - `/v1/integrations/slack/interactions`
+
+### Migration / rollout note (2026-04-22)
+
+If existing pilot/prod environments depended on `/v1/integrations/webhook` or
+`/v1/integrations/slack/interactions`, those routes now return 404 unless
+`SENA_ENABLE_EXPERIMENTAL_ROUTES=true` is explicitly configured. Keep the
+default (`false`/unset) for supported-path deployments.
 
 ## 10) Observability design (logs, metrics, tracing, alerts)
 

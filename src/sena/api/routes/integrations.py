@@ -41,7 +41,9 @@ _SENSITIVE_HEADER_NAMES = {
 }
 
 
-def create_integrations_router(state: EngineState) -> APIRouter:
+def create_integrations_router(
+    state: EngineState, *, include_experimental: bool = True
+) -> APIRouter:
     router = APIRouter(tags=["integrations"], responses={400:{"description":"Bad request"},401:{"description":"Unauthorized"},403:{"description":"Forbidden"},429:{"description":"Rate limited"},500:{"description":"Server error"}})
     integration_service = IntegrationService(
         state=state,
@@ -214,85 +216,86 @@ def create_integrations_router(state: EngineState) -> APIRouter:
         details.update(extra)
         return details
 
-    @router.post("/integrations/webhook", summary="[EXPERIMENTAL] Generic webhook policy evaluation")
-    def integrations_webhook(
-        req: WebhookEvaluateRequest,
-        request: Request,
-        response: Response,
-    ) -> dict | Response:
-        response.headers["x-sena-surface-stage"] = "experimental"
-        if state.webhook_mapper is None:
-            raise_api_error("webhook_mapping_not_configured")
-        key = request.headers.get("Idempotency-Key")
-        request_payload = req.model_dump()
-        with idempotency_key_lock(key):
-            if key:
-                existing = state.processing_store.get_idempotency_entry(key)
-                if existing is not None:
-                    cached_response, fingerprint = existing
-                    incoming_fingerprint = idempotency_request_fingerprint(
-                        request, request_payload
-                    )
-                    if (
-                        fingerprint is not None
-                        and incoming_fingerprint is not None
-                        and fingerprint != incoming_fingerprint
-                    ):
-                        raise_api_error(
-                            "validation_error",
-                            message="Idempotency-Key has already been used with a different payload.",
-                            details={"reason": "idempotency_key_conflict"},
-                            status_code=409,
+    if include_experimental:
+        @router.post("/integrations/webhook", summary="[EXPERIMENTAL] Generic webhook policy evaluation")
+        def integrations_webhook(
+            req: WebhookEvaluateRequest,
+            request: Request,
+            response: Response,
+        ) -> dict | Response:
+            response.headers["x-sena-surface-stage"] = "experimental"
+            if state.webhook_mapper is None:
+                raise_api_error("webhook_mapping_not_configured")
+            key = request.headers.get("Idempotency-Key")
+            request_payload = req.model_dump()
+            with idempotency_key_lock(key):
+                if key:
+                    existing = state.processing_store.get_idempotency_entry(key)
+                    if existing is not None:
+                        cached_response, fingerprint = existing
+                        incoming_fingerprint = idempotency_request_fingerprint(
+                            request, request_payload
                         )
-                    return Response(
-                        content=cached_response,
-                        media_type="application/json",
-                        status_code=200,
+                        if (
+                            fingerprint is not None
+                            and incoming_fingerprint is not None
+                            and fingerprint != incoming_fingerprint
+                        ):
+                            raise_api_error(
+                                "validation_error",
+                                message="Idempotency-Key has already been used with a different payload.",
+                                details={"reason": "idempotency_key_conflict"},
+                                status_code=409,
+                            )
+                        return Response(
+                            content=cached_response,
+                            media_type="application/json",
+                            status_code=200,
+                        )
+                try:
+                    state.metrics.observe_connector_inbound_event_received(
+                        connector="webhook",
+                        event_type=req.event_type,
                     )
-            try:
-                state.metrics.observe_connector_inbound_event_received(
-                    connector="webhook",
-                    event_type=req.event_type,
-                )
-                logger.info(
-                    "connector_inbound_event_received",
-                    connector="webhook",
-                    event_type=req.event_type,
-                    provider=req.provider,
-                )
-                result = state.processing_service.enqueue_and_process(
-                    {
-                        "event_type": "webhook",
-                        "payload": request_payload,
-                        "request_id": request.state.request_id,
-                    }
-                )
-                persist_idempotency_response(
-                    request, result, request_payload=request_payload
-                )
-                return _ok(result)
-            except QueueOverflowError as exc:
-                raise_api_error("rate_limited", details={"reason": str(exc)})
-            except WebhookMappingError as exc:
-                state.processing_store.enqueue_dead_letter(
-                    {
-                        "event_type": "webhook",
-                        "payload": request_payload,
-                        "request_id": request.state.request_id,
-                    },
-                    str(exc),
-                )
-                raise_api_error("webhook_mapping_error", details={"reason": str(exc)})
-            except Exception as exc:  # pragma: no cover
-                state.processing_store.enqueue_dead_letter(
-                    {
-                        "event_type": "webhook",
-                        "payload": request_payload,
-                        "request_id": request.state.request_id,
-                    },
-                    str(exc),
-                )
-                raise_api_error("webhook_evaluation_error", details={"reason": str(exc)})
+                    logger.info(
+                        "connector_inbound_event_received",
+                        connector="webhook",
+                        event_type=req.event_type,
+                        provider=req.provider,
+                    )
+                    result = state.processing_service.enqueue_and_process(
+                        {
+                            "event_type": "webhook",
+                            "payload": request_payload,
+                            "request_id": request.state.request_id,
+                        }
+                    )
+                    persist_idempotency_response(
+                        request, result, request_payload=request_payload
+                    )
+                    return _ok(result)
+                except QueueOverflowError as exc:
+                    raise_api_error("rate_limited", details={"reason": str(exc)})
+                except WebhookMappingError as exc:
+                    state.processing_store.enqueue_dead_letter(
+                        {
+                            "event_type": "webhook",
+                            "payload": request_payload,
+                            "request_id": request.state.request_id,
+                        },
+                        str(exc),
+                    )
+                    raise_api_error("webhook_mapping_error", details={"reason": str(exc)})
+                except Exception as exc:  # pragma: no cover
+                    state.processing_store.enqueue_dead_letter(
+                        {
+                            "event_type": "webhook",
+                            "payload": request_payload,
+                            "request_id": request.state.request_id,
+                        },
+                        str(exc),
+                    )
+                    raise_api_error("webhook_evaluation_error", details={"reason": str(exc)})
 
     @router.post("/integrations/jira/webhook", summary="[SUPPORTED] Jira webhook policy evaluation")
     async def integrations_jira_webhook(
@@ -810,20 +813,21 @@ def create_integrations_router(state: EngineState) -> APIRouter:
             }
         )
 
-    @router.post("/integrations/slack/interactions", summary="[EXPERIMENTAL] Handle Slack interactive callbacks")
-    async def slack_interactions(request: Request, response: Response) -> dict:
-        response.headers["x-sena-surface-stage"] = "experimental"
-        try:
-            form_data = await request.form()
-            payload_json = form_data.get("payload")
-            if not isinstance(payload_json, str):
-                raise SlackIntegrationError(
-                    "Slack interaction payload form field is required"
-                )
-            return _ok(integration_service.handle_slack_interaction(payload_json))
-        except SlackIntegrationError as exc:
-            raise_api_error("slack_interaction_error", details={"reason": str(exc)})
-        except Exception as exc:  # pragma: no cover
-            raise_api_error("slack_interaction_error", details={"reason": str(exc)})
+    if include_experimental:
+        @router.post("/integrations/slack/interactions", summary="[EXPERIMENTAL] Handle Slack interactive callbacks")
+        async def slack_interactions(request: Request, response: Response) -> dict:
+            response.headers["x-sena-surface-stage"] = "experimental"
+            try:
+                form_data = await request.form()
+                payload_json = form_data.get("payload")
+                if not isinstance(payload_json, str):
+                    raise SlackIntegrationError(
+                        "Slack interaction payload form field is required"
+                    )
+                return _ok(integration_service.handle_slack_interaction(payload_json))
+            except SlackIntegrationError as exc:
+                raise_api_error("slack_interaction_error", details={"reason": str(exc)})
+            except Exception as exc:  # pragma: no cover
+                raise_api_error("slack_interaction_error", details={"reason": str(exc)})
 
     return router
