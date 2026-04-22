@@ -25,6 +25,32 @@ def test_load_servicenow_mapping_config() -> None:
     assert cfg.outbound.mode == "callback"
 
 
+def test_load_servicenow_mapping_rejects_non_list_transition_values(tmp_path) -> None:
+    config_path = tmp_path / "servicenow_bad_transitions.yaml"
+    config_path.write_text(
+        """
+routes:
+  change_approval.requested:
+    action_type: approve_change
+    actor_id_path: requested_by.user_id
+    attributes: {}
+    external_state_path: change_request.state
+    previous_external_state_path: change_request.previous_state
+    external_to_internal_state:
+      requested: requested
+      approved: approved
+    allowed_state_transitions:
+      requested: approved
+""".strip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ServiceNowIntegrationError,
+        match="allowed_state_transitions values must be lists",
+    ):
+        load_servicenow_mapping_config(str(config_path))
+
+
 @pytest.mark.parametrize(
     "fixture_name,expected_flags",
     [
