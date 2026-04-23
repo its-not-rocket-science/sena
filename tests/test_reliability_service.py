@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from sena.services.reliability_service import CircuitBreaker, InMemoryIngestionQueue, ReliabilityService
+from sena.services.reliability_service import (
+    CircuitBreaker,
+    InMemoryIngestionQueue,
+    ReliabilityService,
+    SQLiteIngestionQueue,
+)
 
 
 class _ManualClockBreaker(CircuitBreaker):
@@ -61,3 +66,20 @@ def test_circuit_breaker_fails_fast_after_threshold() -> None:
     )
     assert recovered["status"] == "ok"
     assert breaker.state == "closed"
+
+
+def test_sqlite_ingestion_queue_survives_restart_for_unprocessed_events(tmp_path) -> None:
+    db_path = tmp_path / "ingestion-queue.db"
+    first = ReliabilityService(
+        ingestion_queue=SQLiteIngestionQueue(sqlite_path=str(db_path))
+    )
+    first.enqueue_event({"id": "event-1", "payload": {"x": 1}})
+
+    second = ReliabilityService(
+        ingestion_queue=SQLiteIngestionQueue(sqlite_path=str(db_path))
+    )
+    assert second.process_next(lambda event: event) == {
+        "id": "event-1",
+        "payload": {"x": 1},
+    }
+    assert second.process_next(lambda event: event) == {"status": "empty"}

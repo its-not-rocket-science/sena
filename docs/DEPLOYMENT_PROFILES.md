@@ -12,6 +12,7 @@ export SENA_POLICY_STORE_BACKEND=filesystem
 export SENA_POLICY_DIR=src/sena/examples/policies
 export SENA_BUNDLE_NAME=enterprise-compliance-controls
 export SENA_BUNDLE_VERSION=2026.03
+export SENA_INGESTION_QUEUE_BACKEND=memory
 
 python -m uvicorn sena.api.app:app --host 0.0.0.0 --port 8000
 ```
@@ -34,6 +35,8 @@ docker run --rm -p 8000:8000 \
   -e SENA_API_KEY=pilot-local-key \
   -e SENA_POLICY_STORE_BACKEND=filesystem \
   -e SENA_POLICY_DIR=src/sena/examples/policies \
+  -e SENA_INGESTION_QUEUE_BACKEND=sqlite \
+  -e SENA_PROCESSING_SQLITE_PATH=/var/lib/sena/runtime.db \
   -e SENA_AUDIT_SINK_JSONL=/tmp/sena-audit/audit.jsonl \
   -e SENA_BUNDLE_SIGNATURE_STRICT=false \
   sena-api:local
@@ -54,6 +57,8 @@ export SENA_POLICY_STORE_BACKEND=sqlite
 export SENA_POLICY_STORE_SQLITE_PATH=/var/lib/sena/policy_registry.db
 
 export SENA_AUDIT_SINK_JSONL=/var/log/sena/audit.jsonl
+export SENA_INGESTION_QUEUE_BACKEND=sqlite
+export SENA_PROCESSING_SQLITE_PATH=/var/lib/sena/runtime.db
 
 export SENA_BUNDLE_SIGNATURE_STRICT=true
 export SENA_BUNDLE_SIGNATURE_KEYRING_DIR=/etc/sena/keyring
@@ -80,6 +85,7 @@ Pilot operational checklist:
 - keyring directory configured and present
 - Jira webhook secret mandatory if Jira integration is enabled
 - ServiceNow webhook secret mandatory if ServiceNow integration is enabled
+- durable ingestion queue backend mandatory (`memory` is rejected in production)
 
 Example:
 

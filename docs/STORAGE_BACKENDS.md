@@ -26,6 +26,9 @@ Startup validation now inspects these profiles.
 - In `production` mode:
   - **local_dev** backends fail startup.
   - **pilot** backends emit explicit warnings during startup.
+- For the ingestion queue specifically:
+  - `SENA_RUNTIME_MODE=development` may use `memory`.
+  - `SENA_RUNTIME_MODE=pilot` and `production` require durable backends (`sqlite` or `redis`).
 
 ## Backend naming and readiness labels
 

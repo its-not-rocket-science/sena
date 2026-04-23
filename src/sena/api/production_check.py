@@ -19,6 +19,7 @@ from sena.storage_backends import get_capability
 VALID_API_ROLES = {"admin", "policy_author", "reviewer", "deployer", "auditor"}
 VALID_RUNTIME_MODES = {"development", "pilot", "production"}
 VALID_POLICY_STORE_BACKENDS = {"filesystem", "sqlite"}
+VALID_INGESTION_QUEUE_BACKENDS = {"memory", "redis", "sqlite"}
 
 
 @dataclass(frozen=True)
@@ -122,6 +123,29 @@ def _validate_env_coherence(settings: ApiSettings) -> list[str]:
             errors.append(
                 "SENA_INTEGRATION_RELIABILITY_SQLITE_PATH parent directory must exist: "
                 f"{settings.integration_reliability_sqlite_path}"
+            )
+    if settings.ingestion_queue_backend not in VALID_INGESTION_QUEUE_BACKENDS:
+        errors.append(
+            "SENA_INGESTION_QUEUE_BACKEND must be one of "
+            f"{sorted(VALID_INGESTION_QUEUE_BACKENDS)}"
+        )
+    if settings.ingestion_queue_backend == "redis" and not settings.ingestion_queue_redis_url:
+        errors.append(
+            "SENA_INGESTION_QUEUE_REDIS_URL is required when backend is redis"
+        )
+    if settings.runtime_mode in {"pilot", "production"} and settings.ingestion_queue_backend == "memory":
+        errors.append(
+            f"SENA_RUNTIME_MODE={settings.runtime_mode} forbids "
+            "SENA_INGESTION_QUEUE_BACKEND=memory because queued inbound work "
+            "must survive process restart. Configure redis or sqlite."
+        )
+    if settings.ingestion_queue_backend == "sqlite":
+        sqlite_parent = Path(settings.processing_sqlite_path).expanduser().resolve().parent
+        if not sqlite_parent.exists() or not sqlite_parent.is_dir():
+            errors.append(
+                "SENA_PROCESSING_SQLITE_PATH parent directory must exist when "
+                "SENA_INGESTION_QUEUE_BACKEND=sqlite: "
+                f"{settings.processing_sqlite_path}"
             )
 
     jira_enabled = bool(
