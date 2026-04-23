@@ -2473,6 +2473,60 @@ def test_startup_fails_in_production_without_jira_secret(tmp_path) -> None:
         )
 
 
+def test_startup_fails_in_pilot_without_jira_secret(tmp_path) -> None:
+    mapping_path = tmp_path / "jira-mapping.json"
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "routes": {
+                    "jira:issue_updated": {
+                        "action_type": "approve_vendor_payment",
+                        "actor_id_path": "user.accountId",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_RUNTIME_MODE=pilot requires SENA_JIRA_WEBHOOK_SECRET",
+    ):
+        create_app(
+            _settings(
+                runtime_mode="pilot",
+                jira_mapping_config_path=str(mapping_path),
+                jira_webhook_secret=None,
+                jira_webhook_secret_previous=None,
+            )
+        )
+
+
+def test_startup_fails_in_pilot_without_servicenow_secret(tmp_path) -> None:
+    mapping_path = tmp_path / "servicenow-mapping.yaml"
+    mapping_path.write_text(
+        "routes:\n"
+        "  change_approval.requested:\n"
+        "    action_type: approve_change_request\n"
+        "    actor_id_path: requested_by.sys_id\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_RUNTIME_MODE=pilot requires SENA_SERVICENOW_WEBHOOK_SECRET",
+    ):
+        create_app(
+            _settings(
+                runtime_mode="pilot",
+                servicenow_mapping_config_path=str(mapping_path),
+                servicenow_webhook_secret=None,
+                servicenow_webhook_secret_previous=None,
+            )
+        )
+
+
 def test_startup_allows_secret_rotation_with_previous_jira_secret_in_production(
     tmp_path,
 ) -> None:
@@ -2719,6 +2773,35 @@ def test_non_production_can_explicitly_allow_inmemory_reliability(
     connector = app.state.engine_state.jira_connector
     assert connector is not None
     assert not isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
+
+
+def test_development_mode_allows_missing_supported_connector_secrets_with_warning(
+    caplog,
+) -> None:
+    caplog.set_level("WARNING")
+
+    app = create_app(
+        _settings(
+            runtime_mode="development",
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+            jira_webhook_secret=None,
+            jira_webhook_secret_previous=None,
+            servicenow_webhook_secret=None,
+            servicenow_webhook_secret_previous=None,
+        )
+    )
+
+    assert app.state.engine_state.jira_connector is not None
+    assert app.state.engine_state.servicenow_connector is not None
+    assert any(
+        "Inbound Jira events are forgeable in this mode" in message
+        for message in caplog.messages
+    )
+    assert any(
+        "Inbound ServiceNow events are forgeable in this mode" in message
+        for message in caplog.messages
+    )
 
 
 def test_pilot_mode_allows_inmemory_reliability_without_explicit_sqlite_path(

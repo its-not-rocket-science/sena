@@ -267,6 +267,7 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
     _validate_connector_config_paths(runtime_settings)
     _validate_reliability_sqlite_path(runtime_settings)
     _validate_production_startup_requirements(runtime_settings)
+    _validate_supported_connector_webhook_verification_policy(runtime_settings)
     _validate_operational_limits(runtime_settings)
     _warn_or_fail_for_storage_profiles(runtime_settings)
 
@@ -518,6 +519,49 @@ def _validate_production_startup_requirements(runtime_settings: ApiSettings) -> 
                     "SENA_SERVICENOW_MAPPING_CONFIG is invalid for production startup: "
                     f"{exc}"
                 ) from exc
+
+
+def _validate_supported_connector_webhook_verification_policy(
+    runtime_settings: ApiSettings,
+) -> None:
+    jira_enabled = _jira_integration_enabled(runtime_settings)
+    jira_has_secret = bool(
+        runtime_settings.jira_webhook_secret
+        or runtime_settings.jira_webhook_secret_previous
+    )
+    servicenow_enabled = _servicenow_integration_enabled(runtime_settings)
+    servicenow_has_secret = bool(
+        runtime_settings.servicenow_webhook_secret
+        or runtime_settings.servicenow_webhook_secret_previous
+    )
+    if runtime_settings.runtime_mode in {"pilot", "production"}:
+        if jira_enabled and not jira_has_secret:
+            raise RuntimeError(
+                f"SENA_RUNTIME_MODE={runtime_settings.runtime_mode} requires "
+                "SENA_JIRA_WEBHOOK_SECRET (or SENA_JIRA_WEBHOOK_SECRET_PREVIOUS) "
+                "when Jira integration is enabled; allow-all verifier is disabled."
+            )
+        if servicenow_enabled and not servicenow_has_secret:
+            raise RuntimeError(
+                f"SENA_RUNTIME_MODE={runtime_settings.runtime_mode} requires "
+                "SENA_SERVICENOW_WEBHOOK_SECRET "
+                "(or SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS) when ServiceNow "
+                "integration is enabled; allow-all verifier is disabled."
+            )
+        return
+
+    if jira_enabled and not jira_has_secret:
+        logger.warning(
+            "SENA_RUNTIME_MODE=development starting Jira integration with "
+            "AllowAllJiraWebhookVerifier because webhook secret is missing. "
+            "Inbound Jira events are forgeable in this mode."
+        )
+    if servicenow_enabled and not servicenow_has_secret:
+        logger.warning(
+            "SENA_RUNTIME_MODE=development starting ServiceNow integration with "
+            "AllowAllServiceNowWebhookVerifier because webhook secret is missing. "
+            "Inbound ServiceNow events are forgeable in this mode."
+        )
 
 
 def _validate_operational_limits(runtime_settings: ApiSettings) -> None:

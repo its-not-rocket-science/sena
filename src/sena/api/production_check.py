@@ -160,19 +160,6 @@ def _validate_env_coherence(settings: ApiSettings) -> list[str]:
             errors.append(
                 "SENA_RUNTIME_MODE=production requires SENA_SERVICENOW_MAPPING_CONFIG when ServiceNow integration is enabled"
             )
-        if jira_enabled and not (
-            settings.jira_webhook_secret or settings.jira_webhook_secret_previous
-        ):
-            errors.append(
-                "SENA_RUNTIME_MODE=production requires SENA_JIRA_WEBHOOK_SECRET (or SENA_JIRA_WEBHOOK_SECRET_PREVIOUS) when Jira integration is enabled"
-            )
-        if servicenow_enabled and not (
-            settings.servicenow_webhook_secret
-            or settings.servicenow_webhook_secret_previous
-        ):
-            errors.append(
-                "SENA_RUNTIME_MODE=production requires SENA_SERVICENOW_WEBHOOK_SECRET (or SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS) when ServiceNow integration is enabled"
-            )
         if settings.integration_reliability_allow_inmemory:
             errors.append(
                 "SENA_RUNTIME_MODE=production forbids SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true"
@@ -180,6 +167,25 @@ def _validate_env_coherence(settings: ApiSettings) -> list[str]:
         if (jira_enabled or servicenow_enabled) and not settings.integration_reliability_sqlite_path:
             errors.append(
                 "SENA_RUNTIME_MODE=production requires SENA_INTEGRATION_RELIABILITY_SQLITE_PATH when Jira or ServiceNow integration is enabled"
+            )
+    if settings.runtime_mode in {"pilot", "production"}:
+        if jira_enabled and not (
+            settings.jira_webhook_secret or settings.jira_webhook_secret_previous
+        ):
+            errors.append(
+                f"SENA_RUNTIME_MODE={settings.runtime_mode} requires "
+                "SENA_JIRA_WEBHOOK_SECRET (or SENA_JIRA_WEBHOOK_SECRET_PREVIOUS) "
+                "when Jira integration is enabled; allow-all verifier is disabled"
+            )
+        if servicenow_enabled and not (
+            settings.servicenow_webhook_secret
+            or settings.servicenow_webhook_secret_previous
+        ):
+            errors.append(
+                f"SENA_RUNTIME_MODE={settings.runtime_mode} requires "
+                "SENA_SERVICENOW_WEBHOOK_SECRET (or "
+                "SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS) when ServiceNow "
+                "integration is enabled; allow-all verifier is disabled"
             )
     if settings.audit_verify_on_startup_strict and not settings.audit_sink_jsonl:
         errors.append(

@@ -30,6 +30,7 @@ Suitable pilot profile:
 - Experimental HTTP integration routes are disabled by default (explicit opt-in only).
 - Deterministic outcomes + replayable evidence used for governance reviews.
 - Named operators with runbooks for migrations, backup/restore, and incident handling.
+- Jira and ServiceNow webhook secrets are configured (allow-all verification is not permitted in pilot/production).
 - Explicit acceptance that some platform controls are procedural or externally provided.
 
 Pilot usage assumptions:
