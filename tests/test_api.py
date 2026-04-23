@@ -2497,6 +2497,8 @@ def test_startup_fails_in_pilot_without_jira_secret(tmp_path) -> None:
         create_app(
             _settings(
                 runtime_mode="pilot",
+                ingestion_queue_backend="sqlite",
+                processing_sqlite_path=str(tmp_path / "runtime.db"),
                 jira_mapping_config_path=str(mapping_path),
                 jira_webhook_secret=None,
                 jira_webhook_secret_previous=None,
@@ -2521,6 +2523,8 @@ def test_startup_fails_in_pilot_without_servicenow_secret(tmp_path) -> None:
         create_app(
             _settings(
                 runtime_mode="pilot",
+                ingestion_queue_backend="sqlite",
+                processing_sqlite_path=str(tmp_path / "runtime.db"),
                 servicenow_mapping_config_path=str(mapping_path),
                 servicenow_webhook_secret=None,
                 servicenow_webhook_secret_previous=None,
@@ -2811,6 +2815,7 @@ def test_pilot_mode_allows_inmemory_reliability_without_explicit_sqlite_path(
     app = create_app(
         _settings(
             runtime_mode="pilot",
+            ingestion_queue_backend="sqlite",
             processing_sqlite_path=str(tmp_path / "runtime.db"),
             jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
             jira_webhook_secret="pilot-secret",
@@ -2824,8 +2829,38 @@ def test_pilot_mode_allows_inmemory_reliability_without_explicit_sqlite_path(
     assert not isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
 
 
-def test_pilot_mode_disables_experimental_integration_routes_by_default() -> None:
-    app = create_app(_settings(runtime_mode="pilot"))
+def test_pilot_mode_memory_ingestion_queue_fails_startup() -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_RUNTIME_MODE=pilot forbids SENA_INGESTION_QUEUE_BACKEND=memory",
+    ):
+        create_app(
+            _settings(
+                runtime_mode="pilot",
+                ingestion_queue_backend="memory",
+            )
+        )
+
+
+def test_development_mode_memory_ingestion_queue_is_allowed() -> None:
+    app = create_app(
+        _settings(
+            runtime_mode="development",
+            ingestion_queue_backend="memory",
+        )
+    )
+
+    assert app.state.engine_state.reliability_service is not None
+
+
+def test_pilot_mode_disables_experimental_integration_routes_by_default(tmp_path) -> None:
+    app = create_app(
+        _settings(
+            runtime_mode="pilot",
+            ingestion_queue_backend="sqlite",
+            processing_sqlite_path=str(tmp_path / "runtime.db"),
+        )
+    )
     client = TestClient(app)
 
     webhook_response = client.post(
@@ -2842,10 +2877,12 @@ def test_pilot_mode_disables_experimental_integration_routes_by_default() -> Non
     assert slack_response.status_code == 404
 
 
-def test_pilot_mode_can_explicitly_enable_experimental_routes() -> None:
+def test_pilot_mode_can_explicitly_enable_experimental_routes(tmp_path) -> None:
     app = create_app(
         _settings(
             runtime_mode="pilot",
+            ingestion_queue_backend="sqlite",
+            processing_sqlite_path=str(tmp_path / "runtime.db"),
             experimental_routes_enabled=True,
         )
     )

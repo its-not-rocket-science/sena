@@ -121,8 +121,19 @@ CAPABILITIES: dict[tuple[str, str], StorageBackendCapability] = {
         backend="memory",
         concurrency_model="in-process queue",
         durability_assumptions="volatile memory only",
+        deployment_suitability="local_dev",
+        notes="Development-only queue; events are lost on crash/restart.",
+    ),
+    (
+        "ingestion_queue",
+        "sqlite",
+    ): StorageBackendCapability(
+        concern="ingestion_queue",
+        backend="sqlite",
+        concurrency_model="sqlite transactional FIFO table",
+        durability_assumptions="single-node file durability with WAL/FULL",
         deployment_suitability="pilot",
-        notes="Fast local/pilot queue; events are lost on crash/restart.",
+        notes="Durable restart-safe queue for single-node pilot deployments.",
     ),
     (
         "ingestion_queue",

@@ -15,6 +15,9 @@
 - `SENA_POLICY_DIR=<mounted policy bundle>`
 - `SENA_BUNDLE_NAME`, `SENA_BUNDLE_VERSION`
 - `SENA_AUDIT_SINK_JSONL=<persistent volume path>`
+- `SENA_INGESTION_QUEUE_BACKEND=<sqlite|redis>` (`memory` is development-only)
+- `SENA_PROCESSING_SQLITE_PATH=<persistent volume path>` (required when `SENA_INGESTION_QUEUE_BACKEND=sqlite`)
+- `SENA_INGESTION_QUEUE_REDIS_URL=<redis url>` (required when `SENA_INGESTION_QUEUE_BACKEND=redis`)
 - `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH=<persistent volume path>`
 - `SENA_JIRA_MAPPING_CONFIG`, `SENA_JIRA_WEBHOOK_SECRET` (when Jira enabled)
 - `SENA_SERVICENOW_MAPPING_CONFIG`, `SENA_SERVICENOW_WEBHOOK_SECRET` (when ServiceNow enabled)
@@ -25,6 +28,11 @@
 - In production mode (`SENA_RUNTIME_MODE=production`), enabling Jira or ServiceNow mappings requires `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH`.
 - Production startup fails fast if this path is missing or if `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true`.
 - In development/pilot, connector reliability defaults to durable SQLite; set `SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true` only for demos/tests.
+
+### Ingestion queue durability requirement
+- In `pilot` and `production`, `SENA_INGESTION_QUEUE_BACKEND=memory` is rejected at startup.
+- Use `sqlite` for single-node pilot durability or `redis` for networked queue deployments.
+- Startup fails clearly when durable queue configuration is missing or invalid (for example: redis without `SENA_INGESTION_QUEUE_REDIS_URL`, or sqlite with a missing parent directory for `SENA_PROCESSING_SQLITE_PATH`).
 
 ## Backup / restore runbook
 1. Back up policy registry (`scripts/backup_policy_registry.py`).
