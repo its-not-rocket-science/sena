@@ -178,6 +178,7 @@ class EngineState:
         self.reliability_service: ReliabilityService | None = None
         self.job_manager = InProcessJobManager(
             max_workers=4,
+            sqlite_path=settings.processing_sqlite_path,
             on_submitted=lambda job_type: self.metrics.observe_job_submitted(
                 job_type=job_type
             ),

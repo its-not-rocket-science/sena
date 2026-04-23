@@ -2,6 +2,7 @@ import json
 import hashlib
 import hmac
 from pathlib import Path
+import threading
 
 import pytest
 import time
@@ -1043,6 +1044,181 @@ def test_simulation_async_job_timeout_and_cancellation(monkeypatch) -> None:
             "simulate_policy_change",
             original_simulation,
         )
+
+
+def test_async_job_state_persists_after_restart(tmp_path) -> None:
+    settings = _settings(processing_sqlite_path=str(tmp_path / "runtime.db"))
+    app = create_app(settings)
+    with TestClient(app) as client:
+        submit = client.post(
+            "/v1/jobs/simulation",
+            json={
+                "baseline_policy_dir": "src/sena/examples/policies",
+                "candidate_policy_dir": "src/sena/examples/policies",
+                "scenarios": [
+                    {
+                        "scenario_id": "persist-1",
+                        "action_type": "approve_vendor_payment",
+                        "attributes": {"vendor_verified": False},
+                        "facts": {},
+                    }
+                ],
+            },
+        )
+        assert submit.status_code == 200
+        job_id = submit.json()["job"]["job_id"]
+        first_terminal = _wait_for_terminal_job(client, job_id)
+        assert first_terminal["status"] == "succeeded"
+
+    restarted = create_app(settings)
+    with TestClient(restarted) as client:
+        status = client.get(f"/v1/jobs/{job_id}")
+        assert status.status_code == 200
+        assert status.json()["status"] == "succeeded"
+        assert status.json()["result_ref"] == f"sqlite://async_jobs/{job_id}"
+        result = client.get(f"/v1/jobs/{job_id}/result")
+        assert result.status_code == 200
+        assert result.json()["job_id"] == job_id
+
+
+def test_async_job_inflight_restart_is_deterministically_failed(
+    monkeypatch, tmp_path
+) -> None:
+    settings = _settings(processing_sqlite_path=str(tmp_path / "runtime.db"))
+    app = create_app(settings)
+    block = threading.Event()
+    from sena.services import evaluation_service as evaluation_service_module
+
+    original_simulation = (
+        evaluation_service_module.EvaluationService.simulate_policy_change
+    )
+
+    def _blocked_simulation(*_args, **_kwargs):
+        block.wait(0.5)
+        return {"total_scenarios": 1, "changes": [], "grouped_changes": {}}
+
+    monkeypatch.setattr(
+        evaluation_service_module.EvaluationService,
+        "simulate_policy_change",
+        staticmethod(_blocked_simulation),
+    )
+    try:
+        with TestClient(app) as client:
+            submit = client.post(
+                "/v1/jobs/simulation",
+                json={
+                    "baseline_policy_dir": "src/sena/examples/policies",
+                    "candidate_policy_dir": "src/sena/examples/policies",
+                    "scenarios": [
+                        {
+                            "scenario_id": "restart-running",
+                            "action_type": "approve_vendor_payment",
+                            "attributes": {"vendor_verified": False},
+                            "facts": {},
+                        }
+                    ],
+                },
+            )
+            assert submit.status_code == 200
+            job_id = submit.json()["job"]["job_id"]
+            deadline = time.time() + 1.0
+            while time.time() < deadline:
+                current = client.get(f"/v1/jobs/{job_id}")
+                assert current.status_code == 200
+                if current.json()["status"] == "running":
+                    break
+                time.sleep(0.01)
+            else:
+                raise AssertionError("job did not reach running before restart")
+    finally:
+        monkeypatch.setattr(
+            evaluation_service_module.EvaluationService,
+            "simulate_policy_change",
+            original_simulation,
+        )
+
+    restarted = create_app(settings)
+    with TestClient(restarted) as client:
+        status = client.get(f"/v1/jobs/{job_id}")
+        assert status.status_code == 200
+        body = status.json()
+        assert body["status"] == "failed"
+        assert body["error"]["code"] == "interrupted_by_restart"
+
+
+def test_timeout_and_cancelled_jobs_survive_restart(monkeypatch, tmp_path) -> None:
+    settings = _settings(processing_sqlite_path=str(tmp_path / "runtime.db"))
+    app = create_app(settings)
+    from sena.services import evaluation_service as evaluation_service_module
+
+    original_simulation = (
+        evaluation_service_module.EvaluationService.simulate_policy_change
+    )
+
+    def _slow_simulation(*_args, **_kwargs):
+        time.sleep(0.05)
+        return {"total_scenarios": 1, "changes": [], "grouped_changes": {}}
+
+    monkeypatch.setattr(
+        evaluation_service_module.EvaluationService,
+        "simulate_policy_change",
+        staticmethod(_slow_simulation),
+    )
+    try:
+        with TestClient(app) as client:
+            timed_out = client.post(
+                "/v1/jobs/simulation",
+                json={
+                    "baseline_policy_dir": "src/sena/examples/policies",
+                    "candidate_policy_dir": "src/sena/examples/policies",
+                    "timeout_seconds": 0.001,
+                    "scenarios": [
+                        {
+                            "scenario_id": "restart-timeout",
+                            "action_type": "approve_vendor_payment",
+                            "attributes": {"vendor_verified": False},
+                            "facts": {},
+                        }
+                    ],
+                },
+            )
+            cancel = client.post(
+                "/v1/jobs/simulation",
+                json={
+                    "baseline_policy_dir": "src/sena/examples/policies",
+                    "candidate_policy_dir": "src/sena/examples/policies",
+                    "scenarios": [
+                        {
+                            "scenario_id": "restart-cancel",
+                            "action_type": "approve_vendor_payment",
+                            "attributes": {"vendor_verified": False},
+                            "facts": {},
+                        }
+                    ],
+                },
+            )
+            assert timed_out.status_code == 200
+            assert cancel.status_code == 200
+            timeout_job_id = timed_out.json()["job"]["job_id"]
+            cancel_job_id = cancel.json()["job"]["job_id"]
+            assert client.post(f"/v1/jobs/{cancel_job_id}/cancel").status_code == 200
+            assert _wait_for_terminal_job(client, timeout_job_id)["status"] == "timed_out"
+            assert _wait_for_terminal_job(client, cancel_job_id)["status"] == "cancelled"
+    finally:
+        monkeypatch.setattr(
+            evaluation_service_module.EvaluationService,
+            "simulate_policy_change",
+            original_simulation,
+        )
+
+    restarted = create_app(settings)
+    with TestClient(restarted) as client:
+        timeout_status = client.get(f"/v1/jobs/{timeout_job_id}")
+        cancel_status = client.get(f"/v1/jobs/{cancel_job_id}")
+        assert timeout_status.status_code == 200
+        assert cancel_status.status_code == 200
+        assert timeout_status.json()["status"] == "timed_out"
+        assert cancel_status.json()["status"] == "cancelled"
 
 
 def test_simulation_replay_endpoint(tmp_path) -> None:
