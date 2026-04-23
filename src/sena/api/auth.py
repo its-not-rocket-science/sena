@@ -78,6 +78,8 @@ SENSITIVE_OPERATION_ACTIONS = {
     "integration_dead_letter_manual_redrive",
 }
 
+_STEP_UP_REPLAY_CACHE: dict[str, int] = {}
+
 
 class AuthProvider(Protocol):
     provider_name: str
@@ -323,6 +325,8 @@ def evaluate_sensitive_operation(
     require_signed_step_up: bool = False,
     step_up_hs256_secret: str | None = None,
     step_up_max_age_seconds: int = 300,
+    step_up_issuer: str | None = None,
+    step_up_key_id: str | None = None,
 ) -> PermissionDecision:
     if principal is None:
         return PermissionDecision(allowed=True)
@@ -335,25 +339,37 @@ def evaluate_sensitive_operation(
                 allowed=False,
                 reason="separation_of_duties: role cannot deploy bundles",
             )
-        step_up_decision = _evaluate_step_up_assertion(
+        step_up_decision, step_up_assertion = _evaluate_step_up_assertion(
             operation=operation,
             principal=principal,
             headers=headers,
             require_signed_step_up=require_signed_step_up,
             step_up_hs256_secret=step_up_hs256_secret,
             step_up_max_age_seconds=step_up_max_age_seconds,
+            step_up_issuer=step_up_issuer,
+            step_up_key_id=step_up_key_id,
         )
         if not step_up_decision.allowed:
             return step_up_decision
-        primary_approver = str(headers.get("x-approver-id", "")).strip()
-        secondary_approver = str(headers.get("x-secondary-approver-id", "")).strip()
+        if require_signed_step_up and step_up_assertion is None:
+            return PermissionDecision(allowed=False, reason="step_up_assertion_invalid")
+        primary_approver = (
+            str(step_up_assertion.get("sub", "")).strip()
+            if step_up_assertion
+            else str(headers.get("x-approver-id", "")).strip()
+        )
+        secondary_approver = (
+            str(step_up_assertion.get("secondary_sub", "")).strip()
+            if step_up_assertion
+            else str(headers.get("x-secondary-approver-id", "")).strip()
+        )
         if not primary_approver or not secondary_approver:
             return PermissionDecision(
                 allowed=False,
                 reason="dual_approval_required",
                 required_headers=("x-approver-id", "x-secondary-approver-id"),
             )
-        if require_signed_step_up and primary_approver != principal.subject:
+        if primary_approver != principal.subject:
             return PermissionDecision(
                 allowed=False,
                 reason="approver_identity_mismatch",
@@ -363,26 +379,17 @@ def evaluate_sensitive_operation(
                 allowed=False,
                 reason="dual_approval_requires_distinct_approvers",
             )
-        if require_signed_step_up:
-            assertion = _parse_step_up_assertion(
-                str(headers.get("x-step-up-auth", "")),
-                secret=step_up_hs256_secret or "",
-                max_age_seconds=step_up_max_age_seconds,
-            )
-            if assertion.get("secondary_approver") != secondary_approver:
-                return PermissionDecision(
-                    allowed=False,
-                    reason="secondary_approver_mismatch",
-                )
 
     if operation == "bundle_rollback":
-        step_up_decision = _evaluate_step_up_assertion(
+        step_up_decision, _ = _evaluate_step_up_assertion(
             operation=operation,
             principal=principal,
             headers=headers,
             require_signed_step_up=require_signed_step_up,
             step_up_hs256_secret=step_up_hs256_secret,
             step_up_max_age_seconds=step_up_max_age_seconds,
+            step_up_issuer=step_up_issuer,
+            step_up_key_id=step_up_key_id,
         )
         if not step_up_decision.allowed:
             return step_up_decision
@@ -393,39 +400,34 @@ def evaluate_sensitive_operation(
                 allowed=False,
                 reason="separation_of_duties: only reviewer or auditor may change audit configuration",
             )
-        step_up_decision = _evaluate_step_up_assertion(
+        step_up_decision, step_up_assertion = _evaluate_step_up_assertion(
             operation=operation,
             principal=principal,
             headers=headers,
             require_signed_step_up=require_signed_step_up,
             step_up_hs256_secret=step_up_hs256_secret,
             step_up_max_age_seconds=step_up_max_age_seconds,
+            step_up_issuer=step_up_issuer,
+            step_up_key_id=step_up_key_id,
         )
         if not step_up_decision.allowed:
             return step_up_decision
-        secondary_approver = str(headers.get("x-secondary-approver-id", "")).strip()
+        secondary_approver = (
+            str(step_up_assertion.get("secondary_sub", "")).strip()
+            if step_up_assertion
+            else str(headers.get("x-secondary-approver-id", "")).strip()
+        )
         if not secondary_approver:
             return PermissionDecision(
                 allowed=False,
                 reason="secondary_approval_required",
                 required_headers=("x-secondary-approver-id",),
             )
-        if require_signed_step_up and secondary_approver == principal.subject:
+        if secondary_approver == principal.subject:
             return PermissionDecision(
                 allowed=False,
                 reason="dual_approval_requires_distinct_approvers",
             )
-        if require_signed_step_up:
-            assertion = _parse_step_up_assertion(
-                str(headers.get("x-step-up-auth", "")),
-                secret=step_up_hs256_secret or "",
-                max_age_seconds=step_up_max_age_seconds,
-            )
-            if assertion.get("secondary_approver") != secondary_approver:
-                return PermissionDecision(
-                    allowed=False,
-                    reason="secondary_approver_mismatch",
-                )
 
     if operation == "exception_approval":
         if principal.role not in {"reviewer", "auditor"}:
@@ -433,13 +435,15 @@ def evaluate_sensitive_operation(
                 allowed=False,
                 reason="separation_of_duties: only reviewer or auditor may approve exceptions",
             )
-        step_up_decision = _evaluate_step_up_assertion(
+        step_up_decision, _ = _evaluate_step_up_assertion(
             operation=operation,
             principal=principal,
             headers=headers,
             require_signed_step_up=require_signed_step_up,
             step_up_hs256_secret=step_up_hs256_secret,
             step_up_max_age_seconds=step_up_max_age_seconds,
+            step_up_issuer=step_up_issuer,
+            step_up_key_id=step_up_key_id,
         )
         if not step_up_decision.allowed:
             return step_up_decision
@@ -450,13 +454,15 @@ def evaluate_sensitive_operation(
                 allowed=False,
                 reason="separation_of_duties: only auditor may apply legal hold",
             )
-        step_up_decision = _evaluate_step_up_assertion(
+        step_up_decision, _ = _evaluate_step_up_assertion(
             operation=operation,
             principal=principal,
             headers=headers,
             require_signed_step_up=require_signed_step_up,
             step_up_hs256_secret=step_up_hs256_secret,
             step_up_max_age_seconds=step_up_max_age_seconds,
+            step_up_issuer=step_up_issuer,
+            step_up_key_id=step_up_key_id,
         )
         if not step_up_decision.allowed:
             return step_up_decision
@@ -467,13 +473,15 @@ def evaluate_sensitive_operation(
                 allowed=False,
                 reason="separation_of_duties: only auditor may apply payload legal hold",
             )
-        step_up_decision = _evaluate_step_up_assertion(
+        step_up_decision, _ = _evaluate_step_up_assertion(
             operation=operation,
             principal=principal,
             headers=headers,
             require_signed_step_up=require_signed_step_up,
             step_up_hs256_secret=step_up_hs256_secret,
             step_up_max_age_seconds=step_up_max_age_seconds,
+            step_up_issuer=step_up_issuer,
+            step_up_key_id=step_up_key_id,
         )
         if not step_up_decision.allowed:
             return step_up_decision
@@ -484,13 +492,15 @@ def evaluate_sensitive_operation(
                 allowed=False,
                 reason="separation_of_duties: only auditor may mutate integration dead-letter state",
             )
-        step_up_decision = _evaluate_step_up_assertion(
+        step_up_decision, _ = _evaluate_step_up_assertion(
             operation=operation,
             principal=principal,
             headers=headers,
             require_signed_step_up=require_signed_step_up,
             step_up_hs256_secret=step_up_hs256_secret,
             step_up_max_age_seconds=step_up_max_age_seconds,
+            step_up_issuer=step_up_issuer,
+            step_up_key_id=step_up_key_id,
         )
         if not step_up_decision.allowed:
             return step_up_decision
@@ -506,44 +516,54 @@ def _evaluate_step_up_assertion(
     require_signed_step_up: bool,
     step_up_hs256_secret: str | None,
     step_up_max_age_seconds: int,
-) -> PermissionDecision:
+    step_up_issuer: str | None,
+    step_up_key_id: str | None,
+) -> tuple[PermissionDecision, dict[str, Any] | None]:
     step_up = str(headers.get("x-step-up-auth", "")).strip()
     if not step_up:
         return PermissionDecision(
             allowed=False,
             reason="step_up_auth_required",
             required_headers=("x-step-up-auth",),
-        )
+        ), None
     if not require_signed_step_up:
-        return PermissionDecision(allowed=True)
+        return PermissionDecision(allowed=True), None
     if not step_up_hs256_secret:
         return PermissionDecision(
             allowed=False,
             reason="step_up_verification_not_configured",
-        )
+        ), None
     try:
         assertion = _parse_step_up_assertion(
             step_up,
             secret=step_up_hs256_secret,
             max_age_seconds=step_up_max_age_seconds,
+            expected_issuer=step_up_issuer,
+            expected_key_id=step_up_key_id,
         )
-    except AuthError:
+    except AuthError as exc:
         return PermissionDecision(
             allowed=False,
-            reason="step_up_assertion_invalid",
-        )
-    if assertion.get("subject") != principal.subject:
+            reason=str(exc.details.get("reason", "step_up_assertion_invalid")),
+        ), None
+    if assertion.get("sub") != principal.subject:
         return PermissionDecision(
             allowed=False,
             reason="step_up_subject_mismatch",
-        )
-    assertion_operation = assertion.get("operation")
+        ), None
+    assertion_operation = assertion.get("op")
     if assertion_operation not in {"*", operation}:
         return PermissionDecision(
             allowed=False,
             reason="step_up_operation_mismatch",
-        )
-    return PermissionDecision(allowed=True)
+        ), None
+    replay_key = f"{assertion.get('iss')}:{assertion.get('kid')}:{assertion.get('jti')}"
+    if _is_replayed_step_up_assertion(replay_key=replay_key, expires_at=int(assertion["exp"])):
+        return PermissionDecision(
+            allowed=False,
+            reason="step_up_replay_detected",
+        ), None
+    return PermissionDecision(allowed=True), assertion
 
 
 def _parse_step_up_assertion(
@@ -551,6 +571,8 @@ def _parse_step_up_assertion(
     *,
     secret: str,
     max_age_seconds: int,
+    expected_issuer: str | None,
+    expected_key_id: str | None,
 ) -> dict[str, Any]:
     parts = token.split(".")
     if len(parts) != 3 or parts[0] != "v1":
@@ -558,6 +580,7 @@ def _parse_step_up_assertion(
             status_code=401,
             code="invalid_authentication",
             message="Malformed step-up assertion token",
+            details={"reason": "step_up_assertion_invalid"},
         )
     _, payload_segment, signature_segment = parts
     signing_input = f"v1.{payload_segment}".encode("utf-8")
@@ -569,6 +592,7 @@ def _parse_step_up_assertion(
             status_code=401,
             code="invalid_authentication",
             message="Step-up assertion signature verification failed",
+            details={"reason": "step_up_assertion_invalid"},
         )
     try:
         payload = json.loads(_decode_segment(payload_segment).decode("utf-8"))
@@ -577,35 +601,106 @@ def _parse_step_up_assertion(
             status_code=401,
             code="invalid_authentication",
             message="Step-up assertion payload must be valid JSON",
+            details={"reason": "step_up_assertion_invalid"},
         ) from exc
     if not isinstance(payload, dict):
         raise AuthError(
             status_code=401,
             code="invalid_authentication",
             message="Step-up assertion payload must be an object",
+            details={"reason": "step_up_assertion_invalid"},
         )
-    issued_at = payload.get("iat")
-    if issued_at is None:
+    issuer = str(payload.get("iss", "")).strip()
+    if not issuer:
         raise AuthError(
             status_code=401,
             code="invalid_authentication",
-            message="Step-up assertion missing iat",
+            message="Step-up assertion missing issuer",
+            details={"reason": "step_up_assertion_invalid"},
         )
+    if expected_issuer and issuer != expected_issuer:
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Step-up assertion issuer mismatch",
+            details={"reason": "step_up_issuer_mismatch"},
+        )
+    key_id = str(payload.get("kid", "")).strip()
+    if not key_id:
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Step-up assertion missing key id",
+            details={"reason": "step_up_assertion_invalid"},
+        )
+    if expected_key_id and key_id != expected_key_id:
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Step-up assertion key id mismatch",
+            details={"reason": "step_up_key_mismatch"},
+        )
+    for claim in ("sub", "op", "jti", "exp", "iat"):
+        if claim not in payload:
+            raise AuthError(
+                status_code=401,
+                code="invalid_authentication",
+                message=f"Step-up assertion missing {claim}",
+                details={"reason": "step_up_assertion_invalid"},
+            )
     now = int(time.time())
-    issued = int(issued_at)
+    issued = int(payload["iat"])
     if issued > now + 30:
         raise AuthError(
             status_code=401,
             code="invalid_authentication",
             message="Step-up assertion iat is in the future",
+            details={"reason": "step_up_assertion_invalid"},
         )
     if now - issued > max_age_seconds:
         raise AuthError(
             status_code=401,
             code="invalid_authentication",
             message="Step-up assertion is expired",
+            details={"reason": "step_up_assertion_expired"},
+        )
+    expires_at = int(payload["exp"])
+    if expires_at <= issued or expires_at < now:
+        raise AuthError(
+            status_code=401,
+            code="invalid_authentication",
+            message="Step-up assertion is expired",
+            details={"reason": "step_up_assertion_expired"},
         )
     return payload
+
+
+def parse_step_up_assertion_payload(
+    *,
+    token: str,
+    secret: str,
+    max_age_seconds: int,
+    expected_issuer: str | None,
+    expected_key_id: str | None,
+) -> dict[str, Any]:
+    return _parse_step_up_assertion(
+        token,
+        secret=secret,
+        max_age_seconds=max_age_seconds,
+        expected_issuer=expected_issuer,
+        expected_key_id=expected_key_id,
+    )
+
+
+def _is_replayed_step_up_assertion(*, replay_key: str, expires_at: int) -> bool:
+    now = int(time.time())
+    expired_keys = [key for key, expiry in _STEP_UP_REPLAY_CACHE.items() if expiry < now]
+    for key in expired_keys:
+        _STEP_UP_REPLAY_CACHE.pop(key, None)
+    if replay_key in _STEP_UP_REPLAY_CACHE:
+        return True
+    _STEP_UP_REPLAY_CACHE[replay_key] = expires_at
+    return False
 
 
 def _decode_segment(segment: str) -> bytes:

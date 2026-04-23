@@ -43,9 +43,11 @@ If both providers are enabled, exactly one credential type may be presented per 
 - `SENA_JWT_REQUIRED_CLAIMS`: comma-separated required claims (default `sub`).
 - `SENA_JWT_ROLE_CLAIM`: claim carrying external role(s) (default `roles`).
 - `SENA_JWT_ROLE_MAPPING`: external-to-internal mappings (`idp_role:reviewer,...`).
-- `SENA_REQUIRE_SIGNED_STEP_UP`: when `true`, sensitive operations require signed step-up assertions (not header presence only).
+- `SENA_REQUIRE_SIGNED_STEP_UP`: defaults to `true`. Sensitive operations require signed step-up assertions.
 - `SENA_STEP_UP_HS256_SECRET`: shared secret used to verify signed step-up assertions.
 - `SENA_STEP_UP_MAX_AGE_SECONDS`: max assertion age in seconds (default `300`).
+- `SENA_STEP_UP_ISSUER`: required issuer identifier expected in `iss` claim (default `sena-step-up`).
+- `SENA_STEP_UP_KEY_ID`: required key identifier expected in `kid` claim (default `default`).
 
 Internal supported roles are unchanged:
 `admin`, `policy_author`, `reviewer`, `deployer`, `auditor`, `verifier`.
@@ -63,16 +65,52 @@ The following operations now use explicit structured checks:
 - `integration_dead_letter_replay`
 - `integration_dead_letter_manual_redrive`
 
-These checks enforce separation-of-duties and step-up controls. With `SENA_REQUIRE_SIGNED_STEP_UP=true`, signed assertions are bound to caller identity + operation and include explicit expiry.
+These checks enforce separation-of-duties and step-up controls. Signed assertions are bound to caller identity + operation, include explicit expiry, and are replay-detected by `iss:kid:jti` for pilot-safe resistance.
 
 ### Signed step-up assertion contract (when enabled)
 
 - Header: `X-Step-Up-Auth: v1.<base64url-json-payload>.<base64url-hmac-sha256-signature>`
 - Payload fields:
-  - `subject`: must match authenticated principal subject.
-  - `operation`: must equal the sensitive operation (or `*`).
+  - `iss`: must match `SENA_STEP_UP_ISSUER`.
+  - `kid`: must match `SENA_STEP_UP_KEY_ID`.
+  - `sub`: must match authenticated principal subject.
+  - `op`: must equal the sensitive operation (or `*`).
   - `iat`: issued-at epoch seconds, bounded by `SENA_STEP_UP_MAX_AGE_SECONDS`.
-  - `secondary_approver` (required where dual approval applies): must match header-provided secondary approver identity.
+  - `exp`: absolute expiry epoch seconds.
+  - `jti`: unique token identifier; replay is denied while token is unexpired.
+  - `secondary_sub` (required for dual-approval operations): second approver identity bound in signed claims.
+
+### Dual-approval identity binding
+
+- `bundle_promotion` requires two distinct identities:
+  1. `sub` (primary approver / authenticated caller),
+  2. `secondary_sub` (second approver).
+- The same principal cannot satisfy both identities.
+- `X-Approver-Id` / `X-Secondary-Approver-Id` are no longer trusted for signed step-up authorization decisions.
+
+## 6) Migration note (caller changes)
+
+Callers that previously sent unsigned `X-Step-Up-Auth: mfa-ok` and free-form approver headers must now:
+
+1. Mint a signed step-up token per sensitive request with `iss/kid/sub/op/iat/exp/jti` (+ `secondary_sub` when dual approval applies).
+2. Send `X-Step-Up-Auth` with the signed token.
+3. Stop relying on `X-Approver-Id` / `X-Secondary-Approver-Id` for authorization.
+
+Example promotion request (signed step-up):
+
+```bash
+curl -fsS -X POST "$SENA_BASE_URL/v1/bundle/promote" \
+  -H "x-api-key: $SENA_DEPLOYER_API_KEY" \
+  -H "x-step-up-auth: $SENA_STEP_UP_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{
+    "bundle_id": 42,
+    "target_lifecycle": "active",
+    "promoted_by": "release-bot",
+    "promotion_reason": "CAB-1001 approved",
+    "validation_artifact": "promotion-validation.json"
+  }'
+```
 
 ## 5) App auth vs policy actor identity
 
