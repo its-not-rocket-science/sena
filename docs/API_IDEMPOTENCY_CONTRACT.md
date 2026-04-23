@@ -12,6 +12,7 @@ This document defines the machine-readable idempotency behavior for supported ru
 - Clients opt into idempotency by sending `Idempotency-Key`.
 - Scope is **route + semantic request payload**.
 - The key is payload-bound: reusing the same key with a different semantic payload is rejected deterministically.
+- Enforcement is **storage-backed** using SQLite atomic claims (not process-local mutex maps), so semantics are consistent across workers/processes sharing the same runtime DB.
 
 ## 2) Response contract
 
@@ -19,6 +20,7 @@ This document defines the machine-readable idempotency behavior for supported ru
 
 - Returns cached/reused success response (`200`).
 - Body is stable for repeated requests with the same key and payload.
+- For concurrent duplicates, one request claims execution and peers wait for completion and replay the completed response.
 
 ### B) Same key + different semantic payload
 
@@ -26,6 +28,12 @@ This document defines the machine-readable idempotency behavior for supported ru
 - Error payload is machine-readable with stable reason codes:
   - API idempotency key conflict: `idempotency_key_conflict`
   - Connector delivery-id payload conflict: `delivery_idempotency_payload_conflict`
+
+### C) Same key + same payload while original is still running
+
+- The server waits briefly for the in-flight claim to complete.
+- If completion is observed, response is replayed as `200`.
+- If still not complete within the bounded wait window, request fails with `409` and code `idempotency_key_in_progress`.
 
 ## 3) Connector delivery-id behavior (Jira + ServiceNow)
 
