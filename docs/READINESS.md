@@ -38,6 +38,11 @@ Pilot usage assumptions:
 - Audit durability is adequate for pilot evidence and replay, but not a substitute for immutable enterprise archival systems.
 - Concurrency and throughput targets are validated against your expected traffic envelope before rollout.
 
+Runtime route-gating contract:
+- `development`: experimental HTTP routes are enabled by default and labeled with `x-sena-surface-stage: experimental`.
+- `pilot` and `production`: experimental HTTP routes are not registered unless operators explicitly set `SENA_ENABLE_EXPERIMENTAL_ROUTES=true`.
+- Experimental routes currently in scope: `POST /v1/integrations/webhook`, `POST /v1/integrations/slack/interactions`.
+
 ## What is not yet production-grade
 
 Not production-grade means major platform capabilities still require significant implementation or external systems.

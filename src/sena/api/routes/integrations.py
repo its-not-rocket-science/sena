@@ -29,6 +29,10 @@ logger = get_logger(__name__)
 _DEFAULT_LIST_LIMIT = 100
 _MAX_LIST_LIMIT = 1000
 _MAX_NOTE_LENGTH = 1024
+EXPERIMENTAL_INTEGRATION_ROUTE_PATHS: tuple[str, ...] = (
+    "/integrations/webhook",
+    "/integrations/slack/interactions",
+)
 _SENSITIVE_HEADER_NAMES = {
     "authorization",
     "cookie",

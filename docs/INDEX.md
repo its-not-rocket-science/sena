@@ -22,6 +22,7 @@ Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 - `integrations/SUPPORTED_PATH_READINESS_CHECKLIST.md` — Jira + ServiceNow supported-path pass/fail readiness gates.
 - `OPERATIONS.md` — day-2 operator runbooks for supported surfaces.
 - `SUPPORTED_VS_EXPERIMENTAL_INVENTORY.md` — crisp classification for docs/examples/scripts/API surfaces.
+- Experimental API endpoints currently implemented: `/v1/integrations/webhook`, `/v1/integrations/slack/interactions` (disabled by default outside development).
 - `RUNBOOKS.md` — failure-mode runbooks with copy/paste commands and pass/fail interpretation.
 - `DAY2_OPERATIONS.md` — daily and incident safety checklist for on-call operators.
 - `API_IDEMPOTENCY_CONTRACT.md` — payload-binding idempotency semantics and error contract.

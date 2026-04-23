@@ -1,6 +1,6 @@
 # Supported vs Experimental Inventory
 
-Date: 2026-04-18  
+Date: 2026-04-23  
 Scope: docs, examples, scripts, and API surface that influence operator trust and onboarding.
 
 ## Product truth (default path)
@@ -44,6 +44,11 @@ Anything outside that path is intentionally demoted from default onboarding.
 - `scripts/generate_traffic.py`
 - `/v1/integrations/webhook`
 - `/v1/integrations/slack/interactions`
+
+Runtime gating:
+- `development`: both routes are registered by default.
+- `pilot`/`production`: both routes are absent by default.
+- explicit override: `SENA_ENABLE_EXPERIMENTAL_ROUTES=true`.
 
 ### Demo/labs (useful, non-contractual)
 
