@@ -1,0 +1,58 @@
+{
+  "minimal_contract": {
+    "actor_id": "acct-1",
+    "correlation_key": "RISK-9",
+    "idempotency_key": "golden-jira",
+    "request_id": "RISK-9",
+    "requested_action": "approve_vendor_payment",
+    "schema_version": "1",
+    "source_event_type": "jira:issue_updated",
+    "source_system": "jira"
+  },
+  "normalized_event": {
+    "actor": {
+      "actor_id": "acct-1",
+      "actor_role": null
+    },
+    "attributes": {
+      "amount": 12000,
+      "approval_workflow": "finance",
+      "business_unit": "finance",
+      "jira_transition": [
+        {
+          "field": "status",
+          "toString": "Pending Approval"
+        }
+      ],
+      "requester_role": "finance_analyst",
+      "ticket_priority": "P2",
+      "vendor_verified": false
+    },
+    "correlation_key": "RISK-9",
+    "escalation_deadline_at": "2026-04-10T18:00:00Z",
+    "evidence_references": [
+      "RISK-9"
+    ],
+    "external_state": "Pending Approval",
+    "idempotency_key": "golden-jira",
+    "previous_external_state": "In Review",
+    "request_id": "RISK-9",
+    "requested_action": "approve_vendor_payment",
+    "risk_attributes": {
+      "approval_amount": 12000,
+      "vendor_verified": false
+    },
+    "schema_version": "1",
+    "sla_deadline_at": "2026-04-11T00:00:00Z",
+    "source_event_type": "jira:issue_updated",
+    "source_metadata": {
+      "jira_issue_key": "RISK-9",
+      "tenant_id": "tenant-finance",
+      "workflow_id": "wf-ap-01"
+    },
+    "source_object_id": "10001",
+    "source_object_type": "jira_issue",
+    "source_system": "jira",
+    "workflow_stage": "pending_approval"
+  }
+}
