@@ -106,6 +106,8 @@ checkpoints/
 # (optional: keep tracked examples)
 !examples/*.json
 !tests/fixtures/integrations/confidence_assertions.json
+!tests/fixtures/integrations/jira/supported_valid_issue_updated.json
+!tests/fixtures/integrations/golden/*.json
 !docs/artifacts/integrations/jira_servicenow_confidence_matrix.json
 !tests/replay_corpus/fixtures/events/*.json
 !tests/replay_corpus/fixtures/scenarios/*.json

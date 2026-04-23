@@ -1,0 +1,69 @@
+{
+  "minimal_contract": {
+    "actor_id": "sn.user.001",
+    "correlation_key": "CHG0091001",
+    "idempotency_key": "golden-sn",
+    "request_id": "CHG0091001",
+    "requested_action": "approve_vendor_payment",
+    "schema_version": "1",
+    "source_event_type": "change_approval.requested",
+    "source_system": "servicenow"
+  },
+  "normalized_event": {
+    "actor": {
+      "actor_id": "sn.user.001",
+      "actor_role": "change_manager"
+    },
+    "attributes": {
+      "approval_workflow": "enterprise_change",
+      "approver_chain": [
+        "director_ops",
+        "security_lead"
+      ],
+      "approver_chain_missing": false,
+      "cab_review_evidence_id": "CAB-2026-0042",
+      "cab_review_missing": false,
+      "change_classification": "emergency",
+      "emergency_change": true,
+      "environment": "production",
+      "governance_model": "cab_and_role_chain",
+      "normalized_classification": "emergency",
+      "normalized_environment": "production",
+      "out_of_hours_change": true,
+      "privileged_change": false,
+      "requested_end": "2026-04-02T01:00:00Z",
+      "requested_start": "2026-04-01T23:00:00Z",
+      "risk_level": "high",
+      "schedule_window": "out_of_hours"
+    },
+    "correlation_key": "CHG0091001",
+    "escalation_deadline_at": "2026-04-01T23:00:00Z",
+    "evidence_references": [
+      "CAB-2026-0042"
+    ],
+    "external_state": "change_approval.requested",
+    "idempotency_key": "golden-sn",
+    "previous_external_state": null,
+    "request_id": "CHG0091001",
+    "requested_action": "approve_vendor_payment",
+    "risk_attributes": {
+      "emergency_change": true,
+      "out_of_hours_change": true,
+      "privileged_change": false,
+      "risk_level": "high"
+    },
+    "schema_version": "1",
+    "sla_deadline_at": "2026-04-02T01:00:00Z",
+    "source_event_type": "change_approval.requested",
+    "source_metadata": {
+      "fixture_version": "1",
+      "servicenow_change_number": "CHG0091001",
+      "servicenow_table": "change_request",
+      "source_table": "change_request"
+    },
+    "source_object_id": "d0f1e2a3b4",
+    "source_object_type": "change_request",
+    "source_system": "servicenow",
+    "workflow_stage": "requested"
+  }
+}
