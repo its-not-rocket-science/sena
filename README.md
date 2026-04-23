@@ -2,7 +2,7 @@
 
 SENA is an **alpha deterministic Jira + ServiceNow approval decisioning engine with replayable audit evidence**.
 
-Read `docs/READINESS.md` for explicit capability status by maturity level (implemented now, pilot-ready, and not yet production-grade).
+Canonical maturity statement: `docs/READINESS.md` → **"Canonical maturity statement (source of truth)"**. Treat that section as authoritative for pilot vs non-production-grade boundaries.
 
 The supported product path is intentionally narrow and implementation-backed: normalize Jira/ServiceNow approval payloads, evaluate them against versioned policy bundles, and return deterministic decisions plus replayable evidence artifacts.
 

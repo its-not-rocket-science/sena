@@ -37,7 +37,7 @@ Legacy code under `src/sena/legacy/*` is legacy and out of supported claims.
 
 ## Honest maturity statement
 
-Current state is **alpha**. The repository contains core deterministic and evidence primitives, but not a finished enterprise control-plane experience.
+Current state is **alpha**. The repository contains core deterministic and evidence primitives, but not a finished enterprise control-plane experience. For canonical maturity language, defer to `docs/READINESS.md` → **"Canonical maturity statement (source of truth)"**.
 
 ## Non-goals / boundaries
 

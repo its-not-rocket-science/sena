@@ -3,8 +3,10 @@
 ## Scope and intent
 
 This rubric defines an **"A-grade pilot-ready"** bar that is stricter than today's baseline pilot acceptance and intended for design-partner deployments where trust requirements are high.
+It is an aspirational target rubric, not a claim that the current repo already meets that bar.
 
 It is anchored to SENA's supported product path (`src/sena/*`) and supported integrations (Jira + ServiceNow).
+For current maturity status, defer to `docs/READINESS.md` → **"Canonical maturity statement (source of truth)"**.
 
 ## A-grade pilot-ready checklist
 

@@ -2,6 +2,13 @@
 
 This document is a capability-readiness map for the supported SENA path (`src/sena/*` with Jira + ServiceNow decisioning).
 
+## Canonical maturity statement (source of truth)
+
+As of **2026-04-23**, SENA is an **alpha product with a narrow pilot-ready envelope**:
+- Pilot-ready scope is limited to deterministic Jira + ServiceNow approval decisioning with replayable evidence, under explicit operator controls.
+- Enterprise-wide claims (full IAM/SSO/RBAC platform completeness, hard multi-tenant isolation, and compliance guarantees) are **not** claimed as built-in.
+- All maturity statements in other docs should defer to this section.
+
 It separates three questions:
 1. What is implemented now.
 2. What is suitable for pilot deployments.

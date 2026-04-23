@@ -14,7 +14,7 @@ Scope labels: `supported`, `experimental`, `labs/demo`, `legacy`.
 - `../README.md` — concise product scope, guarantees, and integration taxonomy.
 - `FLAGSHIP_WORKFLOW.md` — default end-to-end workflow (run this first).
 - `CONTROL_PLANE.md` — implemented runtime contract.
-- `READINESS.md` — explicit maturity model (implemented, pilot-ready, not production-grade).
+- `READINESS.md` — explicit maturity model; use the **"Canonical maturity statement (source of truth)"** section as the single maturity authority.
 - `ARCHITECTURE.md` — supported boundaries and non-goals.
 - `POSITIONING.md` — what SENA is and is not vs generic policy engines.
 - `CANONICAL_WORKFLOW.md` — end-to-end supported workflow + evidence chain.
