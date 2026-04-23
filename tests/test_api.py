@@ -3053,6 +3053,37 @@ def test_pilot_mode_disables_experimental_integration_routes_by_default(tmp_path
     assert slack_response.status_code == 404
 
 
+def test_production_mode_disables_experimental_integration_routes_by_default(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    app = create_app(
+        _settings(
+            runtime_mode="production",
+            enable_api_key_auth=True,
+            api_key="secret",
+            audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+            bundle_signature_strict=True,
+            bundle_signature_keyring_dir=str(keyring_dir),
+        )
+    )
+    client = TestClient(app)
+
+    webhook_response = client.post(
+        "/v1/integrations/webhook",
+        json={
+            "provider": "github",
+            "event_type": "pull_request_review",
+            "payload": {},
+        },
+    )
+    assert webhook_response.status_code == 404
+
+    slack_response = client.post("/v1/integrations/slack/interactions", data={})
+    assert slack_response.status_code == 404
+
+
 def test_pilot_mode_can_explicitly_enable_experimental_routes(tmp_path) -> None:
     app = create_app(
         _settings(
@@ -3076,6 +3107,26 @@ def test_pilot_mode_can_explicitly_enable_experimental_routes(tmp_path) -> None:
 
     slack_response = client.post("/v1/integrations/slack/interactions", data={})
     assert slack_response.status_code != 404
+
+
+def test_development_mode_keeps_experimental_routes_enabled_by_default() -> None:
+    app = create_app(_settings(runtime_mode="development"))
+    client = TestClient(app)
+
+    webhook_response = client.post(
+        "/v1/integrations/webhook",
+        json={
+            "provider": "github",
+            "event_type": "pull_request_review",
+            "payload": {},
+        },
+    )
+    assert webhook_response.status_code != 404
+    assert webhook_response.headers["x-sena-surface-stage"] == "experimental"
+
+    slack_response = client.post("/v1/integrations/slack/interactions", data={})
+    assert slack_response.status_code != 404
+    assert slack_response.headers["x-sena-surface-stage"] == "experimental"
 
 
 def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 from sena import __version__ as SENA_VERSION
@@ -15,7 +16,10 @@ from sena.api.routes.analytics import create_analytics_router
 from sena.api.routes.evaluate import create_evaluate_router
 from sena.api.routes.exceptions import create_exceptions_router
 from sena.api.routes.health import create_health_router
-from sena.api.routes.integrations import create_integrations_router
+from sena.api.routes.integrations import (
+    EXPERIMENTAL_INTEGRATION_ROUTE_PATHS,
+    create_integrations_router,
+)
 from sena.api.schemas import AuditTreeVerifyRequest
 from sena.services.audit_service import AuditService
 from sena.api.runtime import (
@@ -30,6 +34,8 @@ try:
     from fastapi.responses import JSONResponse, Response
 except ModuleNotFoundError:  # pragma: no cover
     FastAPI = None  # type: ignore
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_runtime_limits(settings: ApiSettings) -> None:
@@ -64,6 +70,13 @@ def initialize_runtime(settings: ApiSettings):
 
 
 def _experimental_routes_enabled(settings: ApiSettings) -> bool:
+    """Return whether experimental HTTP routes should be registered.
+
+    Runtime contract:
+    - development: enabled by default
+    - pilot/production: disabled by default
+    - explicit override: `SENA_ENABLE_EXPERIMENTAL_ROUTES=true|false`
+    """
     if settings.experimental_routes_enabled is not None:
         return settings.experimental_routes_enabled
     return settings.runtime_mode == "development"
@@ -112,10 +125,26 @@ def build_app(state):
     api_v1.include_router(create_evaluate_router(state))
     api_v1.include_router(create_exceptions_router(state))
     api_v1.include_router(create_bundles_router(state))
+    include_experimental_routes = _experimental_routes_enabled(state.settings)
+    if include_experimental_routes:
+        experimental_routes = ", ".join(
+            f"/v1{path}" for path in EXPERIMENTAL_INTEGRATION_ROUTE_PATHS
+        )
+        logger.info(
+            "experimental_routes_enabled runtime_mode=%s routes=%s",
+            state.settings.runtime_mode,
+            experimental_routes,
+        )
+    else:
+        logger.info(
+            "experimental_routes_disabled runtime_mode=%s routes=%s",
+            state.settings.runtime_mode,
+            ", ".join(f"/v1{path}" for path in EXPERIMENTAL_INTEGRATION_ROUTE_PATHS),
+        )
     api_v1.include_router(
         create_integrations_router(
             state,
-            include_experimental=_experimental_routes_enabled(state.settings),
+            include_experimental=include_experimental_routes,
         )
     )
 

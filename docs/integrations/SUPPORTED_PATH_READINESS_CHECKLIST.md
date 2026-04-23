@@ -12,6 +12,10 @@ This checklist applies only to the **supported** Jira + ServiceNow inbound-to-de
 
 It explicitly excludes experimental connectors.
 
+Experimental HTTP connectors currently implemented but non-default:
+- `POST /v1/integrations/webhook`
+- `POST /v1/integrations/slack/interactions`
+
 ## Readiness gates (pass/fail)
 
 ### 1) Inbound verification
@@ -21,6 +25,11 @@ It explicitly excludes experimental connectors.
 - [ ] **PASS**: `pilot` and `production` startup fail closed when Jira/ServiceNow is enabled without webhook secrets (allow-all verifier disabled outside development).
 - [ ] **PASS**: Duplicate deliveries return stable `status=duplicate_ignored` response.
 
+### 1b) Route surface gating by runtime mode
+- [ ] **PASS**: In `pilot` and `production`, experimental HTTP routes are absent by default (`404`).
+- [ ] **PASS**: In `development`, experimental HTTP routes remain available and emit `x-sena-surface-stage: experimental`.
+- [ ] **PASS**: Explicit opt-in (`SENA_ENABLE_EXPERIMENTAL_ROUTES=true`) can re-enable experimental routes for controlled pilot/prod testing.
+
 Evidence:
 - `tests/test_api.py::test_jira_webhook_signature_verification_*`
 - `tests/test_api.py::test_servicenow_webhook_signature_verification_*`
@@ -29,6 +38,10 @@ Evidence:
 - `tests/test_api.py::test_development_mode_allows_missing_supported_connector_secrets_with_warning`
 - `tests/test_api.py::test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response`
 - `tests/test_api.py::test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response`
+- `tests/test_api.py::test_pilot_mode_disables_experimental_integration_routes_by_default`
+- `tests/test_api.py::test_production_mode_disables_experimental_integration_routes_by_default`
+- `tests/test_api.py::test_development_mode_keeps_experimental_routes_enabled_by_default`
+- `tests/test_api.py::test_pilot_mode_can_explicitly_enable_experimental_routes`
 
 ### 2) Normalization + stable contracts
 - [ ] **PASS**: Canonical normalization replay payload excludes volatile timestamp fields.
