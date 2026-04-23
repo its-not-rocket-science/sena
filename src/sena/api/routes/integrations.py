@@ -688,6 +688,8 @@ def create_integrations_router(
             require_signed_step_up=state.settings.require_signed_step_up,
             step_up_hs256_secret=state.settings.step_up_hs256_secret,
             step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+            step_up_issuer=state.settings.step_up_issuer,
+            step_up_key_id=state.settings.step_up_key_id,
         )
         if not decision.allowed:
             raise_api_error("forbidden", details=decision.details())
@@ -718,6 +720,8 @@ def create_integrations_router(
             require_signed_step_up=state.settings.require_signed_step_up,
             step_up_hs256_secret=state.settings.step_up_hs256_secret,
             step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+            step_up_issuer=state.settings.step_up_issuer,
+            step_up_key_id=state.settings.step_up_key_id,
         )
         if not decision.allowed:
             raise_api_error("forbidden", details=decision.details())
@@ -783,6 +787,8 @@ def create_integrations_router(
             require_signed_step_up=state.settings.require_signed_step_up,
             step_up_hs256_secret=state.settings.step_up_hs256_secret,
             step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+            step_up_issuer=state.settings.step_up_issuer,
+            step_up_key_id=state.settings.step_up_key_id,
         )
         if not decision.allowed:
             raise_api_error("forbidden", details=decision.details())
@@ -802,6 +808,8 @@ def create_integrations_router(
             require_signed_step_up=state.settings.require_signed_step_up,
             step_up_hs256_secret=state.settings.step_up_hs256_secret,
             step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+            step_up_issuer=state.settings.step_up_issuer,
+            step_up_key_id=state.settings.step_up_key_id,
         )
         if not decision.allowed:
             raise_api_error("forbidden", details=decision.details())

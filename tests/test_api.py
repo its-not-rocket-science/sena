@@ -30,6 +30,7 @@ def _settings(**kwargs):
         "rate_limit_window_seconds": 60,
         "request_max_bytes": 1_048_576,
         "request_timeout_seconds": 15.0,
+        "require_signed_step_up": False,
         "promotion_gate_require_validation_artifact": True,
         "promotion_gate_require_simulation": True,
         "promotion_gate_required_scenario_ids": (),

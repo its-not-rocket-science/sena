@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from sena.api.auth import evaluate_sensitive_operation
+from sena.api.auth import AuthError, evaluate_sensitive_operation, parse_step_up_assertion_payload
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, verify_bundle_signature
 from sena.api.schemas import (
@@ -57,12 +57,26 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             require_signed_step_up=state.settings.require_signed_step_up,
             step_up_hs256_secret=state.settings.step_up_hs256_secret,
             step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+            step_up_issuer=state.settings.step_up_issuer,
+            step_up_key_id=state.settings.step_up_key_id,
         )
         if not decision.allowed:
             raise_api_error("forbidden", details=decision.details())
         if principal:
-            primary_approver = request.headers.get("x-approver-id")
+            primary_approver = principal.subject
             secondary_approver = request.headers.get("x-secondary-approver-id")
+            if state.settings.require_signed_step_up and state.settings.step_up_hs256_secret:
+                try:
+                    step_up_claims = parse_step_up_assertion_payload(
+                        token=str(request.headers.get("x-step-up-auth", "")).strip(),
+                        secret=state.settings.step_up_hs256_secret,
+                        max_age_seconds=state.settings.step_up_max_age_seconds,
+                        expected_issuer=state.settings.step_up_issuer,
+                        expected_key_id=state.settings.step_up_key_id,
+                    )
+                    secondary_approver = str(step_up_claims.get("secondary_sub", "")).strip()
+                except AuthError:
+                    secondary_approver = secondary_approver or ""
             merged_attestations = sorted(
                 {
                     *(payload.approver_attestations or []),
@@ -113,6 +127,8 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             require_signed_step_up=state.settings.require_signed_step_up,
             step_up_hs256_secret=state.settings.step_up_hs256_secret,
             step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+            step_up_issuer=state.settings.step_up_issuer,
+            step_up_key_id=state.settings.step_up_key_id,
         )
         if not decision.allowed:
             raise_api_error("forbidden", details=decision.details())
