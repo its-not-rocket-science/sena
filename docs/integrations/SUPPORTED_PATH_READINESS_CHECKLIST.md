@@ -18,11 +18,15 @@ It explicitly excludes experimental connectors.
 - [ ] **PASS**: Connector rejects invalid signatures with `401` and stable code.
 - [ ] **PASS**: Connector rejects missing signature when webhook secret is configured.
 - [ ] **PASS**: Current + previous rotating secrets are both accepted.
+- [ ] **PASS**: `pilot` and `production` startup fail closed when Jira/ServiceNow is enabled without webhook secrets (allow-all verifier disabled outside development).
 - [ ] **PASS**: Duplicate deliveries return stable `status=duplicate_ignored` response.
 
 Evidence:
 - `tests/test_api.py::test_jira_webhook_signature_verification_*`
 - `tests/test_api.py::test_servicenow_webhook_signature_verification_*`
+- `tests/test_api.py::test_startup_fails_in_pilot_without_jira_secret`
+- `tests/test_api.py::test_startup_fails_in_pilot_without_servicenow_secret`
+- `tests/test_api.py::test_development_mode_allows_missing_supported_connector_secrets_with_warning`
 - `tests/test_api.py::test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response`
 - `tests/test_api.py::test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response`
 

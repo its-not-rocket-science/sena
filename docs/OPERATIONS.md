@@ -13,8 +13,8 @@ Application versioning: package and FastAPI app version are sourced from `sena._
 
 | Mode | Intent | Key behavior |
 |---|---|---|
-| `development` | local dev and tests | permissive defaults, optional auth and integrations |
-| `pilot` | enterprise pilot pre-prod | same code-path as prod candidates, recommended strict auth/signing/audit |
+| `development` | local dev and tests | permissive defaults, optional auth and integrations; Jira/ServiceNow allow-all webhook verification allowed only with explicit startup warnings |
+| `pilot` | enterprise pilot pre-prod | same code-path as prod candidates; fail-closed Jira/ServiceNow webhook secret requirements (allow-all disabled) |
 | `production` | hardened runtime | mandatory auth, audit sink, strict signature verification + keyring, and fail-closed Jira/ServiceNow integration guardrails (mapping + webhook secret + durable reliability store) |
 
 ## 3) Startup validation (fail-fast)
@@ -38,6 +38,9 @@ SENA startup now fails for the following classes of misconfiguration:
   - `SENA_JIRA_MAPPING_CONFIG` + `SENA_JIRA_WEBHOOK_SECRET` (or previous secret) when Jira integration is enabled
   - `SENA_SERVICENOW_MAPPING_CONFIG` + `SENA_SERVICENOW_WEBHOOK_SECRET` (or previous secret) when ServiceNow integration is enabled
   - `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` when Jira or ServiceNow integration is enabled
+- pilot/production mode missing supported connector webhook secrets:
+  - `SENA_JIRA_WEBHOOK_SECRET` (or previous secret) when Jira integration is enabled
+  - `SENA_SERVICENOW_WEBHOOK_SECRET` (or previous secret) when ServiceNow integration is enabled
 
 ### Mandatory pre-deploy gate
 
@@ -123,6 +126,10 @@ Break-glass promotions must set `break_glass=true` **and** provide `break_glass_
 - `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH`
 - `SENA_SLACK_BOT_TOKEN`
 - `SENA_SLACK_CHANNEL`
+
+Supported-connector verification policy:
+- `development`: missing Jira/ServiceNow webhook secrets are permitted, but startup emits warnings that inbound events are forgeable.
+- `pilot` and `production`: allow-all webhook verification is disabled for Jira/ServiceNow; startup fails if enabled connectors are missing secrets.
 
 ## 5) Health and readiness semantics
 

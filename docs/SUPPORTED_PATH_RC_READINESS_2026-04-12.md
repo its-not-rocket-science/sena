@@ -12,7 +12,7 @@ Scope reviewed: supported Jira + ServiceNow path only (`src/sena/integrations/ji
 ## What remains intentionally alpha (bounded)
 
 - Generic webhook mapper and Slack interaction path remain explicitly experimental and not part of supported commitment.
-- Allow-all webhook verifier remains available for non-production bootstrap/dev usage when secrets are intentionally not configured.
+- Allow-all webhook verifier remains available only in `development`; `pilot`/`production` startup fail closed when supported connectors are enabled without secrets.
 
 ## Remaining low-severity trust leaks
 
@@ -22,5 +22,4 @@ Scope reviewed: supported Jira + ServiceNow path only (`src/sena/integrations/ji
 ## Future work (explicitly wait until after adoption)
 
 - Add optional structured note taxonomy for manual redrive (`reason_code` + optional note) to reduce sensitive free-text usage without removing operator flexibility.
-- Add optional stricter startup profile for pilot mode that disallows allow-all verifiers unless explicitly opted in.
 - Add connector-specific delivery-id quality checks (entropy/format warnings) surfaced in reliability summary.

@@ -19,6 +19,7 @@ python -m uvicorn sena.api.app:app --host 0.0.0.0 --port 8000
 Notes:
 - API key auth optional for local workflows.
 - Signing strictness and audit sink are optional in this mode.
+- Jira/ServiceNow webhook secrets are optional in this mode; if omitted, startup logs warnings that inbound events are forgeable.
 
 ## Profile B: Local containerized runtime
 
@@ -61,6 +62,7 @@ export SENA_WEBHOOK_MAPPING_CONFIG=/etc/sena/integrations/webhook.yaml
 export SENA_JIRA_MAPPING_CONFIG=/etc/sena/integrations/jira.yaml
 export SENA_JIRA_WEBHOOK_SECRET='replace-with-secret'
 export SENA_SERVICENOW_MAPPING_CONFIG=/etc/sena/integrations/servicenow.yaml
+export SENA_SERVICENOW_WEBHOOK_SECRET='replace-with-secret'
 ```
 
 Pilot operational checklist:
@@ -77,6 +79,7 @@ Pilot operational checklist:
 - strict release-signature verification enabled
 - keyring directory configured and present
 - Jira webhook secret mandatory if Jira integration is enabled
+- ServiceNow webhook secret mandatory if ServiceNow integration is enabled
 
 Example:
 
