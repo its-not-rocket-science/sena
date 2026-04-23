@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import threading
-from collections import defaultdict
-from contextlib import contextmanager
 from hashlib import sha256
 
 from fastapi import Depends, Header, HTTPException, Request, Security
@@ -14,8 +11,6 @@ from fastapi.security import APIKeyHeader
 from sena.api.runtime import EngineState
 
 api_key_header = APIKeyHeader(name="X-API-Key")
-_idempotency_locks_guard = threading.Lock()
-_idempotency_locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
 
 
 def get_engine_state(request: Request) -> EngineState:
@@ -85,15 +80,52 @@ def idempotency_request_fingerprint(request: Request, payload: dict | None) -> s
     return sha256(fingerprint_material.encode("utf-8")).hexdigest()
 
 
-@contextmanager
-def idempotency_key_lock(key: str | None):
+def claim_or_replay_idempotency(
+    request: Request,
+    *,
+    request_payload: dict | None = None,
+    wait_timeout_seconds: float = 5.0,
+) -> Response | None:
+    key = request.headers.get("Idempotency-Key")
     if not key:
-        yield
-        return
-    with _idempotency_locks_guard:
-        lock = _idempotency_locks[key]
-    with lock:
-        yield
+        return None
+    fingerprint = idempotency_request_fingerprint(request, request_payload)
+    if fingerprint is None:
+        return None
+    result, cached_response, claim_token = (
+        request.app.state.engine_state.processing_store.claim_idempotency_key(
+            key,
+            request_fingerprint=fingerprint,
+            ttl_hours=request.app.state.engine_state.settings.idempotency_ttl_hours,
+        )
+    )
+    if result == "claimed":
+        request.state.idempotency_claim_token = claim_token
+        return None
+    if result == "replay" and cached_response is not None:
+        return Response(content=cached_response, media_type="application/json", status_code=200)
+    if result == "conflict":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency_key_conflict",
+                "message": "Idempotency-Key has already been used with a different payload.",
+            },
+        )
+    cached_after_wait = request.app.state.engine_state.processing_store.wait_for_idempotency_completion(
+        key,
+        request_fingerprint=fingerprint,
+        timeout_seconds=wait_timeout_seconds,
+    )
+    if cached_after_wait is not None:
+        return Response(content=cached_after_wait, media_type="application/json", status_code=200)
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "idempotency_key_in_progress",
+            "message": "Idempotency-Key is already in progress for this payload.",
+        },
+    )
 
 
 def persist_idempotency_response(
@@ -105,10 +137,21 @@ def persist_idempotency_response(
     key = request.headers.get("Idempotency-Key")
     if not key:
         return
+    claim_token = getattr(request.state, "idempotency_claim_token", None)
+    response_json = json.dumps(response_payload, sort_keys=True)
+    ttl_hours = request.app.state.engine_state.settings.idempotency_ttl_hours
+    if claim_token:
+        request.app.state.engine_state.processing_store.finalize_idempotency_key(
+            key,
+            claim_token=claim_token,
+            response_json=response_json,
+            ttl_hours=ttl_hours,
+        )
+        return
     request.app.state.engine_state.processing_store.store_idempotency_response(
         key,
-        json.dumps(response_payload, sort_keys=True),
-        ttl_hours=request.app.state.engine_state.settings.idempotency_ttl_hours,
+        response_json,
+        ttl_hours=ttl_hours,
         request_fingerprint=idempotency_request_fingerprint(request, request_payload),
     )
 

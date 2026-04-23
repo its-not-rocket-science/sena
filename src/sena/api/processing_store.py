@@ -5,6 +5,7 @@ import logging
 import sqlite3
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -22,6 +23,14 @@ class RuntimeStateStore(Protocol):
 
     def store_idempotency_response(
         self, key: str, response_json: str, *, ttl_hours: int
+    ) -> None: ...
+
+    def claim_idempotency_key(
+        self, key: str, *, request_fingerprint: str, ttl_hours: int
+    ) -> tuple[str, str | None, str | None]: ...
+
+    def finalize_idempotency_key(
+        self, key: str, *, claim_token: str, response_json: str, ttl_hours: int
     ) -> None: ...
 
     def enqueue_dead_letter(self, event: dict[str, Any], error: str) -> int: ...
@@ -48,6 +57,8 @@ class ProcessingStore:
                     key TEXT PRIMARY KEY,
                     response_json TEXT NOT NULL,
                     request_fingerprint TEXT,
+                    status TEXT NOT NULL DEFAULT 'completed',
+                    claim_token TEXT,
                     expires_at TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 )
@@ -60,6 +71,12 @@ class ProcessingStore:
                 conn.execute(
                     "ALTER TABLE idempotency_keys ADD COLUMN request_fingerprint TEXT"
                 )
+            if "status" not in columns:
+                conn.execute(
+                    "ALTER TABLE idempotency_keys ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'"
+                )
+            if "claim_token" not in columns:
+                conn.execute("ALTER TABLE idempotency_keys ADD COLUMN claim_token TEXT")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS dead_letter_queue (
@@ -172,7 +189,7 @@ class ProcessingStore:
                 """
                 SELECT response_json, request_fingerprint
                 FROM idempotency_keys
-                WHERE key = ? AND expires_at > ?
+                WHERE key = ? AND expires_at > ? AND status = 'completed'
                 """,
                 (key, now),
             ).fetchone()
@@ -205,10 +222,12 @@ class ProcessingStore:
                     key,
                     response_json,
                     request_fingerprint,
+                    status,
+                    claim_token,
                     expires_at,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, 'completed', NULL, ?, ?)
                 """,
                 (
                     key,
@@ -224,6 +243,115 @@ class ProcessingStore:
             entity_id=key,
             metadata={"ttl_hours": ttl_hours},
         )
+
+    def claim_idempotency_key(
+        self,
+        key: str,
+        *,
+        request_fingerprint: str,
+        ttl_hours: int,
+    ) -> tuple[str, str | None, str | None]:
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(hours=ttl_hours)).isoformat()
+        claim_token = uuid.uuid4().hex
+        now_iso = now.isoformat()
+        with self._lock, self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT response_json, request_fingerprint, status, expires_at
+                FROM idempotency_keys
+                WHERE key = ?
+                """,
+                (key,),
+            ).fetchone()
+            if row is None or str(row["expires_at"]) <= now_iso:
+                conn.execute(
+                    """
+                    INSERT INTO idempotency_keys(
+                        key,
+                        response_json,
+                        request_fingerprint,
+                        status,
+                        claim_token,
+                        expires_at,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, 'processing', ?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        response_json = excluded.response_json,
+                        request_fingerprint = excluded.request_fingerprint,
+                        status = 'processing',
+                        claim_token = excluded.claim_token,
+                        expires_at = excluded.expires_at,
+                        created_at = excluded.created_at
+                    """,
+                    (key, "", request_fingerprint, claim_token, expires_at, now_iso),
+                )
+                conn.commit()
+                return ("claimed", None, claim_token)
+
+            existing_fingerprint = str(row["request_fingerprint"] or "")
+            if existing_fingerprint != request_fingerprint:
+                conn.commit()
+                return ("conflict", None, None)
+            if str(row["status"]) == "completed":
+                conn.commit()
+                return ("replay", str(row["response_json"]), None)
+            conn.commit()
+            return ("inflight", None, None)
+
+    def finalize_idempotency_key(
+        self,
+        key: str,
+        *,
+        claim_token: str,
+        response_json: str,
+        ttl_hours: int,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(hours=ttl_hours)).isoformat()
+        with self._lock, self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE idempotency_keys
+                SET response_json = ?,
+                    status = 'completed',
+                    claim_token = NULL,
+                    expires_at = ?
+                WHERE key = ? AND claim_token = ? AND status = 'processing'
+                """,
+                (response_json, expires_at, key, claim_token),
+            )
+
+    def wait_for_idempotency_completion(
+        self,
+        key: str,
+        *,
+        request_fingerprint: str,
+        timeout_seconds: float = 5.0,
+        poll_interval_seconds: float = 0.01,
+    ) -> str | None:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            now = datetime.now(timezone.utc).isoformat()
+            with self._lock, self._conn() as conn:
+                row = conn.execute(
+                    """
+                    SELECT response_json, request_fingerprint, status
+                    FROM idempotency_keys
+                    WHERE key = ? AND expires_at > ?
+                    """,
+                    (key, now),
+                ).fetchone()
+            if row is None:
+                return None
+            if str(row["request_fingerprint"] or "") != request_fingerprint:
+                return None
+            if str(row["status"]) == "completed":
+                return str(row["response_json"])
+            time.sleep(poll_interval_seconds)
+        return None
 
     def enqueue_dead_letter(self, event: dict[str, Any], error: str) -> int:
         now = datetime.now(timezone.utc).isoformat()

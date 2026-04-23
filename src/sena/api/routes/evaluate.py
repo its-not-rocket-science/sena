@@ -4,8 +4,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
 
 from sena.api.dependencies import (
-    idempotency_key_lock,
-    idempotency_request_fingerprint,
+    claim_or_replay_idempotency,
     persist_idempotency_response,
 )
 from sena.api.errors import raise_api_error
@@ -105,53 +104,31 @@ def create_evaluate_router(state: EngineState) -> APIRouter:
         req: EvaluateRequest,
         request: Request,
     ) -> dict | Response:
-        key = request.headers.get("Idempotency-Key")
         request_payload = req.model_dump()
-        with idempotency_key_lock(key):
-            if key:
-                existing = state.processing_store.get_idempotency_entry(key)
-                if existing is not None:
-                    cached_response, fingerprint = existing
-                    incoming_fingerprint = idempotency_request_fingerprint(
-                        request, request_payload
-                    )
-                    if (
-                        fingerprint is not None
-                        and incoming_fingerprint is not None
-                        and fingerprint != incoming_fingerprint
-                    ):
-                        raise_api_error(
-                            "validation_error",
-                            message="Idempotency-Key has already been used with a different payload.",
-                            details={"reason": "idempotency_key_conflict"},
-                            status_code=409,
-                        )
-                    return Response(
-                        content=cached_response,
-                        media_type="application/json",
-                        status_code=200,
-                    )
-            result = _evaluate(req, request)
-            result = _ok(result)
-            determinism_contract = result.get("determinism_contract")
-            if (
-                isinstance(determinism_contract, dict)
-                and "canonical_artifacts" not in result
-            ):
-                result["canonical_artifacts"] = {
-                    "canonical_replay_payload": determinism_contract.get(
-                        "canonical_replay_payload", {}
-                    ),
-                    "operational_metadata": determinism_contract.get(
-                        "operational_metadata", {}
-                    ),
-                }
-            if req.dry_run:
-                result["dry_run"] = True
-            persist_idempotency_response(
-                request, result, request_payload=request_payload
-            )
-            return result
+        replay = claim_or_replay_idempotency(request, request_payload=request_payload)
+        if replay is not None:
+            return replay
+        result = _evaluate(req, request)
+        result = _ok(result)
+        determinism_contract = result.get("determinism_contract")
+        if (
+            isinstance(determinism_contract, dict)
+            and "canonical_artifacts" not in result
+        ):
+            result["canonical_artifacts"] = {
+                "canonical_replay_payload": determinism_contract.get(
+                    "canonical_replay_payload", {}
+                ),
+                "operational_metadata": determinism_contract.get(
+                    "operational_metadata", {}
+                ),
+            }
+        if req.dry_run:
+            result["dry_run"] = True
+        persist_idempotency_response(
+            request, result, request_payload=request_payload
+        )
+        return result
 
     @router.post(
         "/evaluate/review-package",

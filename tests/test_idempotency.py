@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import threading
+import time
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -163,3 +166,69 @@ def test_webhook_idempotency_key_conflicts_on_semantic_payload_change(tmp_path) 
     assert first.status_code == 200
     assert second.status_code == 409
     assert second.json()["detail"]["details"]["reason"] == "idempotency_key_conflict"
+
+
+def test_evaluate_idempotency_concurrent_same_key_same_payload_replays(tmp_path) -> None:
+    app = create_app(_settings(tmp_path))
+    client = TestClient(app)
+    original = app.state.engine_state.processing_service.enqueue_and_process
+
+    def delayed_enqueue(event):
+        if event.get("event_type") == "evaluate":
+            time.sleep(0.15)
+        return original(event)
+
+    app.state.engine_state.processing_service.enqueue_and_process = delayed_enqueue
+    payload = {
+        "action_type": "approve_vendor_payment",
+        "attributes": {"vendor_verified": False},
+    }
+    responses: list = []
+
+    def send() -> None:
+        responses.append(
+            client.post(
+                "/v1/evaluate",
+                headers={"Idempotency-Key": "idem-concurrent"},
+                json=payload,
+            )
+        )
+
+    first = threading.Thread(target=send)
+    second = threading.Thread(target=send)
+    first.start()
+    second.start()
+    first.join()
+    second.join()
+
+    assert len(responses) == 2
+    assert responses[0].status_code == 200
+    assert responses[1].status_code == 200
+    assert responses[0].json()["decision_id"] == responses[1].json()["decision_id"]
+
+
+def test_evaluate_idempotency_survives_restart(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    first_app = create_app(settings)
+    first_client = TestClient(first_app)
+    payload = {
+        "action_type": "approve_vendor_payment",
+        "attributes": {"vendor_verified": False},
+    }
+    first = first_client.post(
+        "/v1/evaluate",
+        headers={"Idempotency-Key": "idem-restart"},
+        json=payload,
+    )
+
+    second_app = create_app(settings)
+    second_client = TestClient(second_app)
+    second = second_client.post(
+        "/v1/evaluate",
+        headers={"Idempotency-Key": "idem-restart"},
+        json=payload,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["decision_id"] == second.json()["decision_id"]

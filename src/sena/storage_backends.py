@@ -108,7 +108,7 @@ CAPABILITIES: dict[tuple[str, str], StorageBackendCapability] = {
     ): StorageBackendCapability(
         concern="runtime_processing",
         backend="sqlite",
-        concurrency_model="sqlite + in-process lock",
+        concurrency_model="sqlite atomic claim/replay",
         durability_assumptions="single-node file durability",
         deployment_suitability="pilot",
         notes="Includes idempotency responses, DLQ, and explanation cache state.",
