@@ -4,6 +4,8 @@
 
 This review optimizes SENA for **reliability, determinism, and operability** with **1–3 design partners**.
 It intentionally reduces surface area and defers non-critical capabilities.
+It is a **target-state architecture review**, not a statement that all changes are already implemented.
+For current maturity claims, defer to `docs/READINESS.md` → **"Canonical maturity statement (source of truth)"**.
 
 ---
 

@@ -1,6 +1,6 @@
 # Internal Soundness Roadmap (Alpha → Internally Sound)
 
-Date: 2026-04-18
+Date: 2026-04-23
 
 Scope: supported SENA path only (`src/sena/*` with Jira + ServiceNow connectors and supported `/v1/*` API routes).
 
@@ -13,22 +13,23 @@ Current implementation is consistent with an alpha, narrow, deterministic contro
 - Deterministic evaluation + replay contract and hash-linked audit evidence are implemented in the supported path (`README.md`, `docs/READINESS.md`).
 - Supported integration depth is Jira + ServiceNow; generic webhook and Slack remain explicitly experimental (`README.md`, `src/sena/api/routes/integrations.py`).
 - Startup fail-fast checks for production controls are implemented (`src/sena/api/runtime.py`).
-- Runtime still includes pilot/development concessions that weaken internal soundness if left unaddressed (details below).
+- Runtime still includes concessions and partial hardening areas that can weaken internal soundness if left unaddressed (details below).
 
 ## Gap analysis (implementation-backed)
 
-## 1) Unauthenticated webhook verifier is still possible outside production
+## 1) Webhook verifier behavior is mode-dependent (resolved for pilot/production, still dev-risk)
 - **Classification:** security/authz
 - **Evidence in code/docs:**
   - Runtime builds `AllowAllJiraWebhookVerifier` / `AllowAllServiceNowWebhookVerifier` when no shared secret is configured. (`src/sena/api/runtime.py`)
   - RC doc states allow-all verifier remains intentionally available for non-production bootstrap/dev. (`docs/SUPPORTED_PATH_RC_READINESS_2026-04-12.md`)
-- **Why it matters:** a pilot or pre-pilot environment can accidentally accept forged inbound events if secrets are omitted.
-- **Good enough before external validation:** in `pilot` and `production` runtime modes, startup fails if any enabled supported connector has no webhook verifier secret.
+- **Current status (2026-04-23):** **Resolved for pilot/production**. Startup now fails in `pilot` and `production` when enabled supported connectors are missing webhook secrets; allow-all remains development-only.
+- **Why it matters:** development environments can still accept forged inbound events if operators run with missing secrets and assume production-like posture.
+- **Good enough before external validation:** keep current pilot/production fail-fast behavior and make development-mode risk explicit in operational docs/checklists.
 - **Acceptance tests:**
   1. `SENA_RUNTIME_MODE=pilot` + Jira mapping + no Jira secret → startup fails with deterministic error.
   2. `SENA_RUNTIME_MODE=development` + no secret → explicit warning + startup allowed.
   3. Existing production-fail tests remain green.
-- **Required now vs later:** **Required now**.
+- **Required now vs later:** **Later** (already addressed for pilot/production).
 
 ## 2) Step-up / dual-approval controls are header-presence checks, not verified factors
 - **Classification:** security/authz
@@ -66,17 +67,17 @@ Current implementation is consistent with an alpha, narrow, deterministic contro
   2. Crash/restart drill with queued-but-unprocessed events shows no event loss.
 - **Required now vs later:** **Required now**.
 
-## 5) Async jobs are in-process only; no recovery of job state/results after restart
+## 5) Async jobs execute in-process (partial durability, limited orchestration resilience)
 - **Classification:** durability/recovery
 - **Evidence in code/docs:**
-  - `InProcessJobManager` is explicitly in-process and stores results in memory (`memory://jobs/...`). (`src/sena/services/async_jobs.py`)
-  - Readiness doc says robust built-in async orchestration is not complete. (`docs/READINESS.md`)
-- **Why it matters:** simulation/replay jobs appear operational but are non-durable; operators can lose long-running evidence generation state.
-- **Good enough before external validation:** persisted job metadata/result references with restart recovery and explicit terminal status semantics.
+  - `InProcessJobManager` remains explicitly in-process for execution, but persists metadata and result payloads to sqlite and reloads/reconciles jobs on startup. (`src/sena/services/async_jobs.py`)
+  - Readiness doc still states robust built-in async orchestration is not complete. (`docs/READINESS.md`)
+- **Why it matters:** metadata durability improved, but worker execution remains process-local and not equivalent to distributed job orchestration.
+- **Good enough before external validation:** retain current sqlite-backed recovery semantics and avoid implying enterprise-grade async orchestration.
 - **Acceptance tests:**
   1. Submit long-running job, restart API, query job status: terminal/recoverable state remains available.
   2. Job cancellation and timeout semantics remain deterministic after restart.
-- **Required now vs later:** **Required now** (for internal soundness of async surfaces).
+- **Required now vs later:** **Later** (for broader production posture; pilot can remain bounded).
 
 ## 6) Tenant context is data-carried, not hard-isolated by authenticated principal
 - **Classification:** safety
@@ -90,17 +91,18 @@ Current implementation is consistent with an alpha, narrow, deterministic contro
   2. Cross-tenant request (token tenant != payload tenant) is denied.
 - **Required now vs later:** **Later** if pilot remains strict single-tenant; **Required now** if multi-tenant pilot is planned.
 
-## 7) Experimental endpoints are registered in the same runtime by default
+## 7) Experimental endpoints are mode-gated (resolved default in pilot/production)
 - **Classification:** product coherence
 - **Evidence in code/docs:**
-  - Generic webhook and Slack routes are still mounted and tagged via response header as experimental. (`src/sena/api/routes/integrations.py`)
-  - Readiness docs position these as outside supported commitment. (`README.md`, `docs/READINESS.md`)
-- **Why it matters:** operator confusion and accidental usage of non-supported surfaces in environments assumed to be supported-only.
-- **Good enough before external validation:** pilot/production route gating that disables experimental endpoints unless explicit opt-in flag is set.
+  - Experimental integration routes exist, but app route registration now defaults to enabled only in `development`; `pilot`/`production` default to disabled unless explicit override is set. (`src/sena/api/app.py`, `src/sena/api/config.py`)
+  - Route handlers still tag surface stage for clarity when enabled. (`src/sena/api/routes/integrations.py`)
+- **Current status (2026-04-23):** **Resolved as a default safety control** for pilot/production.
+- **Why it matters:** explicit override can still re-enable experimental routes, so operator intent must remain deliberate and documented.
+- **Good enough before external validation:** keep default-off posture outside development and treat overrides as explicit risk acceptance.
 - **Acceptance tests:**
   1. Pilot profile returns 404/410 for experimental routes by default.
   2. Development profile still exposes experimental routes with explicit stage header.
-- **Required now vs later:** **Required now** (coherence + operational safety).
+- **Required now vs later:** **Later** (default posture is already in place).
 
 ## 8) Audit shipping is best-effort and unsigned
 - **Classification:** durability/recovery
@@ -117,13 +119,12 @@ Current implementation is consistent with an alpha, narrow, deterministic contro
 ## Prioritization summary
 
 ### Required now (to reach internally sound)
-1. Enforce webhook secret requirement in pilot/prod (remove allow-all verifier path there).
-2. Replace header-only step-up/dual-approval checks with verifiable assertions.
-3. Make idempotency enforcement storage-atomic across workers.
-4. Require durable ingestion queue in pilot profile.
-5. Persist async job state/results across restart.
-6. Gate experimental endpoints out of pilot/prod by default.
+1. Replace header-only step-up/dual-approval checks with verifiable assertions.
+2. Make idempotency enforcement storage-atomic across workers.
+3. Require durable ingestion queue in pilot profile.
 
 ### Later (after internal soundness, before broad production claims)
 1. Harden tenant isolation model beyond single-tenant pilot constraints.
 2. Add signed downstream audit shipping/verification envelope.
+3. Strengthen async orchestration beyond in-process workers for larger jobs.
+4. Continue reducing development-mode security footguns (for example allow-all verifier usage).

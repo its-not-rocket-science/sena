@@ -1,6 +1,6 @@
 # SENA Control Plane (Alpha)
 
-Read `READINESS.md` for the canonical maturity model and explicit production-grade gaps.
+Read `READINESS.md` and defer all maturity claims to the **"Canonical maturity statement (source of truth)"** section.
 
 Terminology follows README: `supported`, `experimental`, `labs/demo`, and `legacy`.
 
@@ -24,7 +24,7 @@ The supported path is concrete and implemented: ingest Jira/ServiceNow approval 
 
 ## Maturity statement
 
-SENA is **alpha**. Pilot suitability and production gaps are defined in `READINESS.md`; this document only describes the implemented control-plane scope.
+SENA is **alpha**. This document intentionally describes implemented control-plane behavior only; maturity and readiness claims are centralized in `docs/READINESS.md`.
 
 ## Non-goals (current phase)
 

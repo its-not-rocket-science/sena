@@ -1,8 +1,10 @@
-# Why SENA Wins (When the Buyer Cares About Defensible Governance)
+# Where SENA Differentiates (Supported Scope, Alpha Maturity)
 
-## Executive summary
+## Executive summary (scoped)
 
 SENA’s wedge is **not** “better prompts” or “more AI.” It is operational control over policy decisions that must be replayed, reviewed, promoted, and audited across systems.
+
+Maturity boundary: this document describes relative strengths of the current supported path, not a claim of full enterprise readiness. For canonical maturity posture, defer to `docs/READINESS.md`.
 
 For technical buyers, the durable differentiation is:
 
@@ -181,7 +183,7 @@ For technical buyers, the durable differentiation is:
 
 ---
 
-## Where this beats each competitor class
+## Where this can outperform alternatives in scoped pilots
 
 | Buyer requirement | Jira/ServiceNow embedded rules | Generic policy engine | Probabilistic guardrail product | SENA position |
 |---|---|---|---|---|
@@ -194,7 +196,7 @@ For technical buyers, the durable differentiation is:
 
 ---
 
-## Proof points still missing
+## Proof points still missing before stronger enterprise claims
 
 To make these claims design-partner credible in stricter enterprise procurement, the following repo-specific work should land next:
 
