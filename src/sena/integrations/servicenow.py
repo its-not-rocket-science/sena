@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from sena.api.logging import get_logger
@@ -25,6 +24,7 @@ from sena.integrations.approval import (
 )
 from sena.integrations.base import DecisionPayload, IntegrationError
 from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
+from sena.integrations.reliability import resolve_durable_reliability_store
 
 logger = get_logger(__name__)
 
@@ -151,14 +151,12 @@ class ServiceNowConnector(ApprovalConnectorBase):
         verifier: ServiceNowWebhookVerifier | None = None,
         reliability_observer: Any | None = None,
     ) -> None:
-        durable_store = reliability_store
-        if durable_store is None and reliability_db_path:
-            durable_store = SQLiteIntegrationReliabilityStore(str(Path(reliability_db_path)))
-        if require_durable_reliability and durable_store is None:
-            raise ServiceNowIntegrationError(
-                "durable reliability storage is required; "
-                "configure reliability_store or reliability_db_path"
-            )
+        durable_store = resolve_durable_reliability_store(
+            reliability_store=reliability_store,
+            reliability_db_path=reliability_db_path,
+            require_durable_reliability=require_durable_reliability,
+            error_cls=ServiceNowIntegrationError,
+        )
         super().__init__(
             config=ApprovalConnectorConfig(routes=config.routes),
             verifier=verifier or AllowAllServiceNowWebhookVerifier(),

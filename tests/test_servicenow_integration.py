@@ -10,6 +10,7 @@ from sena.integrations.servicenow import (
     ServiceNowIntegrationError,
     load_servicenow_mapping_config,
 )
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
 
 def _fixture(name: str) -> dict:
@@ -102,6 +103,23 @@ def test_servicenow_connector_duplicate_delivery_is_replay_safe() -> None:
     connector.handle_event(envelope)
     with pytest.raises(ServiceNowIntegrationError, match="duplicate delivery"):
         connector.handle_event(envelope)
+
+
+def test_servicenow_connector_rejects_multiple_durability_sources(tmp_path) -> None:
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    with pytest.raises(
+        ServiceNowIntegrationError,
+        match="configure exactly one durability source",
+    ):
+        ServiceNowConnector(
+            config=cfg,
+            reliability_store=SQLiteIntegrationReliabilityStore(
+                str(tmp_path / "connector-reliability.db")
+            ),
+            reliability_db_path=str(tmp_path / "other-reliability.db"),
+        )
 
 
 def test_servicenow_duplicate_delivery_with_envelope_variance_is_still_duplicate() -> None:

@@ -60,8 +60,8 @@ class IntegrationReliabilityStore(Protocol):
     def items(self) -> list[DeadLetterItem]: ...
 
 
-class PilotSQLiteIntegrationReliabilityStore:
-    """Pilot-grade SQLite-backed stores for connector reliability state."""
+class SQLiteIntegrationReliabilityStore:
+    """SQLite-backed store for supported connector reliability state."""
 
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -565,4 +565,4 @@ class PilotSQLiteIntegrationReliabilityStore:
 
 
 # Backward-compatible alias for older naming.
-SQLiteIntegrationReliabilityStore = PilotSQLiteIntegrationReliabilityStore
+PilotSQLiteIntegrationReliabilityStore = SQLiteIntegrationReliabilityStore
