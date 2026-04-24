@@ -36,7 +36,7 @@ To reduce ambiguity, local implementations are explicitly named:
 
 - `DevelopmentJsonlAuditStorage` (compat alias: `LocalFileStorage`)
 - `PilotSQLiteAppendOnlyAuditStorage` (compat alias: `SQLiteAppendOnlyStorage`)
-- `PilotSQLiteIntegrationReliabilityStore` (compat alias: `SQLiteIntegrationReliabilityStore`)
+- `SQLiteIntegrationReliabilityStore` (compat alias: `PilotSQLiteIntegrationReliabilityStore`)
 
 These aliases preserve backwards compatibility while making readiness explicit.
 

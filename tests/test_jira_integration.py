@@ -10,6 +10,7 @@ from sena.integrations.jira import (
     SharedSecretJiraWebhookVerifier,
     load_jira_mapping_config,
 )
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
 
 def _payload(actor: str = "acct-1") -> dict:
@@ -80,6 +81,22 @@ def test_jira_connector_maps_payload_to_action_proposal() -> None:
     assert proposal.request_id == "RISK-9"
     assert proposal.actor_id == "acct-1"
     assert proposal.attributes["amount"] == 12000
+
+
+def test_jira_connector_rejects_multiple_durability_sources(tmp_path) -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    with pytest.raises(
+        JiraIntegrationError,
+        match="configure exactly one durability source",
+    ):
+        JiraConnector(
+            config=cfg,
+            verifier=AllowAllJiraWebhookVerifier(),
+            reliability_store=SQLiteIntegrationReliabilityStore(
+                str(tmp_path / "connector-reliability.db")
+            ),
+            reliability_db_path=str(tmp_path / "other-reliability.db"),
+        )
 
 
 def test_jira_connector_missing_actor_identity_is_deterministic() -> None:
