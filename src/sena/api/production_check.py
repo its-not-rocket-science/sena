@@ -8,6 +8,10 @@ from typing import Any
 
 from sena.audit.chain import verify_audit_chain
 from sena.api.config import ApiSettings
+from sena.api.deployment_profiles import (
+    VALID_DEPLOYMENT_PROFILES,
+    validate_credible_pilot_profile,
+)
 from sena.integrations.jira import load_jira_mapping_config
 from sena.integrations.servicenow import load_servicenow_mapping_config
 from sena.integrations.webhook import load_webhook_mapping_config
@@ -55,6 +59,14 @@ def _validate_env_coherence(settings: ApiSettings) -> list[str]:
     if settings.runtime_mode not in VALID_RUNTIME_MODES:
         errors.append(
             f"SENA_RUNTIME_MODE must be one of {sorted(VALID_RUNTIME_MODES)}; got '{settings.runtime_mode}'"
+        )
+    if (
+        settings.deployment_profile is not None
+        and settings.deployment_profile not in VALID_DEPLOYMENT_PROFILES
+    ):
+        errors.append(
+            "SENA_DEPLOYMENT_PROFILE must be one of "
+            f"{sorted(VALID_DEPLOYMENT_PROFILES)}; got '{settings.deployment_profile}'"
         )
     if settings.policy_store_backend not in VALID_POLICY_STORE_BACKENDS:
         errors.append(
@@ -373,6 +385,11 @@ def run_production_readiness_check(settings: ApiSettings) -> dict[str, Any]:
         "storage backend suitability",
         fatal=True,
         details=_storage_backend_profile_warnings(settings),
+    )
+    add(
+        "credible pilot profile invariants",
+        fatal=True,
+        details=validate_credible_pilot_profile(settings),
     )
 
     audit_details: list[str] = []

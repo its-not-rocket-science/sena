@@ -964,6 +964,43 @@ def _run_production_check(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def _run_pilot_check(args: argparse.Namespace) -> None:
+    settings = load_settings_from_env()
+    report = run_production_readiness_check(settings)
+    profile_errors: list[str] = []
+    if settings.deployment_profile != "credible_pilot":
+        profile_errors.append(
+            "SENA_DEPLOYMENT_PROFILE must be set to 'credible_pilot' for pilot-check"
+        )
+    if settings.runtime_mode != "pilot":
+        profile_errors.append("SENA_RUNTIME_MODE must be 'pilot' for pilot-check")
+    if profile_errors:
+        report["ok"] = False
+        report["fatal_failures"].append("pilot-check profile selection")
+        report["fatal_failure_count"] = len(report["fatal_failures"])
+        report["checks"].append(
+            {
+                "name": "pilot-check profile selection",
+                "status": "fail",
+                "fatal": True,
+                "details": profile_errors,
+            }
+        )
+
+    if args.format in {"text", "both"}:
+        status = "PASS" if report["ok"] else "FAIL"
+        print(f"Credible pilot check: {status}")
+        for check in report["checks"]:
+            marker = "✓" if check["status"] == "pass" else "✗"
+            print(f"- {marker} {check['name']}")
+            for detail in check["details"]:
+                print(f"    • {detail}")
+    if args.format in {"json", "both"}:
+        print(json.dumps(report, indent=2))
+    if not report["ok"]:
+        raise SystemExit(1)
+
+
 def _run_evidence_pack(args: argparse.Namespace) -> None:
     result = build_evidence_pack(
         reference_root=args.reference_root,
@@ -1628,6 +1665,19 @@ def main() -> None:
         )
         args = parser.parse_args(sys.argv[2:])
         _run_production_check(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "pilot-check":
+        parser = argparse.ArgumentParser(
+            description="SENA credible-pilot profile validation"
+        )
+        parser.add_argument(
+            "--format",
+            choices=["text", "json", "both"],
+            default="both",
+            help="Output format for readiness report",
+        )
+        args = parser.parse_args(sys.argv[2:])
+        _run_pilot_check(args)
         return
     if len(sys.argv) > 1 and sys.argv[1] == "policy":
         parser = _build_policy_parser()

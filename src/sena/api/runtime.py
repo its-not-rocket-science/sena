@@ -9,6 +9,10 @@ from sena.api.ingestion_queue import (
 )
 from sena.api.config import ApiSettings
 from sena.api.auth import VALID_APP_ROLES
+from sena.api.deployment_profiles import (
+    VALID_DEPLOYMENT_PROFILES,
+    validate_credible_pilot_profile,
+)
 from sena.api.metrics import ApiMetrics
 from sena.core.enums import DecisionOutcome
 from sena.core.models import PolicyBundleMetadata
@@ -268,8 +272,23 @@ def validate_startup_settings(runtime_settings: ApiSettings) -> None:
     _validate_connector_config_paths(runtime_settings)
     _validate_reliability_sqlite_path(runtime_settings)
     _validate_production_startup_requirements(runtime_settings)
+    _validate_credible_pilot_profile(runtime_settings)
     _validate_supported_connector_webhook_verification_policy(runtime_settings)
     _validate_operational_limits(runtime_settings)
+
+
+def _validate_credible_pilot_profile(runtime_settings: ApiSettings) -> None:
+    profile = runtime_settings.deployment_profile
+    if profile is None:
+        return
+    if profile not in VALID_DEPLOYMENT_PROFILES:
+        raise RuntimeError(
+            "SENA_DEPLOYMENT_PROFILE must be one of "
+            f"{sorted(VALID_DEPLOYMENT_PROFILES)}; got '{profile}'"
+        )
+    errors = validate_credible_pilot_profile(runtime_settings)
+    if errors:
+        raise RuntimeError(errors[0])
     _warn_or_fail_for_storage_profiles(runtime_settings)
 
 

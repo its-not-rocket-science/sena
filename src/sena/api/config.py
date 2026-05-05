@@ -12,6 +12,7 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 
 @dataclass(frozen=True)
 class ApiSettings:
+    deployment_profile: str | None = None
     runtime_mode: str = "development"
     host: str = "127.0.0.1"
     port: int = 8000
@@ -173,6 +174,9 @@ def _parse_regression_budgets(raw: str | None) -> tuple[tuple[str, int], ...]:
 def load_settings_from_env() -> ApiSettings:
     experimental_routes_env = os.getenv("SENA_ENABLE_EXPERIMENTAL_ROUTES")
     return ApiSettings(
+        deployment_profile=(
+            os.getenv("SENA_DEPLOYMENT_PROFILE", "").strip().lower() or None
+        ),
         runtime_mode=os.getenv("SENA_RUNTIME_MODE", "development").strip().lower(),
         host=os.getenv("SENA_API_HOST", "127.0.0.1"),
         port=_parse_int(os.getenv("SENA_API_PORT"), default=8000),

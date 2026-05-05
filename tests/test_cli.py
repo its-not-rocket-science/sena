@@ -907,6 +907,14 @@ def test_production_check_fails_for_invalid_timeout_configuration() -> None:
     assert "request limits and timeout sanity" in payload["fatal_failures"]
 
 
+def test_pilot_check_fails_when_credible_pilot_profile_not_selected() -> None:
+    result = _run_cli(["pilot-check", "--format", "json"])
+    assert result.returncode != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert "pilot-check profile selection" in payload["fatal_failures"]
+
+
 def test_registry_backup_restore_and_verify_commands(tmp_path) -> None:
     from sena.audit.chain import append_audit_record
 
