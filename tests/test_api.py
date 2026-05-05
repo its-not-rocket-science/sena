@@ -3018,6 +3018,61 @@ def test_pilot_mode_memory_ingestion_queue_fails_startup() -> None:
         )
 
 
+def test_credible_pilot_profile_requires_jira_and_servicenow_only(tmp_path) -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="requires SENA_SERVICENOW_MAPPING_CONFIG",
+    ):
+        create_app(
+            _settings(
+                deployment_profile="credible_pilot",
+                runtime_mode="pilot",
+                enable_api_key_auth=True,
+                api_keys=(("pilot-admin", "admin"),),
+                policy_store_backend="sqlite",
+                policy_store_sqlite_path=str(tmp_path / "policy.db"),
+                ingestion_queue_backend="sqlite",
+                processing_sqlite_path=str(tmp_path / "runtime.db"),
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                audit_verify_on_startup_strict=True,
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(tmp_path),
+                jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+                jira_webhook_secret="jira-secret",
+            )
+        )
+
+
+def test_credible_pilot_profile_forbids_generic_webhook_mapping(tmp_path) -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="forbids SENA_WEBHOOK_MAPPING_CONFIG",
+    ):
+        create_app(
+            _settings(
+                deployment_profile="credible_pilot",
+                runtime_mode="pilot",
+                enable_api_key_auth=True,
+                api_keys=(("pilot-admin", "admin"),),
+                policy_store_backend="sqlite",
+                policy_store_sqlite_path=str(tmp_path / "policy.db"),
+                ingestion_queue_backend="sqlite",
+                processing_sqlite_path=str(tmp_path / "runtime.db"),
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                audit_verify_on_startup_strict=True,
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(tmp_path),
+                jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+                jira_webhook_secret="jira-secret",
+                servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+                servicenow_webhook_secret="sn-secret",
+                webhook_mapping_config_path="src/sena/examples/integrations/webhook_mappings.yaml",
+            )
+        )
+
+
 def test_development_mode_memory_ingestion_queue_is_allowed() -> None:
     app = create_app(
         _settings(

@@ -23,6 +23,7 @@ Process exits at startup or readiness never becomes healthy.
 
 ```bash
 python -m sena.cli.main production-check --format both
+python -m sena.cli.main pilot-check --format both
 ```
 
 ### Pass criteria
@@ -39,7 +40,7 @@ python -m sena.cli.main production-check --format both
 ### Recovery steps
 
 1. Fix only the listed failing controls.
-2. Re-run `production-check` until it passes.
+2. Re-run `production-check` and `pilot-check` until both pass.
 3. Restart SENA and verify readiness:
 
 ```bash
