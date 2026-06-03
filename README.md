@@ -1,147 +1,358 @@
 # SENA
 
-SENA is an **alpha deterministic Jira + ServiceNow approval decisioning engine with replayable audit evidence**.
+> Deterministic policy engine for Jira and ServiceNow approvals with replayable audit evidence.
 
-Canonical maturity statement: `docs/READINESS.md` → **"Canonical maturity statement (source of truth)"**. Treat that section as authoritative for pilot vs non-production-grade boundaries.
+SENA is a policy-as-code decisioning engine designed for approval workflows where reproducibility, governance, and auditability matter more than opaque automation.
 
-The supported product path is intentionally narrow and implementation-backed: normalize Jira/ServiceNow approval payloads, evaluate them against versioned policy bundles, and return deterministic decisions plus replayable evidence artifacts.
+Given the same normalized input and policy bundle, SENA produces the same decision, reasoning, and audit evidence every time. Decisions can be replayed, verified, and traced back to the exact policy bundle and input that produced them.
 
-## Supported product path (default)
+---
 
-If you only read one section, read this one.
+## Why SENA?
 
-## Flagship workflow (start here)
+Most workflow and approval systems answer:
 
-Run one realistic end-to-end workflow first: **ServiceNow emergency privileged change approval**.
+> "What decision was made?"
 
-- Docs: `docs/FLAGSHIP_WORKFLOW.md`
-- Runnable example: `examples/flagship/`
-- Outcome: deterministic `BLOCKED` decision with replay + audit verification artifacts
+SENA is designed to answer:
 
-Quick run:
+> "Why was this decision made, can we prove it, and can we reproduce it later?"
 
-```bash
-PYTHONPATH=src python examples/flagship/run_flagship.py
-```
+Key capabilities:
 
-- Decision outcomes: `APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`
-- One normalized policy model across Jira and ServiceNow
-- Deterministic replay contract + hash-linked audit chain
+- Deterministic policy evaluation
+- Policy bundle lifecycle management
+- Replayable decision evidence
+- Hash-linked audit chains
+- Jira and ServiceNow integration
+- Promotion workflows with governance controls
+- Decision simulation and validation
+- Policy-as-code authoring
+- API-first architecture
 
-Supported code path:
-- `src/sena/core_policy_engine/*` (entrypoint package)
-- `src/sena/policy/*`
-- `src/sena/engine/*`
-- `src/sena/core/*`
-- `src/sena/runtime/*` (entrypoint package)
-- `src/sena/api/*`
-- `src/sena/cli/*`
-- `src/sena/services/*`
-- `src/sena/audit_evidence/*` (entrypoint package)
-- `src/sena/audit/*`
-- `src/sena/supported_integrations/*` (entrypoint package)
-- `src/sena/integrations/jira.py`
-- `src/sena/integrations/servicenow.py`
+---
 
-Start here for supported docs and operator flow:
-- `docs/FLAGSHIP_WORKFLOW.md`
+## Current Scope
+
+The supported path today is:
+
+- Jira approval workflows
+- ServiceNow approval workflows
+- Deterministic policy evaluation
+- Audit evidence generation
+- Policy bundle lifecycle management
+- Replay and verification APIs
+
+Experimental functionality exists in the repository but is **not considered part of the supported path** unless explicitly documented otherwise.
+
+See:
+
 - `docs/INDEX.md`
-- `docs/SUPPORTED_VS_EXPERIMENTAL_INVENTORY.md`
-- `docs/ASYNC_EXECUTION.md`
-- `docs/CONTROL_PLANE.md`
 - `docs/READINESS.md`
 - `docs/ARCHITECTURE.md`
-- `docs/POSITIONING.md`
-- `docs/REPLAY_CORPUS.md`
-- `examples/README.md` (supported examples first)
 
-## Package map for contributors
+---
 
-To make the supported product path obvious from package layout, start from these import roots:
+## Core Concepts
 
-- `sena.core_policy_engine` → core policy engine (`sena.core`, `sena.policy`, `sena.engine`)
-- `sena.supported_integrations` → Jira + ServiceNow + reliability persistence
-- `sena.runtime` → API, CLI, and service runtime wiring
-- `sena.audit_evidence` → audit chain + evidence pack + attestation verification
-- `sena.experimental` → unstable, evaluation-only surfaces
+### Policy Bundles
 
-`src/sena/MODULE_STATUS.md` contains the authoritative support/experimental/legacy mapping.
+Policies are grouped into versioned bundles.
 
-## Explicit scope boundaries
+A bundle contains:
 
-Maturity labels are normative: treat only what is marked pilot-ready in `docs/READINESS.md` as suitable for pilot deployment.
+- Rules
+- Invariants
+- Metadata
+- Compatibility information
+- Lifecycle state
 
-- **supported:** Jira + ServiceNow decisioning and evidence path above.
-- **experimental:** generic webhook, Slack interactions, LangChain callback, and non-core modules listed in `src/sena/MODULE_STATUS.md`.
-- **labs/demo:** investor/lab/k8s demo materials indexed in `docs/EXPERIMENTAL_INDEX.md`.
-- **legacy:** historical material only; no product guarantees.
+Example lifecycle:
 
-## Deterministic replay contract
-
-SENA separates replay-stable and runtime-only data:
-- `canonical_replay_payload`: replay-stable artifact for equality checks.
-- `operational_metadata`: runtime-only values (for example `decision_id`, event/write timestamps).
-
-Guarantees:
-- **Outcome determinism**: identical normalized input + identical policy bundle version produce identical outcome.
-- **Reasoning determinism (canonical)**: precedence steps, matched controls, and rationale in `canonical_replay_payload` are replay-stable.
-- **Full raw trace determinism**: **not guaranteed** (operational metadata intentionally varies).
-
-## Integration status
-
-**Supported integrations (productized depth):**
-- Jira webhook normalization + evaluation (`POST /v1/integrations/jira/webhook`)
-- ServiceNow webhook normalization + evaluation (`POST /v1/integrations/servicenow/webhook`)
-
-**Non-default integrations (evaluation only, subject to change):**
-- Generic webhook mapping (`POST /v1/integrations/webhook`)
-- Slack interactions (`POST /v1/integrations/slack/interactions`)
-- LangChain callback interception (`sena.integrations.langchain.SenaApprovalCallback`)
-
-Experimental HTTP integrations are runtime-gated:
-- `development`: experimental routes are enabled by default.
-- `pilot` and `production`: experimental routes are disabled by default.
-- Override (explicit opt-in only): set `SENA_ENABLE_EXPERIMENTAL_ROUTES=true`.
-
-## Version
-
-Current package/API version: `0.3.0` (single source: `src/sena/__init__.py`).
-
-## Install
-
-```bash
-pip install -e .
-pip install -e .[api,dev]
+```text
+draft
+  ↓
+candidate
+  ↓
+approved
+  ↓
+active
+  ↓
+deprecated
 ```
 
-Experimental-only optional extras are intentionally out of the default path (see `docs/EXPERIMENTAL_INDEX.md`).
+Bundles can be promoted, validated, simulated, rolled back, and audited.
 
-## Local quality checks
+---
+
+### Deterministic Evaluation
+
+Inputs are normalized into canonical action proposals.
+
+The evaluator:
+
+1. Loads the active policy bundle
+2. Evaluates applicable rules
+3. Applies precedence and invariants
+4. Produces a deterministic outcome
+5. Generates audit evidence
+
+The same inputs and bundle version always produce the same result.
+
+---
+
+### Replayable Evidence
+
+Each decision records:
+
+- Decision ID
+- Bundle version
+- Matched rules
+- Outcome
+- Reasoning
+- Determinism contract
+- Audit chain information
+
+This allows:
+
+- Reproduction
+- Investigation
+- Verification
+- Change impact analysis
+
+---
+
+### Audit Chain
+
+Audit records are hash-linked.
+
+Each record contains:
+
+- Previous chain hash
+- Current chain hash
+- Decision metadata
+- Optional signatures
+
+The chain can be verified later to detect:
+
+- Tampering
+- Missing records
+- Sequence gaps
+- Duplicate decision IDs
+
+---
+
+## Architecture
+
+```text
+             ┌────────────────────┐
+             │ Jira / ServiceNow  │
+             └─────────┬──────────┘
+                       │
+                       ▼
+          ┌──────────────────────────┐
+          │ Event Normalization Layer │
+          └─────────┬────────────────┘
+                    │
+                    ▼
+          ┌──────────────────────────┐
+          │ Deterministic Evaluator  │
+          └─────────┬────────────────┘
+                    │
+          ┌─────────┴─────────┐
+          ▼                   ▼
+ ┌────────────────┐  ┌─────────────────┐
+ │ Policy Bundles │  │ Audit Evidence  │
+ └────────────────┘  └─────────────────┘
+          │                   │
+          ▼                   ▼
+ ┌────────────────┐  ┌─────────────────┐
+ │ Governance API │  │ Replay / Verify │
+ └────────────────┘  └─────────────────┘
+```
+
+---
+
+## Supported Integrations
+
+### Jira
+
+Supported capabilities:
+
+- Webhook ingestion
+- Event normalization
+- Policy evaluation
+- Decision delivery
+- Reliability tracking
+- Dead-letter handling
+- Replay support
+
+### ServiceNow
+
+Supported capabilities:
+
+- Webhook ingestion
+- Event normalization
+- Policy evaluation
+- Callback delivery
+- Reliability tracking
+- Dead-letter handling
+- Replay support
+
+---
+
+## API
+
+Versioned API endpoints are exposed under:
+
+```text
+/v1/*
+```
+
+Examples:
+
+```text
+GET  /v1/health
+POST /v1/evaluate
+GET  /v1/bundle
+POST /v1/integrations/jira/webhook
+POST /v1/integrations/servicenow/webhook
+GET  /v1/audit/verify
+```
+
+See OpenAPI documentation:
+
+```text
+/docs
+```
+
+when running locally.
+
+---
+
+## Example Policy
+
+```yaml
+- id: vendor_must_be_verified
+  description: Vendor must be verified
+  severity: high
+  inviolable: true
+
+  applies_to:
+    - approve_vendor_payment
+
+  condition:
+    vendor_verified: false
+
+  decision: block
+
+  reason: Vendor verification required
+```
+
+---
+
+## Development
+
+### Install
 
 ```bash
-ruff format --check src/sena tests --exclude src/sena/legacy
-ruff check src tests
+git clone https://github.com/its-not-rocket-science/sena.git
+
+cd sena
+
+pip install -e .
+```
+
+### Run Tests
+
+```bash
 pytest
 ```
 
-## CLI quickstart (supported)
+### Start API
 
 ```bash
-python -m sena.cli.main \
-  examples/flagship/evaluate_payload.json \
-  --policy-dir examples/design_partner_reference/policy_bundles/active \
-  --json
+uvicorn sena.api.app:app --reload
 ```
 
-## API quickstart
+---
 
-```bash
-python -m uvicorn sena.api.app:app --reload
+## Maturity
+
+SENA is currently best described as:
+
+> An alpha-stage deterministic decisioning engine with a supported Jira + ServiceNow approval workflow path.
+
+Implemented today:
+
+- Deterministic evaluation
+- Policy lifecycle management
+- Audit chain verification
+- Replayable evidence
+- Jira integration
+- ServiceNow integration
+- Governance APIs
+- Reliability and dead-letter handling
+
+Areas still being hardened:
+
+- Distributed idempotency
+- Production deployment profiles
+- Stronger step-up authentication
+- Durable queueing defaults
+- Long-running job persistence
+- Multi-tenant isolation
+
+See:
+
+```text
+docs/READINESS.md
+docs/INTERNAL_SOUNDNESS_GAP_ANALYSIS.md
 ```
 
-Versioned endpoints are under `/v1/*`. OpenAPI is at `/openapi.json` and Swagger UI at `/docs`.
+for the current state of the supported path.
 
-## Non-default indexes
+---
 
-- Experimental + labs index: `docs/EXPERIMENTAL_INDEX.md`
-- Legacy/historical archive: `docs/archive/legacy_vision.md`
+## Design Principles
+
+SENA prioritizes:
+
+1. Determinism over automation magic
+2. Explicit governance over hidden behaviour
+3. Replayability over convenience
+4. Auditability over opacity
+5. Narrow supported scope over broad unsupported claims
+
+---
+
+## Non-Goals
+
+SENA is not:
+
+- A general workflow engine
+- A BPMN platform
+- A ticketing system
+- An IAM platform
+- A compliance certification product
+- A replacement for Jira or ServiceNow
+
+SENA focuses on deterministic approval decisioning and audit evidence.
+
+---
+
+## License
+
+See `LICENSE`.
+
+---
+
+## Status
+
+Active development.
+
+The recommended path for evaluation is the supported Jira + ServiceNow workflow documented in:
+
+```text
+docs/INDEX.md
+```
