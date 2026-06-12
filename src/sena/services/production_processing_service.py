@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from sena.api.data_governance import TenancyContext, scan_and_redact_payload
 from sena.api.schemas import EvaluateRequest, WebhookEvaluateRequest
 from sena.core.enums import DecisionOutcome
 from sena.services.audit_service import AuditService
@@ -24,8 +25,48 @@ class ProductionProcessingService:
             evaluation_service=self._evaluation,
         )
 
+    def _resolve_tenancy_context(
+        self, *, tenant_id: str | None, region: str | None
+    ) -> TenancyContext:
+        resolved_tenant_id = tenant_id or "default"
+        resolved_region = region or self.state.settings.data_default_region
+        if resolved_region not in set(self.state.settings.data_allowed_regions):
+            allowed = sorted(set(self.state.settings.data_allowed_regions))
+            raise ValueError(
+                f"region '{resolved_region}' is not allowed; expected one of {allowed}"
+            )
+        return TenancyContext(tenant_id=resolved_tenant_id, region=resolved_region)
+
+    def _store_governed_payload(
+        self,
+        *,
+        tenancy: TenancyContext,
+        payload_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        pii = scan_and_redact_payload(payload)
+        self.state.processing_store.purge_expired_governed_payloads()
+        self.state.processing_store.store_governed_payload(
+            tenant_id=tenancy.tenant_id,
+            region=tenancy.region,
+            payload_type=payload_type,
+            payload=payload,
+            redacted_payload=pii.redacted_payload,
+            pii_flags=list(pii.flagged_fields),
+            ttl_hours=self.state.settings.payload_retention_ttl_hours,
+        )
+
     def process_evaluate(self, payload: dict[str, Any], *, request_id: str) -> dict[str, Any]:
         req = EvaluateRequest.model_validate(payload)
+        tenancy = self._resolve_tenancy_context(
+            tenant_id=req.tenant_id,
+            region=req.region or str(req.facts.get("region") or ""),
+        )
+        self._store_governed_payload(
+            tenancy=tenancy,
+            payload_type="evaluate_request",
+            payload=req.model_dump(),
+        )
         proposal = req.to_action_proposal(request_id)
         return self._evaluation.evaluate(
             proposal=proposal,
@@ -36,10 +77,22 @@ class ProductionProcessingService:
             notify_on_escalation=not req.dry_run,
             append_audit=not req.dry_run,
             replay_input=req.to_replay_input(request_id),
+            simulate_exceptions=req.simulate_exceptions,
+            downstream_outcome=req.downstream_outcome,
+            incident_flag=req.incident_flag,
         )
 
     def process_webhook(self, payload: dict[str, Any], *, request_id: str) -> dict[str, Any]:
         req = WebhookEvaluateRequest.model_validate(payload)
+        tenancy = self._resolve_tenancy_context(
+            tenant_id=req.tenant_id,
+            region=req.region or str(req.facts.get("region") or ""),
+        )
+        self._store_governed_payload(
+            tenancy=tenancy,
+            payload_type="webhook_request",
+            payload=req.model_dump(),
+        )
         return self._integration.handle_webhook_event(
             provider=req.provider,
             event_type=req.event_type,
@@ -99,7 +152,26 @@ class ProductionProcessingService:
                 raw_body=str(event.get("raw_body") or "").encode("utf-8"),
                 strict_require_allow=bool(event.get("strict_require_allow") or False),
             )
+        if event_type == "integration_outbound_retry":
+            return {
+                "status": "deferred",
+                "reason": "manual retry required for degraded outbound dependency",
+                "dependency": str(event.get("dependency") or "unknown"),
+                "decision_id": str(event.get("decision_id") or ""),
+            }
         raise ValueError(f"unsupported dlq event_type '{event_type}'")
+
+    def enqueue_and_process(self, event: dict[str, Any]) -> dict[str, Any]:
+        reliability = self.state.reliability_service
+        if reliability is None:
+            return self.process_event(event)
+        reliability.enqueue_event(event)
+        return reliability.process_next(self.process_event)
+
+    @property
+    def evaluation_service(self) -> EvaluationService:
+        """Expose evaluation dependency without requiring private attribute access."""
+        return self._evaluation
 
     @staticmethod
     def fallback_default_decision() -> DecisionOutcome:

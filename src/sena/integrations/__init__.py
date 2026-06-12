@@ -6,6 +6,11 @@ from sena.integrations.base import (
     DecisionPayload,
     IntegrationError,
 )
+from sena.integrations.persistence import (
+    DeliveryCompletionRecord,
+    PilotSQLiteIntegrationReliabilityStore,
+    SQLiteIntegrationReliabilityStore,
+)
 from sena.integrations.registry import build_connector_registry
 from sena.integrations.langchain import (
     LangChainIntegrationError,
@@ -57,6 +62,9 @@ __all__ = [
     "ConnectorRegistry",
     "DecisionPayload",
     "IntegrationError",
+    "DeliveryCompletionRecord",
+    "PilotSQLiteIntegrationReliabilityStore",
+    "SQLiteIntegrationReliabilityStore",
     "build_connector_registry",
     "JiraConnector",
     "JiraIntegrationError",

@@ -1,13 +1,41 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
+
+logger = logging.getLogger(__name__)
+
+
+class RuntimeStateStore(Protocol):
+    """Contract for runtime state persistence (idempotency, DLQ, explanations)."""
+
+    def get_idempotency_response(self, key: str) -> str | None: ...
+
+    def get_idempotency_entry(self, key: str) -> tuple[str, str | None] | None: ...
+
+    def store_idempotency_response(
+        self, key: str, response_json: str, *, ttl_hours: int
+    ) -> None: ...
+
+    def claim_idempotency_key(
+        self, key: str, *, request_fingerprint: str, ttl_hours: int
+    ) -> tuple[str, str | None, str | None]: ...
+
+    def finalize_idempotency_key(
+        self, key: str, *, claim_token: str, response_json: str, ttl_hours: int
+    ) -> None: ...
+
+    def enqueue_dead_letter(self, event: dict[str, Any], error: str) -> int: ...
+
+    def list_dead_letters(self, *, limit: int = 100) -> list[dict[str, Any]]: ...
 
 
 class ProcessingStore:
@@ -28,11 +56,27 @@ class ProcessingStore:
                 CREATE TABLE IF NOT EXISTS idempotency_keys (
                     key TEXT PRIMARY KEY,
                     response_json TEXT NOT NULL,
+                    request_fingerprint TEXT,
+                    status TEXT NOT NULL DEFAULT 'completed',
+                    claim_token TEXT,
                     expires_at TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 )
                 """
             )
+            columns = {
+                str(row["name"]) for row in conn.execute("PRAGMA table_info(idempotency_keys)")
+            }
+            if "request_fingerprint" not in columns:
+                conn.execute(
+                    "ALTER TABLE idempotency_keys ADD COLUMN request_fingerprint TEXT"
+                )
+            if "status" not in columns:
+                conn.execute(
+                    "ALTER TABLE idempotency_keys ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'"
+                )
+            if "claim_token" not in columns:
+                conn.execute("ALTER TABLE idempotency_keys ADD COLUMN claim_token TEXT")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS dead_letter_queue (
@@ -48,33 +92,266 @@ class ProcessingStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS decision_explanations (
+                    decision_id TEXT PRIMARY KEY,
+                    explanation_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS decision_attestations (
+                    attestation_id TEXT PRIMARY KEY,
+                    decision_id TEXT NOT NULL,
+                    decision_hash TEXT NOT NULL,
+                    signer_id TEXT NOT NULL,
+                    signer_role TEXT NOT NULL,
+                    key_id TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    signed_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS governed_payloads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL,
+                    region TEXT NOT NULL,
+                    payload_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    redacted_payload_json TEXT NOT NULL,
+                    pii_flags_json TEXT NOT NULL,
+                    legal_hold INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS data_access_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    entity_id TEXT,
+                    tenant_id TEXT,
+                    region TEXT,
+                    metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+
+    def record_data_access_event(
+        self,
+        *,
+        event_type: str,
+        entity_type: str,
+        entity_id: str | None = None,
+        tenant_id: str | None = None,
+        region: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO data_access_events(
+                    event_type, entity_type, entity_id, tenant_id, region, metadata_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_type,
+                    entity_type,
+                    entity_id,
+                    tenant_id,
+                    region,
+                    json.dumps(metadata or {}, sort_keys=True),
+                    now,
+                ),
+            )
+            return int(cur.lastrowid)
 
     def get_idempotency_response(self, key: str) -> str | None:
+        entry = self.get_idempotency_entry(key)
+        return entry[0] if entry else None
+
+    def get_idempotency_entry(self, key: str) -> tuple[str, str | None] | None:
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._conn() as conn:
             row = conn.execute(
                 """
-                SELECT response_json
+                SELECT response_json, request_fingerprint
                 FROM idempotency_keys
-                WHERE key = ? AND expires_at > ?
+                WHERE key = ? AND expires_at > ? AND status = 'completed'
                 """,
                 (key, now),
             ).fetchone()
-            return str(row["response_json"]) if row else None
+        hit = row is not None
+        self.record_data_access_event(
+            event_type="read",
+            entity_type="idempotency_key",
+            entity_id=key,
+            metadata={"cache_hit": hit},
+        )
+        if row is None:
+            return None
+        fingerprint = row["request_fingerprint"]
+        return str(row["response_json"]), str(fingerprint) if fingerprint is not None else None
 
     def store_idempotency_response(
-        self, key: str, response_json: str, *, ttl_hours: int
+        self,
+        key: str,
+        response_json: str,
+        *,
+        ttl_hours: int,
+        request_fingerprint: str | None = None,
     ) -> None:
         now = datetime.now(timezone.utc)
         expires_at = (now + timedelta(hours=ttl_hours)).isoformat()
         with self._lock, self._conn() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO idempotency_keys(key, response_json, expires_at, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT OR REPLACE INTO idempotency_keys(
+                    key,
+                    response_json,
+                    request_fingerprint,
+                    status,
+                    claim_token,
+                    expires_at,
+                    created_at
+                )
+                VALUES (?, ?, ?, 'completed', NULL, ?, ?)
                 """,
-                (key, response_json, expires_at, now.isoformat()),
+                (
+                    key,
+                    response_json,
+                    request_fingerprint,
+                    expires_at,
+                    now.isoformat(),
+                ),
             )
+        self.record_data_access_event(
+            event_type="write",
+            entity_type="idempotency_key",
+            entity_id=key,
+            metadata={"ttl_hours": ttl_hours},
+        )
+
+    def claim_idempotency_key(
+        self,
+        key: str,
+        *,
+        request_fingerprint: str,
+        ttl_hours: int,
+    ) -> tuple[str, str | None, str | None]:
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(hours=ttl_hours)).isoformat()
+        claim_token = uuid.uuid4().hex
+        now_iso = now.isoformat()
+        with self._lock, self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT response_json, request_fingerprint, status, expires_at
+                FROM idempotency_keys
+                WHERE key = ?
+                """,
+                (key,),
+            ).fetchone()
+            if row is None or str(row["expires_at"]) <= now_iso:
+                conn.execute(
+                    """
+                    INSERT INTO idempotency_keys(
+                        key,
+                        response_json,
+                        request_fingerprint,
+                        status,
+                        claim_token,
+                        expires_at,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, 'processing', ?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        response_json = excluded.response_json,
+                        request_fingerprint = excluded.request_fingerprint,
+                        status = 'processing',
+                        claim_token = excluded.claim_token,
+                        expires_at = excluded.expires_at,
+                        created_at = excluded.created_at
+                    """,
+                    (key, "", request_fingerprint, claim_token, expires_at, now_iso),
+                )
+                conn.commit()
+                return ("claimed", None, claim_token)
+
+            existing_fingerprint = str(row["request_fingerprint"] or "")
+            if existing_fingerprint != request_fingerprint:
+                conn.commit()
+                return ("conflict", None, None)
+            if str(row["status"]) == "completed":
+                conn.commit()
+                return ("replay", str(row["response_json"]), None)
+            conn.commit()
+            return ("inflight", None, None)
+
+    def finalize_idempotency_key(
+        self,
+        key: str,
+        *,
+        claim_token: str,
+        response_json: str,
+        ttl_hours: int,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(hours=ttl_hours)).isoformat()
+        with self._lock, self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE idempotency_keys
+                SET response_json = ?,
+                    status = 'completed',
+                    claim_token = NULL,
+                    expires_at = ?
+                WHERE key = ? AND claim_token = ? AND status = 'processing'
+                """,
+                (response_json, expires_at, key, claim_token),
+            )
+
+    def wait_for_idempotency_completion(
+        self,
+        key: str,
+        *,
+        request_fingerprint: str,
+        timeout_seconds: float = 5.0,
+        poll_interval_seconds: float = 0.01,
+    ) -> str | None:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            now = datetime.now(timezone.utc).isoformat()
+            with self._lock, self._conn() as conn:
+                row = conn.execute(
+                    """
+                    SELECT response_json, request_fingerprint, status
+                    FROM idempotency_keys
+                    WHERE key = ? AND expires_at > ?
+                    """,
+                    (key, now),
+                ).fetchone()
+            if row is None:
+                return None
+            if str(row["request_fingerprint"] or "") != request_fingerprint:
+                return None
+            if str(row["status"]) == "completed":
+                return str(row["response_json"])
+            time.sleep(poll_interval_seconds)
+        return None
 
     def enqueue_dead_letter(self, event: dict[str, Any], error: str) -> int:
         now = datetime.now(timezone.utc).isoformat()
@@ -167,15 +444,18 @@ class ProcessingStore:
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._conn() as conn:
             if ids:
-                placeholders = ",".join("?" for _ in ids)
-                cur = conn.execute(
-                    f"""
-                    UPDATE dead_letter_queue
-                    SET status = 'pending', next_retry_at = ?
-                    WHERE id IN ({placeholders})
-                    """,
-                    (now, *ids),
-                )
+                updated = 0
+                for dlq_id in ids:
+                    cur = conn.execute(
+                        """
+                        UPDATE dead_letter_queue
+                        SET status = 'pending', next_retry_at = ?
+                        WHERE id = ?
+                        """,
+                        (now, dlq_id),
+                    )
+                    updated += int(cur.rowcount)
+                return updated
             else:
                 cur = conn.execute(
                     """
@@ -186,6 +466,230 @@ class ProcessingStore:
                     (now,),
                 )
             return int(cur.rowcount)
+
+    def store_decision_explanation(
+        self, decision_id: str, explanation: dict[str, Any]
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._conn() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO decision_explanations(decision_id, explanation_json, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (decision_id, json.dumps(explanation, sort_keys=True), now),
+            )
+        self.record_data_access_event(
+            event_type="write",
+            entity_type="decision_explanation",
+            entity_id=decision_id,
+        )
+
+    def get_decision_explanation(self, decision_id: str) -> dict[str, Any] | None:
+        with self._lock, self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT explanation_json
+                FROM decision_explanations
+                WHERE decision_id = ?
+                """,
+                (decision_id,),
+            ).fetchone()
+        self.record_data_access_event(
+            event_type="read",
+            entity_type="decision_explanation",
+            entity_id=decision_id,
+            metadata={"exists": row is not None},
+        )
+        if row is None:
+            return None
+        return json.loads(str(row["explanation_json"]))
+
+    def get_decision_hash(self, decision_id: str) -> str | None:
+        explanation = self.get_decision_explanation(decision_id)
+        if not explanation:
+            return None
+        auditor = explanation.get("auditor", {})
+        if not isinstance(auditor, dict):
+            return None
+        trace = auditor.get("auditor_trace", {})
+        if not isinstance(trace, dict):
+            return None
+        decision_hash = trace.get("decision_hash")
+        if not isinstance(decision_hash, str) or not decision_hash:
+            return None
+        return decision_hash
+
+    def store_decision_attestation(self, attestation: dict[str, str]) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO decision_attestations(
+                    attestation_id, decision_id, decision_hash, signer_id, signer_role,
+                    key_id, signature, signed_at, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    attestation["attestation_id"],
+                    attestation["decision_id"],
+                    attestation["decision_hash"],
+                    attestation["signer_id"],
+                    attestation["signer_role"],
+                    attestation["key_id"],
+                    attestation["signature"],
+                    attestation["signed_at"],
+                    now,
+                ),
+            )
+        self.record_data_access_event(
+            event_type="write",
+            entity_type="decision_attestation",
+            entity_id=attestation["attestation_id"],
+            metadata={"decision_id": attestation["decision_id"]},
+        )
+
+    def list_decision_attestations(self, decision_id: str) -> list[dict[str, Any]]:
+        with self._lock, self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT attestation_id, decision_id, decision_hash, signer_id, signer_role,
+                       key_id, signature, signed_at, created_at
+                FROM decision_attestations
+                WHERE decision_id = ?
+                ORDER BY signed_at ASC, attestation_id ASC
+                """,
+                (decision_id,),
+            ).fetchall()
+        self.record_data_access_event(
+            event_type="read",
+            entity_type="decision_attestation",
+            entity_id=decision_id,
+            metadata={"count": len(rows)},
+        )
+        return [dict(row) for row in rows]
+
+    def store_governed_payload(
+        self,
+        *,
+        tenant_id: str,
+        region: str,
+        payload_type: str,
+        payload: dict[str, Any],
+        redacted_payload: dict[str, Any],
+        pii_flags: list[str],
+        ttl_hours: int,
+    ) -> int:
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(hours=ttl_hours)).isoformat()
+        with self._lock, self._conn() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO governed_payloads(
+                    tenant_id, region, payload_type, payload_json, redacted_payload_json,
+                    pii_flags_json, legal_hold, created_at, expires_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+                """,
+                (
+                    tenant_id,
+                    region,
+                    payload_type,
+                    json.dumps(payload, sort_keys=True),
+                    json.dumps(redacted_payload, sort_keys=True),
+                    json.dumps(sorted(pii_flags)),
+                    now.isoformat(),
+                    expires_at,
+                ),
+            )
+            payload_id = int(cur.lastrowid)
+        self.record_data_access_event(
+            event_type="write",
+            entity_type="governed_payload",
+            entity_id=str(payload_id),
+            tenant_id=tenant_id,
+            region=region,
+            metadata={"payload_type": payload_type, "pii_flag_count": len(pii_flags)},
+        )
+        return payload_id
+
+    def list_governed_payloads(
+        self, *, tenant_id: str, region: str, include_expired: bool = False
+    ) -> list[dict[str, Any]]:
+        now = datetime.now(timezone.utc).isoformat()
+        query = """
+            SELECT id, tenant_id, region, payload_type, redacted_payload_json, pii_flags_json,
+                   legal_hold, created_at, expires_at
+            FROM governed_payloads
+            WHERE tenant_id = ? AND region = ?
+        """
+        params: list[Any] = [tenant_id, region]
+        if not include_expired:
+            query += " AND expires_at > ?"
+            params.append(now)
+        query += " ORDER BY id DESC"
+        with self._lock, self._conn() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        self.record_data_access_event(
+            event_type="read",
+            entity_type="governed_payload",
+            tenant_id=tenant_id,
+            region=region,
+            metadata={"rows": len(rows), "include_expired": include_expired},
+        )
+        return [dict(row) for row in rows]
+
+    def apply_governed_payload_legal_hold(self, payload_id: int, *, reason: str) -> bool:
+        with self._lock, self._conn() as conn:
+            cur = conn.execute(
+                """
+                UPDATE governed_payloads
+                SET legal_hold = 1
+                WHERE id = ?
+                """,
+                (payload_id,),
+            )
+            updated = int(cur.rowcount) > 0
+        self.record_data_access_event(
+            event_type="legal_hold",
+            entity_type="governed_payload",
+            entity_id=str(payload_id),
+            metadata={"reason": reason, "updated": updated},
+        )
+        return updated
+
+    def purge_expired_governed_payloads(self) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._conn() as conn:
+            cur = conn.execute(
+                """
+                DELETE FROM governed_payloads
+                WHERE expires_at <= ? AND legal_hold = 0
+                """,
+                (now,),
+            )
+            deleted = int(cur.rowcount)
+        if deleted:
+            self.record_data_access_event(
+                event_type="retention_purge",
+                entity_type="governed_payload",
+                metadata={"deleted": deleted},
+            )
+        return deleted
+
+    def list_data_access_events(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        with self._lock, self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, event_type, entity_type, entity_id, tenant_id, region, metadata_json, created_at
+                FROM data_access_events
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
 
 @dataclass
@@ -236,5 +740,5 @@ class DeadLetterWorker:
             try:
                 self.run_once()
             except Exception:  # pragma: no cover
-                pass
+                logger.exception("dead-letter worker loop failed")
             time.sleep(self.poll_interval_seconds)

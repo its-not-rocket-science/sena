@@ -4,6 +4,7 @@ from sena.core.models import PolicyBundleMetadata
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.policy.lifecycle import (
     PromotionGatePolicy,
+    build_promotion_gate_policy,
     diff_rule_sets,
     evaluate_promotion_gate,
     validate_lifecycle_transition,
@@ -75,6 +76,26 @@ def test_lifecycle_transition_disallows_skip_and_backwards() -> None:
     assert validate_lifecycle_transition("draft", "active").valid is False
     assert validate_lifecycle_transition("active", "candidate").valid is False
     assert validate_lifecycle_transition("draft", "candidate").valid is True
+    assert validate_lifecycle_transition("candidate", "approved").valid is True
+    assert validate_lifecycle_transition("approved", "active").valid is True
+
+
+def test_candidate_promotion_requires_simulation_and_attestations() -> None:
+    source_rules, _ = load_policy_bundle("src/sena/examples/policies")
+    target_rules, _ = load_policy_bundle("src/sena/examples/policies")
+    result = validate_promotion(
+        "candidate",
+        "approved",
+        source_rules,
+        target_rules,
+        validation_artifact="CAB-1",
+        simulation_report=None,
+        approver_attestations=["approver-a"],
+    )
+    assert result.valid is False
+    joined = " ".join(result.errors)
+    assert "simulation report" in joined
+    assert "approver attestations" in joined
 
 
 def test_simulation_impact_changes_are_reported() -> None:
@@ -132,3 +153,22 @@ def test_promotion_gate_rejects_malformed_simulation_report() -> None:
     )
     assert failures
     assert any(item.code == "invalid_simulation_report" for item in failures)
+
+
+def test_build_promotion_gate_policy_applies_overrides_in_one_place() -> None:
+    policy = build_promotion_gate_policy(
+        require_validation_artifact=True,
+        require_simulation=True,
+        required_scenario_ids=("s-1",),
+        default_max_changed_outcomes=5,
+        default_max_regressions_by_outcome_type={"BLOCKED->APPROVED": 1},
+        break_glass_enabled=True,
+        override_max_changed_outcomes=2,
+        override_max_regressions_by_outcome_type={"ESCALATED->APPROVED": 0},
+        override_max_block_to_approve_regressions=0,
+    )
+    assert policy.max_changed_outcomes == 2
+    assert policy.max_regressions_by_outcome_type == {
+        "BLOCKED->APPROVED": 0,
+        "ESCALATED->APPROVED": 0,
+    }

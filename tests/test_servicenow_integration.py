@@ -5,10 +5,12 @@ import pytest
 
 from sena.integrations.base import DecisionPayload
 from sena.integrations.servicenow import (
+    RotatingSharedSecretServiceNowWebhookVerifier,
     ServiceNowConnector,
     ServiceNowIntegrationError,
     load_servicenow_mapping_config,
 )
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
 
 def _fixture(name: str) -> dict:
@@ -22,6 +24,32 @@ def test_load_servicenow_mapping_config() -> None:
     )
     assert "change_approval.requested" in cfg.routes
     assert cfg.outbound.mode == "callback"
+
+
+def test_load_servicenow_mapping_rejects_non_list_transition_values(tmp_path) -> None:
+    config_path = tmp_path / "servicenow_bad_transitions.yaml"
+    config_path.write_text(
+        """
+routes:
+  change_approval.requested:
+    action_type: approve_change
+    actor_id_path: requested_by.user_id
+    attributes: {}
+    external_state_path: change_request.state
+    previous_external_state_path: change_request.previous_state
+    external_to_internal_state:
+      requested: requested
+      approved: approved
+    allowed_state_transitions:
+      requested: approved
+""".strip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ServiceNowIntegrationError,
+        match="allowed_state_transitions values must be lists",
+    ):
+        load_servicenow_mapping_config(str(config_path))
 
 
 @pytest.mark.parametrize(
@@ -77,6 +105,75 @@ def test_servicenow_connector_duplicate_delivery_is_replay_safe() -> None:
         connector.handle_event(envelope)
 
 
+def test_servicenow_connector_rejects_multiple_durability_sources(tmp_path) -> None:
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    with pytest.raises(
+        ServiceNowIntegrationError,
+        match="configure exactly one durability source",
+    ):
+        ServiceNowConnector(
+            config=cfg,
+            reliability_store=SQLiteIntegrationReliabilityStore(
+                str(tmp_path / "connector-reliability.db")
+            ),
+            reliability_db_path=str(tmp_path / "other-reliability.db"),
+        )
+
+
+def test_servicenow_duplicate_delivery_with_envelope_variance_is_still_duplicate() -> None:
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    connector = ServiceNowConnector(config=cfg)
+    payload = _fixture("emergency_change")
+    connector.handle_event(
+        {
+            "headers": {"x-servicenow-delivery-id": "delivery-dup-variance"},
+            "payload": payload,
+            "raw_body": json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        }
+    )
+    with pytest.raises(ServiceNowIntegrationError, match="duplicate delivery"):
+        connector.handle_event(
+            {
+                "headers": {
+                    "x-servicenow-delivery-id": "delivery-dup-variance",
+                    "x-trace-id": "trace-123",
+                },
+                "payload": payload,
+                "raw_body": json.dumps(payload, indent=2).encode("utf-8"),
+            }
+        )
+
+
+def test_servicenow_duplicate_delivery_with_payload_change_conflicts() -> None:
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    connector = ServiceNowConnector(config=cfg)
+    first_payload = _fixture("emergency_change")
+    second_payload = _fixture("emergency_change")
+    second_payload["requested_by"]["user_id"] = "u.change.999"
+
+    connector.handle_event(
+        {
+            "headers": {"x-servicenow-delivery-id": "delivery-dup-conflict"},
+            "payload": first_payload,
+            "raw_body": json.dumps(first_payload).encode("utf-8"),
+        }
+    )
+    with pytest.raises(ServiceNowIntegrationError, match="idempotency payload conflict"):
+        connector.handle_event(
+            {
+                "headers": {"x-servicenow-delivery-id": "delivery-dup-conflict"},
+                "payload": second_payload,
+                "raw_body": json.dumps(second_payload).encode("utf-8"),
+            }
+        )
+
+
 def test_servicenow_connector_returns_stable_error_for_mapping_mismatch() -> None:
     cfg = load_servicenow_mapping_config(
         "src/sena/examples/integrations/servicenow_mappings.yaml"
@@ -93,6 +190,30 @@ def test_servicenow_connector_returns_stable_error_for_mapping_mismatch() -> Non
                 "raw_body": json.dumps(payload).encode("utf-8"),
             }
         )
+
+
+def test_servicenow_verifier_accepts_unprefixed_x_servicenow_signature() -> None:
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    verifier = RotatingSharedSecretServiceNowWebhookVerifier(("sn-secret",))
+    connector = ServiceNowConnector(config=cfg, verifier=verifier)
+    payload = _fixture("emergency_change")
+    raw_body = json.dumps(payload).encode("utf-8")
+    signature = _hmac_sha256("sn-secret", raw_body)
+
+    event = connector.handle_event(
+        {
+            "headers": {
+                "x-servicenow-delivery-id": "delivery-sig-unprefixed",
+                "x-servicenow-signature": signature,
+            },
+            "payload": payload,
+            "raw_body": raw_body,
+        }
+    )
+
+    assert event["normalized_event"]["source_system"] == "servicenow"
 
 
 def test_servicenow_round_trip_source_payload_to_normalized_to_action_proposal() -> (
@@ -167,3 +288,51 @@ def test_servicenow_send_decision_returns_deterministic_callback_shape() -> None
     assert response["status"] == "delivered"
     assert response["payload"]["source_system"] == "servicenow"
     assert response["payload"]["deterministic"] is True
+
+
+def test_servicenow_send_decision_is_idempotent_for_duplicate_retry() -> None:
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    connector = ServiceNowConnector(config=cfg)
+    payload = DecisionPayload(
+        decision_id="dec_sn_dupe",
+        request_id="CHG0092001",
+        action_type="approve_vendor_payment",
+        matched_rule_ids=["RULE-1"],
+        summary="ALLOWED",
+    )
+    first = connector.send_decision(payload)
+    second = connector.send_decision(payload)
+    assert first["status"] == "delivered"
+    assert second["delivery"]["status"] == "duplicate_suppressed"
+
+
+def test_servicenow_send_decision_writes_dlq_after_retry_exhaustion() -> None:
+    class _FailingCallbackClient:
+        def publish_callback(self, payload: dict) -> dict:
+            del payload
+            raise RuntimeError("callback timeout")
+
+    cfg = load_servicenow_mapping_config(
+        "src/sena/examples/integrations/servicenow_mappings.yaml"
+    )
+    connector = ServiceNowConnector(config=cfg, delivery_client=_FailingCallbackClient())
+    response = connector.send_decision(
+        DecisionPayload(
+            decision_id="dec_sn_fail",
+            request_id="CHG0092002",
+            action_type="approve_vendor_payment",
+            matched_rule_ids=["RULE-1"],
+            summary="BLOCKED",
+        )
+    )
+    assert response["status"] == "delivery_failed"
+    assert len(connector.dead_letter_items()) == 1
+
+
+def _hmac_sha256(secret: str, raw_body: bytes) -> str:
+    import hashlib
+    import hmac
+
+    return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()

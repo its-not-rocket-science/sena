@@ -2,20 +2,31 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from sena.integrations.approval import (
+    ApprovalConnectorBase,
+    ApprovalConnectorConfig,
     ApprovalEventRoute,
+    DeliveryRetryError,
+    InMemoryDeadLetterQueue,
     InMemoryDeliveryIdempotencyStore,
+    InMemoryDeliveryExecutionStore,
+    MinimalApprovalEventContract,
     NormalizedApprovalEvent,
+    ReliableDeliveryExecutor,
     build_normalized_approval_event,
+    load_mapping_document,
+    parse_approval_routes,
     resolve_path,
-    to_action_proposal,
 )
-from sena.integrations.base import Connector, DecisionPayload, IntegrationError
+from sena.api.logging import get_logger
+from sena.integrations.base import DecisionPayload, IntegrationError
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
+from sena.integrations.reliability import resolve_durable_reliability_store
 
+logger = get_logger(__name__)
 
 class JiraIntegrationError(IntegrationError):
     """Raised for deterministic Jira integration failures."""
@@ -27,6 +38,7 @@ JiraEventRoute = ApprovalEventRoute
 @dataclass(frozen=True)
 class JiraOutboundConfig:
     mode: str = "comment"
+    max_attempts: int = 1
 
 
 @dataclass(frozen=True)
@@ -52,14 +64,14 @@ class SharedSecretJiraWebhookVerifier:
         self._signature_header = signature_header.lower()
 
     def verify(self, *, headers: dict[str, str], raw_body: bytes) -> None:
-        provided = headers.get(self._signature_header, "")
+        provided = _extract_jira_signature(headers=headers, signature_header=self._signature_header)
         if not provided:
-            raise JiraIntegrationError("missing webhook signature")
+            raise JiraIntegrationError(
+                "missing webhook signature (expected header: x-sena-signature or x-hub-signature-256)"
+            )
         expected = hmac.new(self._secret, raw_body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(provided, expected):
             raise JiraIntegrationError("invalid webhook signature")
-
-
 
 
 class RotatingSharedSecretJiraWebhookVerifier:
@@ -70,17 +82,32 @@ class RotatingSharedSecretJiraWebhookVerifier:
         self._signature_header = signature_header.lower()
 
     def verify(self, *, headers: dict[str, str], raw_body: bytes) -> None:
-        provided = headers.get(self._signature_header, "")
+        provided = _extract_jira_signature(headers=headers, signature_header=self._signature_header)
         if not provided:
-            raise JiraIntegrationError("missing webhook signature")
+            raise JiraIntegrationError(
+                "missing webhook signature (expected header: x-sena-signature or x-hub-signature-256)"
+            )
         for secret in self._secrets:
             expected = hmac.new(secret, raw_body, hashlib.sha256).hexdigest()
             if hmac.compare_digest(provided, expected):
                 return
         raise JiraIntegrationError("invalid webhook signature")
 
+
+def _extract_jira_signature(*, headers: dict[str, str], signature_header: str) -> str:
+    direct = str(headers.get(signature_header, "")).strip()
+    if direct:
+        return direct
+    prefixed = str(headers.get("x-hub-signature-256", "")).strip()
+    if prefixed.lower().startswith("sha256="):
+        return prefixed.split("=", 1)[1].strip()
+    return prefixed
+
+
 class JiraIdempotencyStore(Protocol):
-    def mark_if_new(self, delivery_id: str) -> bool: ...
+    def mark_if_new(
+        self, delivery_id: str, *, payload_fingerprint: str | None = None
+    ) -> Literal["new", "duplicate", "conflict"]: ...
 
 
 InMemoryJiraIdempotencyStore = InMemoryDeliveryIdempotencyStore
@@ -88,73 +115,25 @@ NormalizedJiraEvent = NormalizedApprovalEvent
 
 
 def load_jira_mapping_config(path: str) -> JiraMappingConfig:
-    try:
-        import yaml  # type: ignore
-    except ModuleNotFoundError:
-        yaml = None
-
-    text = open(path, encoding="utf-8").read()
-    raw = yaml.safe_load(text) if yaml else json.loads(text)
-    routes_raw = raw.get("routes")
-    if not isinstance(routes_raw, dict) or not routes_raw:
-        raise JiraIntegrationError("Jira mapping config must define non-empty routes")
-
-    routes: dict[str, JiraEventRoute] = {}
-    for event_type, route in routes_raw.items():
-        if not isinstance(route, dict):
-            raise JiraIntegrationError(f"route '{event_type}' must be an object")
-        if "action_type" not in route or "actor_id_path" not in route:
-            raise JiraIntegrationError(f"route '{event_type}' missing required keys")
-        attrs = route.get("attributes", {})
-        if not isinstance(attrs, dict):
-            raise JiraIntegrationError(
-                f"route '{event_type}' attributes must be an object"
-            )
-        required_fields = route.get("required_fields", [])
-        if not isinstance(required_fields, list):
-            raise JiraIntegrationError(
-                f"route '{event_type}' required_fields must be a list"
-            )
-        routes[event_type] = JiraEventRoute(
-            action_type=str(route["action_type"]),
-            actor_id_path=str(route["actor_id_path"]),
-            attributes={str(k): str(v) for k, v in attrs.items()},
-            required_fields=[str(item) for item in required_fields],
-            static_attributes=route.get("static_attributes", {}) or {},
-            payload_path=route.get("payload_path"),
-            request_id_path=route.get("request_id_path"),
-            actor_role_path=route.get("actor_role_path"),
-            source_record_id_path=route.get("source_record_id_path"),
-            policy_bundle=route.get("policy_bundle"),
-            source_object_type_path=route.get("source_object_type_path"),
-            workflow_stage_path=route.get("workflow_stage_path"),
-            requested_action_path=route.get("requested_action_path"),
-            correlation_key_path=route.get("correlation_key_path"),
-            idempotency_key_path=route.get("idempotency_key_path"),
-            risk_attributes={
-                str(k): str(v)
-                for k, v in (route.get("risk_attributes", {}) or {}).items()
-            },
-            evidence_references_path=route.get("evidence_references_path"),
-            static_source_object_type=route.get("static_source_object_type"),
-            static_workflow_stage=route.get("static_workflow_stage"),
-            static_requested_action=route.get("static_requested_action"),
-        )
+    raw = load_mapping_document(path)
+    routes = parse_approval_routes(raw, error_cls=JiraIntegrationError, config_name="Jira")
     outbound_raw = raw.get("outbound", {}) or {}
     mode = str(outbound_raw.get("mode", "comment"))
+    max_attempts = int(outbound_raw.get("max_attempts", 1))
     if mode not in {"comment", "status", "both", "none"}:
         raise JiraIntegrationError(
             "Jira outbound.mode must be one of: comment,status,both,none"
         )
-    return JiraMappingConfig(routes=routes, outbound=JiraOutboundConfig(mode=mode))
+    return JiraMappingConfig(
+        routes=routes,
+        outbound=JiraOutboundConfig(mode=mode, max_attempts=max_attempts),
+    )
 
 
 class JiraDeliveryClient(Protocol):
     def publish_comment(self, issue_key: str, message: str) -> dict[str, Any]: ...
 
-    def publish_status(
-        self, issue_key: str, payload: dict[str, Any]
-    ) -> dict[str, Any]: ...
+    def publish_status(self, issue_key: str, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class NullJiraDeliveryClient:
@@ -165,8 +144,11 @@ class NullJiraDeliveryClient:
         return {"status": "skipped", "target": "status", "issue_key": issue_key}
 
 
-class JiraConnector(Connector):
+class JiraConnector(ApprovalConnectorBase):
     name = "jira"
+    source_system = "jira"
+    error_cls = JiraIntegrationError
+    invalid_envelope_message = "invalid jira event envelope"
 
     def __init__(
         self,
@@ -174,119 +156,278 @@ class JiraConnector(Connector):
         config: JiraMappingConfig,
         verifier: JiraWebhookVerifier,
         idempotency_store: JiraIdempotencyStore | None = None,
+        reliability_store: SQLiteIntegrationReliabilityStore | None = None,
+        reliability_db_path: str | None = None,
+        require_durable_reliability: bool = False,
         delivery_client: JiraDeliveryClient | None = None,
+        reliability_observer: Any | None = None,
     ) -> None:
-        self._config = config
-        self._verifier = verifier
-        self._idempotency = idempotency_store or InMemoryJiraIdempotencyStore()
-        self._delivery_client = delivery_client or NullJiraDeliveryClient()
-
-    def handle_event(self, event: dict[str, Any]) -> dict[str, Any]:
-        headers = event.get("headers") or {}
-        payload = event.get("payload") or {}
-        raw_body = event.get("raw_body") or b""
-        if (
-            not isinstance(headers, dict)
-            or not isinstance(payload, dict)
-            or not isinstance(raw_body, bytes)
-        ):
-            raise JiraIntegrationError("invalid jira event envelope")
-        normalized = self.normalize_event(
-            headers=headers, payload=payload, raw_body=raw_body
+        durable_store = resolve_durable_reliability_store(
+            reliability_store=reliability_store,
+            reliability_db_path=reliability_db_path,
+            require_durable_reliability=require_durable_reliability,
+            error_cls=JiraIntegrationError,
         )
-        proposal = self.map_to_proposal(normalized)
-        return {
-            "normalized_event": normalized.model_dump(),
-            "action_proposal": proposal,
-        }
+        super().__init__(
+            config=ApprovalConnectorConfig(routes=config.routes),
+            verifier=verifier,
+            idempotency_store=idempotency_store
+            or durable_store
+            or InMemoryJiraIdempotencyStore(),
+            reliability_observer=reliability_observer,
+        )
+        self._config = config
+        self._reliability_store = durable_store
+        self._delivery_client = delivery_client or NullJiraDeliveryClient()
+        self._delivery_executor = ReliableDeliveryExecutor(
+            max_attempts=config.outbound.max_attempts,
+            completion_store=durable_store or InMemoryDeliveryExecutionStore(),
+            dlq=durable_store or InMemoryDeadLetterQueue(),
+            reliability_observer=reliability_observer,
+        )
+        self._reliability_observer = reliability_observer
+
+    def dead_letter_items(self) -> list[dict[str, Any]]:
+        return [item.__dict__.copy() for item in self._delivery_executor.dlq.items()]
+
+    def outbound_completion_records(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        if self._reliability_store is None:
+            return []
+        return [record.__dict__.copy() for record in self._reliability_store.list_completion_records(limit=limit)]
+
+    def outbound_dead_letter_records(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        if self._reliability_store is None:
+            return []
+        return [record.__dict__.copy() for record in self._reliability_store.list_dead_letter_records(limit=limit)]
+
+    def outbound_duplicate_suppression_summary(self) -> dict[str, Any]:
+        if self._reliability_store is None:
+            return {"inbound": {}, "outbound": {}}
+        return self._reliability_store.duplicate_suppression_summary()
+
+    def outbound_reliability_summary(self) -> dict[str, Any]:
+        if self._reliability_store is None:
+            return {}
+        return self._reliability_store.reliability_summary()
+
+    def _normalized_admin_note(self, note: str) -> str:
+        normalized = str(note).strip()
+        if not normalized:
+            raise JiraIntegrationError("manual redrive note must not be empty")
+        if len(normalized) > 1024:
+            raise JiraIntegrationError("manual redrive note exceeds 1024 characters")
+        if any(ord(ch) < 32 for ch in normalized):
+            raise JiraIntegrationError("manual redrive note contains control characters")
+        return normalized
+
+    def replay_dead_letter(self, dead_letter_id: int) -> dict[str, Any]:
+        if self._reliability_store is None:
+            raise JiraIntegrationError("durable reliability storage is not configured")
+        record = self._reliability_store.get_dead_letter_record(dead_letter_id)
+        if record is None:
+            raise JiraIntegrationError(f"dead-letter record not found: {dead_letter_id}")
+        try:
+            if record.target == "comment":
+                issue_key = str(record.payload.get("issue_key") or "")
+                message = str(record.payload.get("message") or "")
+                result = self._delivery_client.publish_comment(issue_key, message)
+            elif record.target == "status":
+                issue_key = str(record.payload.get("issue_key") or "")
+                result = self._delivery_client.publish_status(issue_key, record.payload)
+            else:
+                raise JiraIntegrationError(f"unsupported dead-letter target: {record.target}")
+        except Exception:
+            self._reliability_store.record_admin_event(
+                event_type="replay",
+                target=record.target,
+                status="failure",
+            )
+            if self._reliability_observer is not None:
+                self._reliability_observer.record_outbound_replay(
+                    target=record.target, status="failure"
+                )
+            logger.warning(
+                "connector_outbound_dead_letter_replay_failed",
+                connector=self.source_system,
+                target=record.target,
+                dead_letter_id=dead_letter_id,
+            )
+            raise
+        self._reliability_store.mark_completed(
+            record.operation_key,
+            target=record.target,
+            payload=record.payload,
+            result=result if isinstance(result, dict) else {"value": result},
+            attempts=record.attempts,
+            max_attempts=record.max_attempts or self._config.outbound.max_attempts,
+        )
+        self._reliability_store.delete_dead_letter_record(dead_letter_id)
+        self._reliability_store.record_admin_event(
+            event_type="replay", target=record.target, status="success"
+        )
+        if self._reliability_observer is not None:
+            self._reliability_observer.record_outbound_replay(
+                target=record.target, status="success"
+            )
+            self._reliability_observer.record_outbound_completion(target=record.target)
+            self._reliability_observer.record_outbound_dead_letter_removed()
+        logger.info(
+            "connector_outbound_dead_letter_replayed",
+            connector=self.source_system,
+            target=record.target,
+            dead_letter_id=dead_letter_id,
+        )
+        return {"dead_letter_id": dead_letter_id, "status": "replayed", "result": result}
+
+    def manual_redrive_dead_letter(self, dead_letter_id: int, *, note: str) -> dict[str, Any]:
+        if self._reliability_store is None:
+            raise JiraIntegrationError("durable reliability storage is not configured")
+        normalized_note = self._normalized_admin_note(note)
+        record = self._reliability_store.get_dead_letter_record(dead_letter_id)
+        if record is None:
+            raise JiraIntegrationError(f"dead-letter record not found: {dead_letter_id}")
+        self._reliability_store.mark_completed(
+            record.operation_key,
+            target=record.target,
+            payload=record.payload,
+            result={"status": "manually_redriven", "note": normalized_note},
+            attempts=record.attempts,
+            max_attempts=record.max_attempts or self._config.outbound.max_attempts,
+        )
+        self._reliability_store.delete_dead_letter_record(dead_letter_id)
+        self._reliability_store.record_admin_event(
+            event_type="manual_redrive", target=record.target, status="success"
+        )
+        if self._reliability_observer is not None:
+            self._reliability_observer.record_outbound_manual_redrive(
+                target=record.target
+            )
+            self._reliability_observer.record_outbound_completion(target=record.target)
+            self._reliability_observer.record_outbound_dead_letter_removed()
+        logger.info(
+            "connector_outbound_dead_letter_manual_redrive",
+            connector=self.source_system,
+            target=record.target,
+            dead_letter_id=dead_letter_id,
+        )
+        return {"dead_letter_id": dead_letter_id, "status": "manually_redriven"}
 
     def send_decision(self, payload: DecisionPayload) -> dict[str, Any]:
         issue_key = payload.request_id or "unknown"
-        message = f"SENA decision={payload.summary} decision_id={payload.decision_id} merkle_proof={payload.merkle_proof or 'na'} rules={','.join(payload.matched_rule_ids)}"
+        message = (
+            f"SENA decision={payload.summary} decision_id={payload.decision_id} "
+            f"merkle_proof={payload.merkle_proof or 'na'} rules={','.join(payload.matched_rule_ids)}"
+        )
         mode = self._config.outbound.mode
         results: list[dict[str, Any]] = []
         errors: list[str] = []
         if mode in {"comment", "both"}:
             try:
                 results.append(
-                    self._delivery_client.publish_comment(issue_key, message)
+                    self._delivery_executor.deliver(
+                        operation_key=f"{payload.decision_id}:comment:{issue_key}",
+                        target="comment",
+                        payload={"issue_key": issue_key, "message": message},
+                        delivery_fn=lambda: self._delivery_client.publish_comment(
+                            issue_key, message
+                        ),
+                    )
                 )
-            except Exception as exc:  # pragma: no cover
+            except DeliveryRetryError as exc:
                 errors.append(f"comment:{exc}")
         if mode in {"status", "both"}:
+            decision_state = payload.summary.lower()
+            route = next(iter(self._config.routes.values()), None)
+            external_state = (
+                route.internal_to_external_state.get(decision_state, decision_state)
+                if route
+                else decision_state
+            )
             try:
                 results.append(
-                    self._delivery_client.publish_status(
-                        issue_key,
-                        {
+                    self._delivery_executor.deliver(
+                        operation_key=f"{payload.decision_id}:status:{issue_key}",
+                        target="status",
+                        payload={
+                            "issue_key": issue_key,
                             "decision_id": payload.decision_id,
                             "action_type": payload.action_type,
                             "matched_rule_ids": payload.matched_rule_ids,
                             "summary": payload.summary,
+                            "external_state": external_state,
                         },
+                        delivery_fn=lambda: self._delivery_client.publish_status(
+                            issue_key,
+                            {
+                                "decision_id": payload.decision_id,
+                                "action_type": payload.action_type,
+                                "matched_rule_ids": payload.matched_rule_ids,
+                                "summary": payload.summary,
+                                "external_state": external_state,
+                            },
+                        ),
                     )
                 )
-            except Exception as exc:  # pragma: no cover
+            except DeliveryRetryError as exc:
                 errors.append(f"status:{exc}")
         if errors:
             return {"status": "partial_failure", "results": results, "errors": errors}
         return {"status": "delivered", "results": results}
 
-    def normalize_event(
+    def extract_event_type(self, payload: dict[str, Any]) -> str:
+        event_type = str(payload.get("webhookEvent") or "").strip()
+        if not event_type:
+            raise JiraIntegrationError("missing webhookEvent")
+        return event_type
+
+    def compute_delivery_id(
         self,
         *,
         headers: dict[str, str],
         payload: dict[str, Any],
-        raw_body: bytes,
-    ) -> NormalizedJiraEvent:
-        lowered_headers = {str(k).lower(): str(v) for k, v in headers.items()}
-        self._verifier.verify(headers=lowered_headers, raw_body=raw_body)
-
-        event_type = str(payload.get("webhookEvent") or "").strip()
-        if not event_type:
-            raise JiraIntegrationError("missing webhookEvent")
-        route = self._config.routes.get(event_type)
-        if route is None:
-            raise JiraIntegrationError(f"unsupported jira event type '{event_type}'")
-
-        issue_id = str(
-            resolve_path(payload, "issue.id", error_cls=JiraIntegrationError)
-        )
-        delivery_id = (
-            lowered_headers.get("x-atlassian-webhook-identifier")
-            or lowered_headers.get("x-request-id")
+        event_type: str,
+        route: JiraEventRoute,
+    ) -> str:
+        del route
+        issue_id = str(resolve_path(payload, "issue.id", error_cls=JiraIntegrationError))
+        return (
+            headers.get("x-atlassian-webhook-identifier")
+            or headers.get("x-request-id")
             or f"{event_type}:{payload.get('timestamp')}:{issue_id}"
         )
-        if not self._idempotency.mark_if_new(delivery_id):
-            raise JiraIntegrationError(f"duplicate delivery '{delivery_id}'")
 
-        return build_normalized_approval_event(
+    def build_normalized_event(
+        self,
+        *,
+        payload: dict[str, Any],
+        event_type: str,
+        route: JiraEventRoute,
+        delivery_id: str,
+    ) -> NormalizedJiraEvent:
+        issue_id = str(resolve_path(payload, "issue.id", error_cls=JiraIntegrationError))
+        issue_key = str(resolve_path(payload, "issue.key", error_cls=JiraIntegrationError))
+        normalized = build_normalized_approval_event(
             payload=payload,
             route=route,
             source_event_type=event_type,
             idempotency_key=delivery_id,
             source_system="jira",
-            default_request_id=str(
-                resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)
-            ),
+            default_request_id=issue_key,
             default_source_record_id=issue_id,
             error_cls=JiraIntegrationError,
             default_source_object_type="jira_issue",
             default_workflow_stage="pending_approval",
             default_requested_action=route.action_type,
-            default_correlation_key=str(
-                resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)
-            ),
-            source_metadata={
-                "jira_issue_key": str(
-                    resolve_path(payload, "issue.key", error_cls=JiraIntegrationError)
-                )
-            },
+            default_correlation_key=issue_key,
+            source_metadata={"jira_issue_key": issue_key},
         )
-
-    def map_to_proposal(self, event: NormalizedJiraEvent):
-        route = self._config.routes[event.source_event_type]
-        return to_action_proposal(event, route)
-
-    def route_for_event_type(self, event_type: str) -> JiraEventRoute | None:
-        return self._config.routes.get(event_type)
+        MinimalApprovalEventContract(
+            source_system=normalized.source_system,
+            source_event_type=normalized.source_event_type,
+            request_id=normalized.request_id,
+            requested_action=normalized.requested_action,
+            actor_id=normalized.actor.actor_id,
+            correlation_key=normalized.correlation_key,
+            idempotency_key=normalized.idempotency_key,
+        )
+        return normalized

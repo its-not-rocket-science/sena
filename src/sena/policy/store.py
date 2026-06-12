@@ -17,7 +17,9 @@ from sena.policy.persistence_models import BundleHistoryRow, BundleRow
 
 ALLOWED_TRANSITIONS: set[tuple[str, str]] = {
     ("draft", "candidate"),
+    ("candidate", "approved"),
     ("candidate", "active"),
+    ("approved", "active"),
     ("active", "deprecated"),
 }
 
@@ -311,6 +313,8 @@ class SQLitePolicyBundleRepository:
                         f"bundle id '{bundle_id}' not found"
                     )
                 source = row["lifecycle"]
+                if source == target_lifecycle:
+                    return
                 if (source, target_lifecycle) not in ALLOWED_TRANSITIONS:
                     raise PolicyBundleInvalidTransitionError(
                         f"invalid lifecycle transition '{source}' -> '{target_lifecycle}'"
@@ -735,18 +739,3 @@ class SQLitePolicyBundleRepository:
         hashes = sorted(cls._rule_hash(rule) for rule in rules)
         canonical = json.dumps(hashes, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-class PostgresPolicyBundleRepository:
-    """Architecture placeholder for enterprise relational persistence.
-
-    This class intentionally shares the policy repository contract while
-    leaving query implementation for a future psycopg/SQLAlchemy rollout.
-    """
-
-    def __init__(self, dsn: str):
-        self.dsn = dsn
-
-    def initialize(self) -> None:
-        raise NotImplementedError(
-            "Postgres adapter not implemented yet; use SQLitePolicyBundleRepository"
-        )

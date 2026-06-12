@@ -17,16 +17,48 @@ def create_health_router(state: EngineState) -> APIRouter:
 
     @router.get("/ready", response_model=ReadinessResponse, summary="Readiness probe")
     def ready() -> ReadinessResponse:
-        checks = {
-            "policy_bundle_loaded": "ok",
-            "auth_config_valid": "ok",
-            "policy_store_reachable": "ok",
-        }
-        if state.settings.runtime_mode == "production":
-            checks["production_guardrails_enforced"] = "ok"
+        checks = _readiness_checks(state)
         return ReadinessResponse(
             status="ready", mode=state.settings.runtime_mode, checks=checks
         )
+
+    @router.get(
+        "/operations/overview",
+        summary="Operator observability summary for supported paths",
+    )
+    def operations_overview() -> dict[str, object]:
+        connector_dead_letters: dict[str, int] = {}
+        connector_reliability: dict[str, dict[str, object]] = {}
+        for connector_name, connector in (
+            ("jira", state.jira_connector),
+            ("servicenow", state.servicenow_connector),
+        ):
+            if connector is None:
+                continue
+            summary = connector.outbound_reliability_summary()
+            connector_reliability[connector_name] = summary
+            connector_dead_letters[connector_name] = int(
+                summary.get("dead_letter_volume", 0)
+            )
+        runtime_dead_letters = state.processing_store.list_dead_letters(limit=1)
+        return {
+            "status": "ok",
+            "mode": state.settings.runtime_mode,
+            "bundle": BundleInfo.model_validate(state.metadata.__dict__).model_dump(),
+            "readiness": {
+                "status": "ready",
+                "checks": _readiness_checks(state),
+            },
+            "operator_view": {
+                **state.metrics.observability_snapshot(),
+                "dead_letters": {
+                    "runtime_processing_queue_visible": len(runtime_dead_letters),
+                    "connector_dead_letter_volume": connector_dead_letters,
+                },
+                "connector_reliability_summary": connector_reliability,
+                "job_status_counts": state.job_manager.status_counts(),
+            },
+        }
 
     @router.get("/bundle", response_model=BundleInfo, summary="Get loaded bundle metadata")
     def bundle() -> BundleInfo:
@@ -45,3 +77,14 @@ def create_health_router(state: EngineState) -> APIRouter:
         }
 
     return router
+
+
+def _readiness_checks(state: EngineState) -> dict[str, str]:
+    checks = {
+        "policy_bundle_loaded": "ok",
+        "auth_config_valid": "ok",
+        "policy_store_reachable": "ok",
+    }
+    if state.settings.runtime_mode == "production":
+        checks["production_guardrails_enforced"] = "ok"
+    return checks

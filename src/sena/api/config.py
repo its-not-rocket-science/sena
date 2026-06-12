@@ -12,8 +12,9 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 
 @dataclass(frozen=True)
 class ApiSettings:
+    deployment_profile: str | None = None
     runtime_mode: str = "development"
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8000
     policy_dir: str = str(DEFAULT_POLICY_DIR)
     bundle_name: str = "enterprise-compliance-controls"
@@ -22,6 +23,19 @@ class ApiSettings:
     enable_api_key_auth: bool = False
     api_key: str | None = None
     api_keys: tuple[tuple[str, str], ...] = ()
+    enable_jwt_auth: bool = False
+    jwt_issuer: str | None = None
+    jwt_audience: str | None = None
+    jwt_hs256_secret: str | None = None
+    jwt_required_claims: tuple[str, ...] = ("sub",)
+    jwt_role_claim: str = "roles"
+    jwt_role_mapping: tuple[tuple[str, str], ...] = ()
+    require_signed_step_up: bool = True
+    step_up_hs256_secret: str | None = None
+    step_up_max_age_seconds: int = 300
+    step_up_issuer: str = "sena-step-up"
+    step_up_key_id: str = "default"
+    enforce_policy_actor_identity: bool = False
     audit_sink_jsonl: str | None = None
     audit_storage_backend: str = "local_file"
     audit_ship_destination: str | None = None
@@ -34,6 +48,7 @@ class ApiSettings:
     servicenow_mapping_config_path: str | None = None
     servicenow_webhook_secret: str | None = None
     servicenow_webhook_secret_previous: str | None = None
+    experimental_routes_enabled: bool | None = None
     slack_bot_token: str | None = None
     slack_channel: str | None = None
     rate_limit_requests: int = 120
@@ -53,6 +68,9 @@ class ApiSettings:
     promotion_gate_break_glass_enabled: bool = True
     processing_sqlite_path: str = "./.sena_runtime.db"
     idempotency_ttl_hours: int = 24
+    payload_retention_ttl_hours: int = 24
+    data_default_region: str = "us-east-1"
+    data_allowed_regions: tuple[str, ...] = ("us-east-1",)
     jira_write_back: bool = False
     servicenow_write_back: bool = False
     jira_base_url: str | None = None
@@ -65,10 +83,15 @@ class ApiSettings:
     servicenow_username: str | None = None
     servicenow_password: str | None = None
     servicenow_oauth_token: str | None = None
+    integration_reliability_sqlite_path: str | None = None
+    integration_reliability_allow_inmemory: bool = False
     auto_recovery_enabled: bool = False
     auto_recovery_error_threshold: float = 0.10
     auto_recovery_window_seconds: int = 300
     auto_recovery_alert_webhook: str | None = None
+    ingestion_queue_backend: str = "memory"
+    ingestion_queue_max_size: int = 1000
+    ingestion_queue_redis_url: str | None = None
 
 
 def _parse_api_keys(raw: str | None) -> tuple[tuple[str, str], ...]:
@@ -114,6 +137,26 @@ def _parse_csv(raw: str | None) -> tuple[str, ...]:
     return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
+
+
+def _parse_mapping(raw: str | None, *, env_name: str) -> tuple[tuple[str, str], ...]:
+    if not raw:
+        return ()
+    pairs: list[tuple[str, str]] = []
+    for item in raw.split(","):
+        entry = item.strip()
+        if not entry:
+            continue
+        source, sep, target = entry.partition(":")
+        if not sep:
+            raise ValueError(f"{env_name} entries must use source:target format")
+        source_norm = source.strip()
+        target_norm = target.strip()
+        if not source_norm or not target_norm:
+            raise ValueError(f"{env_name} entries must include both source and target")
+        pairs.append((source_norm, target_norm))
+    return tuple(pairs)
+
 def _parse_regression_budgets(raw: str | None) -> tuple[tuple[str, int], ...]:
     if raw is None:
         return ()
@@ -129,9 +172,13 @@ def _parse_regression_budgets(raw: str | None) -> tuple[tuple[str, int], ...]:
 
 
 def load_settings_from_env() -> ApiSettings:
+    experimental_routes_env = os.getenv("SENA_ENABLE_EXPERIMENTAL_ROUTES")
     return ApiSettings(
+        deployment_profile=(
+            os.getenv("SENA_DEPLOYMENT_PROFILE", "").strip().lower() or None
+        ),
         runtime_mode=os.getenv("SENA_RUNTIME_MODE", "development").strip().lower(),
-        host=os.getenv("SENA_API_HOST", "0.0.0.0"),
+        host=os.getenv("SENA_API_HOST", "127.0.0.1"),
         port=_parse_int(os.getenv("SENA_API_PORT"), default=8000),
         policy_dir=os.getenv(
             "SENA_POLICY_DIR",
@@ -145,6 +192,25 @@ def load_settings_from_env() -> ApiSettings:
         ),
         api_key=os.getenv("SENA_API_KEY"),
         api_keys=_parse_api_keys(os.getenv("SENA_API_KEYS")),
+        enable_jwt_auth=_parse_bool(os.getenv("SENA_JWT_AUTH_ENABLED"), default=False),
+        jwt_issuer=os.getenv("SENA_JWT_ISSUER"),
+        jwt_audience=os.getenv("SENA_JWT_AUDIENCE"),
+        jwt_hs256_secret=os.getenv("SENA_JWT_HS256_SECRET"),
+        jwt_required_claims=_parse_csv(os.getenv("SENA_JWT_REQUIRED_CLAIMS") or "sub"),
+        jwt_role_claim=os.getenv("SENA_JWT_ROLE_CLAIM", "roles"),
+        jwt_role_mapping=_parse_mapping(os.getenv("SENA_JWT_ROLE_MAPPING"), env_name="SENA_JWT_ROLE_MAPPING"),
+        require_signed_step_up=_parse_bool(
+            os.getenv("SENA_REQUIRE_SIGNED_STEP_UP"), default=False
+        ),
+        step_up_hs256_secret=os.getenv("SENA_STEP_UP_HS256_SECRET"),
+        step_up_max_age_seconds=_parse_int(
+            os.getenv("SENA_STEP_UP_MAX_AGE_SECONDS"), default=300
+        ),
+        step_up_issuer=os.getenv("SENA_STEP_UP_ISSUER", "sena-step-up"),
+        step_up_key_id=os.getenv("SENA_STEP_UP_KEY_ID", "default"),
+        enforce_policy_actor_identity=_parse_bool(
+            os.getenv("SENA_ENFORCE_POLICY_ACTOR_IDENTITY"), default=False
+        ),
         audit_sink_jsonl=os.getenv("SENA_AUDIT_SINK_JSONL"),
         audit_storage_backend=os.getenv("SENA_AUDIT_STORAGE_BACKEND", "local_file"),
         audit_ship_destination=os.getenv("SENA_AUDIT_SHIP_DESTINATION"),
@@ -157,6 +223,11 @@ def load_settings_from_env() -> ApiSettings:
         servicenow_mapping_config_path=os.getenv("SENA_SERVICENOW_MAPPING_CONFIG"),
         servicenow_webhook_secret=os.getenv("SENA_SERVICENOW_WEBHOOK_SECRET"),
         servicenow_webhook_secret_previous=os.getenv("SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS"),
+        experimental_routes_enabled=(
+            _parse_bool(experimental_routes_env, default=False)
+            if experimental_routes_env is not None
+            else None
+        ),
         slack_bot_token=os.getenv("SENA_SLACK_BOT_TOKEN"),
         slack_channel=os.getenv("SENA_SLACK_CHANNEL"),
         rate_limit_requests=_parse_int(
@@ -206,6 +277,13 @@ def load_settings_from_env() -> ApiSettings:
         ),
         processing_sqlite_path=os.getenv("SENA_PROCESSING_SQLITE_PATH", "./.sena_runtime.db"),
         idempotency_ttl_hours=_parse_int(os.getenv("SENA_IDEMPOTENCY_TTL_HOURS"), default=24),
+        payload_retention_ttl_hours=_parse_int(
+            os.getenv("SENA_PAYLOAD_RETENTION_TTL_HOURS"), default=24
+        ),
+        data_default_region=os.getenv("SENA_DATA_DEFAULT_REGION", "us-east-1"),
+        data_allowed_regions=_parse_csv(
+            os.getenv("SENA_DATA_ALLOWED_REGIONS") or "us-east-1"
+        ),
         jira_write_back=_parse_bool(os.getenv("SENA_JIRA_WRITE_BACK"), default=False),
         servicenow_write_back=_parse_bool(os.getenv("SENA_SERVICENOW_WRITE_BACK"), default=False),
         jira_base_url=os.getenv("SENA_JIRA_BASE_URL"),
@@ -218,6 +296,12 @@ def load_settings_from_env() -> ApiSettings:
         servicenow_username=os.getenv("SENA_SERVICENOW_USERNAME"),
         servicenow_password=os.getenv("SENA_SERVICENOW_PASSWORD"),
         servicenow_oauth_token=os.getenv("SENA_SERVICENOW_OAUTH_TOKEN"),
+        integration_reliability_sqlite_path=os.getenv(
+            "SENA_INTEGRATION_RELIABILITY_SQLITE_PATH"
+        ),
+        integration_reliability_allow_inmemory=_parse_bool(
+            os.getenv("SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY"), default=False
+        ),
         auto_recovery_enabled=_parse_bool(
             os.getenv("SENA_AUTO_RECOVERY_ENABLED"), default=False
         ),
@@ -228,4 +312,9 @@ def load_settings_from_env() -> ApiSettings:
             os.getenv("SENA_AUTO_RECOVERY_WINDOW_SECONDS"), default=300
         ),
         auto_recovery_alert_webhook=os.getenv("SENA_AUTO_RECOVERY_ALERT_WEBHOOK"),
+        ingestion_queue_backend=os.getenv("SENA_INGESTION_QUEUE_BACKEND", "memory"),
+        ingestion_queue_max_size=_parse_int(
+            os.getenv("SENA_INGESTION_QUEUE_MAX_SIZE"), default=1000
+        ),
+        ingestion_queue_redis_url=os.getenv("SENA_INGESTION_QUEUE_REDIS_URL"),
     )

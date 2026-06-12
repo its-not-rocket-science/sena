@@ -80,6 +80,9 @@ def test_invalid_transition_and_active_validation_artifact_required(tmp_path) ->
     repo.transition_bundle(
         bundle_id, "candidate", promoted_by="x", promotion_reason="ok"
     )
+    repo.transition_bundle(
+        bundle_id, "approved", promoted_by="x", promotion_reason="peer reviewed"
+    )
     with pytest.raises(PolicyBundleInvalidTransitionError, match="validation_artifact"):
         repo.transition_bundle(
             bundle_id, "active", promoted_by="x", promotion_reason="no artifact"

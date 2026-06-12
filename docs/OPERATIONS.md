@@ -13,9 +13,9 @@ Application versioning: package and FastAPI app version are sourced from `sena._
 
 | Mode | Intent | Key behavior |
 |---|---|---|
-| `development` | local dev and tests | permissive defaults, optional auth and integrations |
-| `pilot` | enterprise pilot pre-prod | same code-path as prod candidates, recommended strict auth/signing/audit |
-| `production` | hardened runtime | mandatory auth, audit sink, strict signature verification, keyring, Jira secret when Jira webhook enabled |
+| `development` | local dev and tests | permissive defaults, optional auth and integrations; Jira/ServiceNow allow-all webhook verification allowed only with explicit startup warnings |
+| `pilot` | enterprise pilot pre-prod | same code-path as prod candidates; fail-closed Jira/ServiceNow webhook secret requirements (allow-all disabled) |
+| `production` | hardened runtime | mandatory auth, audit sink, strict signature verification + keyring, and fail-closed Jira/ServiceNow integration guardrails (mapping + webhook secret + durable reliability store) |
 
 ## 3) Startup validation (fail-fast)
 
@@ -35,7 +35,12 @@ SENA startup now fails for the following classes of misconfiguration:
   - `SENA_AUDIT_SINK_JSONL`
   - `SENA_BUNDLE_SIGNATURE_STRICT=true`
   - `SENA_BUNDLE_SIGNATURE_KEYRING_DIR` existing directory
-  - `SENA_JIRA_WEBHOOK_SECRET` when Jira mapping is enabled
+  - `SENA_JIRA_MAPPING_CONFIG` + `SENA_JIRA_WEBHOOK_SECRET` (or previous secret) when Jira integration is enabled
+  - `SENA_SERVICENOW_MAPPING_CONFIG` + `SENA_SERVICENOW_WEBHOOK_SECRET` (or previous secret) when ServiceNow integration is enabled
+  - `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` when Jira or ServiceNow integration is enabled
+- pilot/production mode missing supported connector webhook secrets:
+  - `SENA_JIRA_WEBHOOK_SECRET` (or previous secret) when Jira integration is enabled
+  - `SENA_SERVICENOW_WEBHOOK_SECRET` (or previous secret) when ServiceNow integration is enabled
 
 ### Mandatory pre-deploy gate
 
@@ -67,7 +72,20 @@ sena production-check --format both
 - `SENA_API_KEY_ENABLED`: enable API key auth
 - `SENA_API_KEY`: single admin key mode
 - `SENA_API_KEYS`: `key:role,key2:role2` mode
-  - roles: `admin`, `policy_author`, `evaluator`
+  - roles: `admin`, `policy_author`, `reviewer`, `deployer`, `auditor`, `verifier`
+- `SENA_JWT_AUTH_ENABLED`: enable JWT bearer-token auth
+- `SENA_JWT_HS256_SECRET`: shared secret for local/dev HS256 verification
+- `SENA_JWT_ISSUER`, `SENA_JWT_AUDIENCE`: optional claim constraints
+- `SENA_JWT_REQUIRED_CLAIMS`: required token claims (CSV, default `sub`)
+- `SENA_JWT_ROLE_CLAIM`: claim containing external role(s)
+- `SENA_JWT_ROLE_MAPPING`: external-to-internal mapping (`idp-role:reviewer,...`)
+- `SENA_REQUIRE_SIGNED_STEP_UP`: require cryptographically signed step-up assertions for sensitive operations (default `true`)
+- `SENA_STEP_UP_HS256_SECRET`: HMAC secret for step-up assertion verification (required when signed step-up is enabled)
+- `SENA_STEP_UP_MAX_AGE_SECONDS`: max age for step-up assertions (default `300`)
+- `SENA_STEP_UP_ISSUER`: expected `iss` claim for signed step-up assertions (default `sena-step-up`)
+- `SENA_STEP_UP_KEY_ID`: expected `kid` claim for signed step-up assertions (default `default`)
+- `SENA_ENFORCE_POLICY_ACTOR_IDENTITY`: optionally bind policy payload `actor_id` to JWT `sub` on evaluation endpoints
+  - enforced ABAC attributes: `environment`, `bundle_name`, `action_type`
 
 ### Request safety controls
 
@@ -103,9 +121,17 @@ Break-glass promotions must set `break_glass=true` **and** provide `break_glass_
 - `SENA_WEBHOOK_MAPPING_CONFIG`
 - `SENA_JIRA_MAPPING_CONFIG`
 - `SENA_JIRA_WEBHOOK_SECRET`
+- `SENA_JIRA_WEBHOOK_SECRET_PREVIOUS`
 - `SENA_SERVICENOW_MAPPING_CONFIG`
+- `SENA_SERVICENOW_WEBHOOK_SECRET`
+- `SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS`
+- `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH`
 - `SENA_SLACK_BOT_TOKEN`
 - `SENA_SLACK_CHANNEL`
+
+Supported-connector verification policy:
+- `development`: missing Jira/ServiceNow webhook secrets are permitted, but startup emits warnings that inbound events are forgeable.
+- `pilot` and `production`: allow-all webhook verification is disabled for Jira/ServiceNow; startup fails if enabled connectors are missing secrets.
 
 ## 5) Health and readiness semantics
 
@@ -117,6 +143,30 @@ Break-glass promotions must set `break_glass=true` **and** provide `break_glass_
   - `production_guardrails_enforced` (production mode only)
 
 Because SENA fails startup on invalid critical settings, readiness reflects a **post-validation healthy process** rather than a best-effort degraded state.
+
+### 5.1) Operator-ready daily view (supported path)
+
+Use `GET /v1/operations/overview` as the opinionated daily operator entrypoint. It summarizes:
+
+- inbound events received (`inbound_events_received`)
+- duplicate suppression (`/v1/integrations/{connector}/admin/outbound/duplicates/summary` and Prometheus duplicate counters)
+- outcomes by connector + policy bundle (`outcomes_by_connector_policy_bundle`)
+- exception overlays applied (`exception_overlays_applied`)
+- dead-letter growth (`dead_letters.connector_dead_letter_volume`)
+- simulation/replay job behavior (`jobs`, `job_status_counts`)
+
+Prometheus metric names used by this view:
+
+- `sena_connector_inbound_events_received_total{connector,event_type}`
+- `sena_connector_inbound_duplicate_suppression_total{connector}`
+- `sena_connector_outbound_duplicate_suppression_total{connector,target}`
+- `sena_connector_decision_outcomes_total{connector,policy_bundle,outcome}`
+- `sena_exception_overlays_applied_total{connector,policy_bundle,outcome}`
+- `sena_connector_outbound_dead_letter_total{connector,target}`
+- `sena_connector_outbound_dead_letter_volume{connector}`
+- `sena_connector_outbound_replay_total{connector,target,status}`
+- `sena_jobs_submitted_total{job_type}`
+- `sena_jobs_terminal_total{job_type,status}`
 
 ## 6) Secure integration and secret handling guidance
 
@@ -135,10 +185,197 @@ See `docs/DEPLOYMENT_PROFILES.md` for full deployment profiles and copy-paste ex
 - enterprise pilot
 - stricter production-like mode
 
+## 7.1) Supported integration operator runbooks (Jira + ServiceNow)
+
+Use this checklist for the supported integration paths only:
+- `POST /v1/integrations/jira/webhook`
+- `POST /v1/integrations/servicenow/webhook`
+
+### Bring-up checklist
+
+1. Set connector mapping + secret env vars:
+   - Jira: `SENA_JIRA_MAPPING_CONFIG`, `SENA_JIRA_WEBHOOK_SECRET`
+   - ServiceNow: `SENA_SERVICENOW_MAPPING_CONFIG`, `SENA_SERVICENOW_WEBHOOK_SECRET`
+2. Set `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` to durable storage.
+3. Run `sena production-check --format both` and confirm pass.
+4. Verify readiness at `GET /v1/ready` and a known-good webhook fixture in non-production.
+
+Copy-paste startup verification:
+
+```bash
+export SENA_BASE_URL="${SENA_BASE_URL:-http://127.0.0.1:8000}"
+export SENA_ADMIN_API_KEY="${SENA_ADMIN_API_KEY:?set admin key}"
+
+curl -fsS "$SENA_BASE_URL/v1/ready" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+### Live incident triage checklist
+
+1. Confirm request authenticity failures via `error.code`:
+   - `jira_authentication_failed`
+   - `servicenow_authentication_failed`
+2. Check mapping issues via `error.code`:
+   - `jira_invalid_mapping` / `jira_missing_required_fields`
+   - `servicenow_invalid_mapping` / `servicenow_missing_required_fields`
+3. Inspect outbound reliability state:
+   - `GET /v1/integrations/{connector}/admin/outbound/completions`
+   - `GET /v1/integrations/{connector}/admin/outbound/dead-letter`
+   - `GET /v1/integrations/{connector}/admin/outbound/duplicates/summary`
+4. Replay only explicit dead-letter IDs after root-cause fix:
+   - `POST /v1/integrations/{connector}/admin/outbound/dead-letter/replay`
+
+### Detecting common failure classes quickly
+
+The following checks are designed to answer “is SENA working correctly today?” in minutes.
+
+1. **Broken mapping configs**
+   - Symptoms: webhook requests fail with
+     - `jira_invalid_mapping`, `jira_missing_required_fields`
+     - `servicenow_invalid_mapping`, `servicenow_missing_required_fields`
+   - Confirm by checking API error rates (`api_errors_total`) and a rise in runtime dead-letter items for webhook event types.
+   - Action: validate mapping file paths and required route fields, then replay affected dead-letter IDs.
+
+2. **Auth failures**
+   - Symptoms: `jira_authentication_failed` / `servicenow_authentication_failed` errors; no corresponding rise in connector outcomes.
+   - Logs/events: check structured events with stable names (`request_processed`, connector webhook error responses) and `error_code`.
+   - Action: rotate/verify webhook secrets and retry a known-good fixture.
+
+3. **Delivery retries (outbound pressure)**
+   - Signals:
+     - `sena_connector_outbound_replay_total{status="failure"}` increasing
+     - completion records showing `attempts` close to `max_attempts`
+   - Action: inspect remote dependency health and replay dead-letter records after fix.
+
+4. **Dead-letter growth**
+   - Signals:
+     - `sena_connector_outbound_dead_letter_volume{connector}` trending up
+     - `/v1/operations/overview.operator_view.dead_letters.connector_dead_letter_volume` non-zero and rising
+   - Action: triage newest dead-letter items first, group by repeated `error`, replay in batches, escalate if growth persists.
+
+5. **Policy drift or outcome shifts**
+   - Signals:
+     - unexpected mix changes in `sena_connector_decision_outcomes_total{connector,policy_bundle,outcome}`
+     - elevated `sena_exception_overlays_applied_total` indicating temporary exception pressure
+   - Action:
+     - run replay/simulation (`/v1/simulation`, `/v1/simulation/replay`)
+     - compare candidate vs baseline outcomes before promotions
+     - verify no unplanned bundle rollout occurred.
+
+### Recovery decision rules
+
+- Prefer replay over manual redrive whenever the connector can safely retry.
+- Use manual redrive only with an operator note:
+  - `POST /v1/integrations/{connector}/admin/outbound/dead-letter/manual-redrive?note=...`
+- Keep API response contracts machine-readable: route by `error.code`, not by message text.
+- For supported-path incidents, use admin APIs/CLI only (do **not** inspect SQLite tables directly).
+
+### End-to-end operator flow (supported Jira + ServiceNow path)
+
+The following flow is designed to be complete for incident handling without opening SQLite directly.
+
+#### 1) Startup configuration validation
+
+```bash
+export SENA_BASE_URL="${SENA_BASE_URL:-http://127.0.0.1:8000}"
+export SENA_ADMIN_API_KEY="${SENA_ADMIN_API_KEY:?set admin key}"
+export CONNECTOR="${CONNECTOR:-jira}" # or servicenow
+
+sena production-check --format both
+curl -fsS "$SENA_BASE_URL/v1/health" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+curl -fsS "$SENA_BASE_URL/v1/ready" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+Expected: `/v1/health.status=ok` and `/v1/ready.status=ready`.
+
+#### 2) Normal health checks (steady state)
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/health" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+curl -fsS "$SENA_BASE_URL/v1/ready" -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/duplicates/summary" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+Use the duplicate summary trend as an early warning for repeated webhook deliveries or repeated outbound retries.
+
+#### 3) Outbound completion inspection
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/completions?limit=50" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+Interpretation:
+- `operation_key`: deterministic key for a connector action (dedupe boundary).
+- `target`: Jira (`comment` or `status`) or ServiceNow (`callback`).
+- `attempts` close to `max_attempts`: reliability pressure even when eventually completed.
+- `result`: remote-system callback response (authoritative outcome details).
+
+#### 4) Dead-letter inspection
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/dead-letter?limit=50" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+Prioritize by:
+- newest first (returned `id` descending),
+- repeated `error` patterns,
+- `attempts == max_attempts` (exhausted retries).
+
+#### 5) Replay dead-letter item (preferred recovery)
+
+After root-cause fix (credential, endpoint, mapping, remote-system outage):
+
+```bash
+export DEAD_LETTER_ID=123
+curl -fsS -X POST \
+  "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/dead-letter/replay" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "[$DEAD_LETTER_ID]" | jq .
+```
+
+Expected per item: `{"dead_letter_id":123,"status":"replayed",...}` and the item is removed from dead-letter.
+
+#### 6) Manual redrive (only when replay is not possible)
+
+Use when delivery already happened outside SENA and you must reconcile reliability state:
+
+```bash
+export DEAD_LETTER_ID=123
+curl -fsS -X POST \
+  "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/dead-letter/manual-redrive?note=external-redrive-INC1234" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "[$DEAD_LETTER_ID]" | jq .
+```
+
+Expected per item: `{"dead_letter_id":123,"status":"manually_redriven"}`.
+
+#### 7) Duplicate suppression interpretation
+
+```bash
+curl -fsS "$SENA_BASE_URL/v1/integrations/$CONNECTOR/admin/outbound/duplicates/summary" \
+  -H "x-api-key: $SENA_ADMIN_API_KEY" | jq .
+```
+
+Interpretation guide:
+- `inbound.seen_total - inbound.unique_delivery_ids` approximates duplicate webhook deliveries observed.
+- `inbound.suppressed_total` counts inbound duplicates safely ignored by idempotency.
+- `inbound.conflict_total` counts delivery-id reuse attempts with semantically different payloads (rejected).
+- `outbound.suppressed_total` counts outbound duplicate sends prevented.
+- `outbound.by_target` isolates suppression by delivery target (`comment`, `status`, `callback`).
+
 ## 8) API surface reminders
 
 - versioned API endpoints under `/v1/*`
 - unversioned compatibility routes are removed and return deprecation error payloads.
+- experimental integration routes are mode-gated:
+  - `development`: enabled by default
+  - `pilot`/`production`: disabled by default
+  - explicit opt-in: `SENA_ENABLE_EXPERIMENTAL_ROUTES=true`
 
 ### Gated promotion flow example
 
@@ -163,7 +400,72 @@ Experimental integration surfaces (evaluation-only, no compatibility guarantees)
 - `/v1/integrations/webhook`
 - `/v1/integrations/slack/interactions`
 
-## 10) Policy registry backup, restore, and disaster recovery runbook
+### Migration / rollout note (2026-04-22)
+
+If existing pilot/prod environments depended on `/v1/integrations/webhook` or
+`/v1/integrations/slack/interactions`, those routes now return 404 unless
+`SENA_ENABLE_EXPERIMENTAL_ROUTES=true` is explicitly configured. Keep the
+default (`false`/unset) for supported-path deployments.
+
+## 10) Observability design (logs, metrics, tracing, alerts)
+
+### Structured logs
+
+Every request emits JSON logs with:
+- request correlation: `request_id`, `trace_id`, `span_id`
+- HTTP context: `method`, `path`, `status_code`, `duration_ms`
+- decision context when applicable: `decision_id`, `outcome`, `policy_bundle`, `evaluation_ms`, `endpoint`
+- failure context: `error_code`, `errors`
+
+Operator usage:
+- join logs by `request_id` for API incident triage;
+- join cross-system requests by `trace_id` (propagated via `traceparent` and echoed in response headers).
+
+### Metrics that matter
+
+Prometheus endpoints: `/metrics`, `/v1/metrics/prometheus`.
+
+Key metrics:
+- availability/traffic:
+  - `request_count_total{method,path,status_code}`
+  - `request_duration_seconds_bucket{method,path}`
+  - `api_errors_total{path,error_code,status_code}`
+- policy decision quality and latency:
+  - `sena_decisions_total{outcome,policy}`
+  - `sena_evaluation_seconds_bucket`
+  - `sena_active_policies`
+- audit integrity:
+  - `sena_audit_entries_total`
+  - `sena_merkle_root_timestamp`
+  - `sena_verification_requests_total`
+  - `sena_verification_failures_total`
+  - `sena_audit_verification_passed`
+
+### Tracing
+
+SENA now supports trace correlation at the HTTP edge:
+- accepts inbound W3C `traceparent` header;
+- if absent/invalid, generates `trace_id` + `span_id`;
+- returns `traceparent` and `x-trace-id` response headers for downstream correlation.
+
+This is sufficient for log/metric correlation without requiring a full OpenTelemetry backend.
+
+### Alert thresholds (starter SLO-driven defaults)
+
+- **API availability (critical)**: 5xx ratio > 1% for 5 minutes on evaluation endpoints.
+- **Latency (warning/critical)**:
+  - warning: p95 `request_duration_seconds` > 250ms for 10 minutes;
+  - critical: p95 > 1s for 5 minutes.
+- **Policy evaluation (critical)**: p95 `sena_evaluation_seconds` > 500ms for 10 minutes.
+- **Error storms (critical)**: `api_errors_total{error_code="timeout"}` increases > 20 in 5 minutes.
+- **Rate limiting pressure (warning)**: `api_errors_total{error_code="rate_limited"}` ratio > 5% for 10 minutes.
+- **Audit integrity (critical)**:
+  - `sena_audit_verification_passed == 0` for 2 consecutive checks;
+  - any increase in `sena_verification_failures_total`.
+- **Audit freshness (critical)**: `time() - sena_merkle_root_timestamp > 300` for active systems.
+- **Auto-recovery trigger (critical)**: alert on `policy.automatic_recovery` webhook events.
+
+## 11) Policy registry backup, restore, and disaster recovery runbook
 
 Use this runbook for sqlite-backed policy registry deployments (`SENA_POLICY_STORE_BACKEND=sqlite`) and JSONL audit chains.
 
@@ -225,7 +527,7 @@ python -m sena.cli.main registry --sqlite-path /var/lib/sena/policy-registry.db 
 
 On any verification failure, restore exits non-zero and includes machine-parseable check output.
 
-## 11) Audit operations (pilot-grade)
+## 12) Audit operations (pilot-grade)
 
 Use the audit CLI for operator workflows:
 
@@ -240,3 +542,13 @@ python -m sena.cli.main audit --audit-path /var/log/sena/audit.jsonl locate-deci
 - `locate-decision`: finds the decision id and returns record index, segment location, sequence number, and chain links for rapid incident triage.
 
 Corruption diagnostics are precise and actionable, with record and segment identifiers (for example: malformed record location, missing segment file, manifest sequence mismatch).
+
+## 8) Dedicated runbooks and day-2 checklist
+
+Use these command-first documents for incident execution:
+
+- `docs/RUNBOOKS.md`
+- `docs/DAY2_OPERATIONS.md`
+
+For dead-letter replay/manual-redrive API actions, use `python scripts/dead_letter_admin.py --help`.
+For backup/restore verification drills, use `python scripts/registry_backup_restore_drill.py --help`.

@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
+from sena.api.auth import AuthError, evaluate_sensitive_operation, parse_step_up_assertion_payload
 from sena.api.errors import raise_api_error
 from sena.api.runtime import EngineState, verify_bundle_signature
 from sena.api.schemas import (
@@ -25,7 +26,13 @@ def create_bundles_router(state: EngineState) -> APIRouter:
     )
 
     @router.post("/bundle/register", summary="Register policy bundle")
-    def register_bundle(payload: BundleRegisterRequest) -> dict[str, Any]:
+    def register_bundle(payload: BundleRegisterRequest, request: Request) -> dict[str, Any]:
+        role = getattr(request.state, "api_role", "")
+        if role == "deployer":
+            raise_api_error(
+                "forbidden",
+                details={"reason": "separation_of_duties: deployer cannot author bundles"},
+            )
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
         try:
@@ -41,7 +48,45 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             raise_api_error("http_bad_request", details={"reason": str(exc)})
 
     @router.post("/bundle/promote", summary="Promote policy bundle lifecycle")
-    def promote_bundle(payload: BundlePromoteRequest) -> dict[str, Any]:
+    def promote_bundle(payload: BundlePromoteRequest, request: Request) -> dict[str, Any]:
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="bundle_promotion",
+            principal=principal,
+            headers=request.headers,
+            require_signed_step_up=state.settings.require_signed_step_up,
+            step_up_hs256_secret=state.settings.step_up_hs256_secret,
+            step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+            step_up_issuer=state.settings.step_up_issuer,
+            step_up_key_id=state.settings.step_up_key_id,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
+        if principal:
+            primary_approver = principal.subject
+            secondary_approver = request.headers.get("x-secondary-approver-id")
+            if state.settings.require_signed_step_up and state.settings.step_up_hs256_secret:
+                try:
+                    step_up_claims = parse_step_up_assertion_payload(
+                        token=str(request.headers.get("x-step-up-auth", "")).strip(),
+                        secret=state.settings.step_up_hs256_secret,
+                        max_age_seconds=state.settings.step_up_max_age_seconds,
+                        expected_issuer=state.settings.step_up_issuer,
+                        expected_key_id=state.settings.step_up_key_id,
+                    )
+                    secondary_approver = str(step_up_claims.get("secondary_sub", "")).strip()
+                except AuthError:
+                    secondary_approver = secondary_approver or ""
+            merged_attestations = sorted(
+                {
+                    *(payload.approver_attestations or []),
+                    primary_approver or "",
+                    secondary_approver or "",
+                }
+            )
+            payload = payload.model_copy(
+                update={"approver_attestations": merged_attestations}
+            )
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
         try:
@@ -73,7 +118,20 @@ def create_bundles_router(state: EngineState) -> APIRouter:
             )
 
     @router.post("/bundle/rollback", summary="Rollback bundle to known version")
-    def rollback_bundle(payload: BundleRollbackRequest) -> dict[str, Any]:
+    def rollback_bundle(payload: BundleRollbackRequest, request: Request) -> dict[str, Any]:
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="bundle_rollback",
+            principal=principal,
+            headers=request.headers,
+            require_signed_step_up=state.settings.require_signed_step_up,
+            step_up_hs256_secret=state.settings.step_up_hs256_secret,
+            step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+            step_up_issuer=state.settings.step_up_issuer,
+            step_up_key_id=state.settings.step_up_key_id,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
         if state.policy_repo is None:
             raise_api_error("policy_store_unavailable")
         try:

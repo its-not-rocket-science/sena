@@ -1,0 +1,53 @@
+{
+  "bundle": {
+    "expected_name": "enterprise-compliance-controls",
+    "expected_version": "2026.03",
+    "path": "src/sena/examples/policies"
+  },
+  "case_id": "schema_validation_failure",
+  "description": "Schema guardrail should block when amount is non-integer.",
+  "expected": {
+    "applied_exception_ids": [],
+    "baseline_outcome": "BLOCKED",
+    "bundle_identity": {
+      "name": "enterprise-compliance-controls",
+      "version": "2026.03"
+    },
+    "decision_hash": "6e2547af0479140eb5e5390b34aeddbe56624de80020590e2825329fe540c019",
+    "matched_rules": [],
+    "missing_evidence": [],
+    "missing_fields": [],
+    "normalized_proposal": {
+      "action_origin": "human",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "actor-schema",
+      "actor_role": "finance_director",
+      "ai_metadata": null,
+      "attributes": {
+        "amount": "not-an-integer",
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "autonomous_metadata": null,
+      "request_id": "req-schema-1"
+    },
+    "outcome": "BLOCKED"
+  },
+  "fixture_schema": "sena.replay_fixture.v1",
+  "input": {
+    "facts": {},
+    "mode": "normalized_proposal",
+    "proposal": {
+      "action_origin": "human",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "actor-schema",
+      "actor_role": "finance_director",
+      "attributes": {
+        "amount": "not-an-integer",
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "request_id": "req-schema-1"
+    }
+  }
+}

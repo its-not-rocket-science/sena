@@ -2,6 +2,8 @@
 
 This runbook covers operational hardening for the policy registry (`src/sena/policy/store.py`) and disaster-recovery workflows.
 
+> Scope note: for supported Jira + ServiceNow incident handling, operators should use integration admin APIs/CLI (completions, dead-letter, replay, manual redrive, duplicate summary) and avoid direct table inspection.
+
 ## Durability and concurrency defaults
 
 The SQLite policy registry uses explicit PRAGMA settings on every connection:
@@ -92,3 +94,40 @@ python -m sena.cli.main registry --sqlite-path /tmp/drill/restored.db \
 - `python scripts/backup_policy_registry.py ...`
 - `python scripts/restore_policy_registry.py ...`
 - `python scripts/verify_policy_registry.py ...`
+
+## Supported integration reliability operations (no direct SQL)
+
+When `SENA_INTEGRATION_RELIABILITY_SQLITE_PATH` is configured, use these commands instead of querying SQLite manually:
+
+```bash
+python -m sena.cli.main integrations-reliability --sqlite-path /var/lib/sena/integration-reliability.db completions
+python -m sena.cli.main integrations-reliability --sqlite-path /var/lib/sena/integration-reliability.db dead-letter
+python -m sena.cli.main integrations-reliability --sqlite-path /var/lib/sena/integration-reliability.db duplicates-summary
+python -m sena.cli.main integrations-reliability --sqlite-path /var/lib/sena/integration-reliability.db manual-redrive --id 123 --note "external remediation INC1234"
+```
+
+
+## Durability evidence workflow (supported path)
+
+To convert durability/recovery claims from prose into reproducible evidence, generate the SQLite reliability evidence bundle:
+
+```bash
+make durability-evidence-pack
+```
+
+This produces:
+
+- `docs/examples/sqlite_reliability_evidence/artifacts/sqlite_reliability_evidence.json`
+- `docs/examples/sqlite_reliability_evidence/artifacts/sqlite_reliability_claims.json`
+- `docs/examples/sqlite_reliability_evidence.zip`
+
+Evidence checks include:
+
+- connector reliability DB creation,
+- inbound duplicate suppression persistence after restart,
+- outbound completion persistence after restart,
+- dead-letter persistence after restart,
+- replay and manual redrive after restart,
+- backup/restore validation (`PRAGMA integrity_check` + restored summary invariants).
+
+If any check fails, the script exits with `status: failed` in stdout payload and the bundle captures failing checks for audit review.

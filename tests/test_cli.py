@@ -123,6 +123,115 @@ def test_policy_validate_returns_human_readable_error(tmp_path) -> None:
     )
 
 
+def test_policy_import_legacy_command(tmp_path) -> None:
+    legacy_file = tmp_path / "legacy.yaml"
+    legacy_file.write_text(
+        """
+policies:
+  - policy_id: legacy_allow_small
+    action: release_refund
+    severity: low
+    when:
+      all:
+        - field: amount
+          lte: 150
+    outcome: approve
+    justification: low-risk amount
+""".strip()
+    )
+    output_dir = tmp_path / "converted_bundle"
+    result = _run_cli(
+        [
+            "policy",
+            "import-legacy",
+            "--source",
+            str(legacy_file),
+            "--output-dir",
+            str(output_dir),
+            "--bundle-name",
+            "enterprise-controls",
+            "--bundle-version",
+            "2026.04",
+        ]
+    )
+    result.check_returncode()
+    payload = json.loads(result.stdout)
+    assert payload["output_rule_count"] == 1
+    assert (output_dir / "bundle.yaml").exists()
+
+
+def test_replay_parallel_run_command(tmp_path) -> None:
+    replay_file = tmp_path / "replay.json"
+    replay_file.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "case_id": "c1",
+                        "proposal": {
+                            "action_type": "release_refund",
+                            "request_id": "req-1",
+                            "actor_id": "agent-1",
+                            "actor_role": "support",
+                            "attributes": {
+                                "amount": 75,
+                                "order_exists": True,
+                                "delivery_failed": True,
+                            },
+                            "action_origin": "human",
+                        },
+                    }
+                ]
+            }
+        )
+    )
+    result = _run_cli(
+        [
+            "replay",
+            "parallel-run",
+            "--replay-file",
+            str(replay_file),
+            "--old-policy-dir",
+            "src/sena/examples/policies",
+            "--new-policy-dir",
+            "src/sena/examples/policies",
+        ]
+    )
+    result.check_returncode()
+    payload = json.loads(result.stdout)
+    assert payload["report_type"] == "sena.parallel_run_discrepancy_report"
+
+
+def test_rollout_resolve_command(tmp_path) -> None:
+    config_path = tmp_path / "rollout.yaml"
+    config_path.write_text(
+        """
+default_mode: legacy
+default_policy_bundle: legacy:stable
+rules:
+  - business_unit: finance
+    mode: parallel
+    policy_bundle: sena:2026.03
+    parallel_candidate_bundle: sena:2026.04
+""".strip()
+    )
+    result = _run_cli(
+        [
+            "rollout",
+            "resolve",
+            "--config",
+            str(config_path),
+            "--business-unit",
+            "finance",
+            "--region",
+            "us-east-1",
+        ]
+    )
+    result.check_returncode()
+    payload = json.loads(result.stdout)
+    assert payload["mode"] == "parallel"
+
+
 def test_registry_lifecycle_commands(tmp_path) -> None:
     db_path = tmp_path / "registry.db"
     base = ["registry", "--sqlite-path", str(db_path)]
@@ -659,6 +768,56 @@ def test_replay_drift_command(tmp_path) -> None:
     assert payload["changed_outcomes"] == 0
 
 
+def test_replay_export_canonical_command_is_stable(tmp_path) -> None:
+    scenario = tmp_path / "scenario.json"
+    scenario.write_text(
+        json.dumps(
+            {
+                "action_type": "approve_vendor_payment",
+                "request_id": "req-canonical-cli",
+                "actor_id": "user-1",
+                "actor_role": "finance_analyst",
+                "attributes": {
+                    "amount": 500,
+                    "vendor_verified": True,
+                    "source_system": "jira",
+                },
+                "facts": {},
+            }
+        )
+    )
+    first = _run_cli(
+        [
+            "replay",
+            "export-canonical",
+            str(scenario),
+            "--policy-dir",
+            "src/sena/examples/policies",
+        ]
+    )
+    second = _run_cli(
+        [
+            "replay",
+            "export-canonical",
+            str(scenario),
+            "--policy-dir",
+            "src/sena/examples/policies",
+        ]
+    )
+    first.check_returncode()
+    second.check_returncode()
+    first_payload = json.loads(first.stdout)
+    second_payload = json.loads(second.stdout)
+    assert first_payload == second_payload
+    assert first_payload["artifact_schema"] == "sena.canonical_replay_artifact.v1"
+    assert first_payload["determinism_scope"] == "canonical_replay_payload_only"
+    assert first_payload["determinism_contract"]["scope"] == "canonical_replay_payload_only"
+    assert (
+        first_payload["determinism_contract"]["canonical_replay_payload"]
+        == first_payload["canonical_replay_payload"]
+    )
+
+
 def test_policy_schema_migration_commands(tmp_path) -> None:
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
@@ -746,6 +905,14 @@ def test_production_check_fails_for_invalid_timeout_configuration() -> None:
     payload = json.loads(result.stdout)
     assert payload["ok"] is False
     assert "request limits and timeout sanity" in payload["fatal_failures"]
+
+
+def test_pilot_check_fails_when_credible_pilot_profile_not_selected() -> None:
+    result = _run_cli(["pilot-check", "--format", "json"])
+    assert result.returncode != 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert "pilot-check profile selection" in payload["fatal_failures"]
 
 
 def test_registry_backup_restore_and_verify_commands(tmp_path) -> None:

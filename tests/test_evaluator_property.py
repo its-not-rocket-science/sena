@@ -6,7 +6,7 @@ hypothesis = pytest.importorskip("hypothesis")
 from hypothesis import given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
-from sena.core.models import ActionProposal  # noqa: E402
+from sena.core.models import ActionProposal, EvaluatorConfig  # noqa: E402
 from sena.engine.evaluator import PolicyEvaluator  # noqa: E402
 from sena.policy.parser import load_policy_bundle  # noqa: E402
 
@@ -91,3 +91,31 @@ def test_evaluator_does_not_crash_on_random_json_like_inputs(
     assert trace.decision_hash
     assert trace.outcome is not None
     assert trace.audit_record is not None
+
+
+def test_deterministic_mode_emits_stable_canonical_artifacts() -> None:
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+    evaluator = PolicyEvaluator(
+        rules,
+        policy_bundle=metadata,
+        config=EvaluatorConfig(deterministic_mode=True),
+    )
+    proposal = ActionProposal(
+        action_type="approve_vendor_payment",
+        request_id="req-stable",
+        actor_id="u-1",
+        actor_role="finance_analyst",
+        attributes={"amount": 100, "vendor_verified": True},
+    )
+    facts = {"risk_score": 5, "geo": "us"}
+
+    first = evaluator.evaluate(proposal, facts)
+    second = evaluator.evaluate(proposal, facts)
+
+    assert first.canonical_replay_payload == second.canonical_replay_payload
+    assert first.audit_record is not None and second.audit_record is not None
+    assert (
+        first.audit_record.canonical_replay_payload
+        == second.audit_record.canonical_replay_payload
+    )
+    assert first.decision_id == second.decision_id

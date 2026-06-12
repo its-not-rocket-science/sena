@@ -138,6 +138,8 @@ def build_evidence_pack(
         candidate_rules,
         active_rules,
         validation_artifact="simulation_summary.json",
+        simulation_report=simulation_report,
+        approver_attestations=["cab-chair", "security-reviewer"],
         signature_verified=signature_verification.valid,
         signature_verification_strict=True,
     )

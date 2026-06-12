@@ -1,9 +1,12 @@
 import json
+import hashlib
+import hmac
 from pathlib import Path
+import threading
 
 import pytest
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
@@ -11,6 +14,8 @@ from fastapi.testclient import TestClient
 
 from sena.api.app import create_app
 from sena.api.config import ApiSettings
+from sena.integrations.approval import DeadLetterItem
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
 
 def _settings(**kwargs):
@@ -26,6 +31,7 @@ def _settings(**kwargs):
         "rate_limit_window_seconds": 60,
         "request_max_bytes": 1_048_576,
         "request_timeout_seconds": 15.0,
+        "require_signed_step_up": False,
         "promotion_gate_require_validation_artifact": True,
         "promotion_gate_require_simulation": True,
         "promotion_gate_required_scenario_ids": (),
@@ -40,6 +46,14 @@ def _settings(**kwargs):
 def _servicenow_fixture(name: str) -> dict:
     fixture_path = Path("tests/fixtures/integrations/servicenow") / f"{name}.json"
     return json.loads(fixture_path.read_text(encoding="utf-8"))
+
+
+def _raw_fixture_bytes(path: str) -> bytes:
+    return Path(path).read_bytes()
+
+
+def _hmac_sha256_hex(secret: str, payload: bytes) -> str:
+    return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
 
 def test_health_endpoint() -> None:
@@ -88,6 +102,54 @@ def test_readiness_endpoint() -> None:
     assert response.json()["mode"] == "development"
 
 
+def test_operations_overview_exposes_operator_snapshot() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    response = client.get("/v1/operations/overview")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["readiness"]["status"] == "ready"
+    assert "operator_view" in payload
+    assert "inbound_events_received" in payload["operator_view"]
+    assert "outcomes_by_connector_policy_bundle" in payload["operator_view"]
+    assert "exception_overlays_applied" in payload["operator_view"]
+    assert "dead_letters" in payload["operator_view"]
+
+
+def test_simulation_jobs_emit_metrics() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    response = client.post(
+        "/v1/jobs/simulation",
+        json={
+            "baseline_policy_dir": "src/sena/examples/policies",
+            "candidate_policy_dir": "src/sena/examples/policies",
+            "scenarios": [
+                {
+                    "scenario_id": "s-1",
+                    "action_type": "approve_vendor_payment",
+                    "request_id": "req-1",
+                    "attributes": {"amount": 10, "vendor_verified": True},
+                    "facts": {},
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job"]["job_id"]
+    for _ in range(20):
+        status = client.get(f"/v1/jobs/{job_id}")
+        assert status.status_code == 200
+        if status.json()["status"] in {"succeeded", "failed", "timed_out", "cancelled"}:
+            break
+        time.sleep(0.05)
+    metrics_body = client.get("/v1/metrics/prometheus").text
+    assert 'sena_jobs_submitted_total{job_type="simulation"} 1.0' in metrics_body
+    assert 'sena_jobs_terminal_total{job_type="simulation",status="succeeded"} 1.0' in metrics_body
+
+
 def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
     app = create_app(_settings())
     client = TestClient(app)
@@ -107,11 +169,80 @@ def test_evaluate_endpoint_returns_decision_and_bundle() -> None:
 
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "ok"
     assert body["outcome"] == "BLOCKED"
     assert body["decision"] == "BLOCKED"
     assert body["decision_id"].startswith("dec_")
     assert body["policy_bundle"]["version"] == "2026.03"
     assert "decision_hash" in body
+    assert "explanation" in body
+    assert body["determinism_contract"]["scope"] == "canonical_replay_payload_only"
+    assert body["canonical_replay_payload"]["decision_hash"] == body["decision_hash"]
+    assert "decision_timestamp" in body["operational_metadata"]
+    assert (
+        body["determinism_contract"]["canonical_replay_payload"]
+        == body["canonical_replay_payload"]
+    )
+    assert (
+        body["determinism_contract"]["operational_metadata"]
+        == body["operational_metadata"]
+    )
+    assert (
+        body["canonical_artifacts"]["canonical_replay_payload"]
+        == body["canonical_replay_payload"]
+    )
+    expected_hash = hashlib.sha256(
+        json.dumps(
+            body["canonical_replay_payload"], sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+    assert (
+        body["determinism_contract"]["canonical_replay_payload_hash"] == expected_hash
+    )
+
+
+def test_evaluate_tracks_downstream_outcome_and_incident(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    app = create_app(_settings(audit_sink_jsonl=str(audit_path)))
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"amount": 15000, "vendor_verified": False},
+            "facts": {},
+            "downstream_outcome": "failure",
+            "incident_flag": True,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["audit_record"]["downstream_outcome"] == "failure"
+    assert body["audit_record"]["incident_flag"] is True
+
+
+def test_policy_efficacy_endpoint(tmp_path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    app = create_app(_settings(audit_sink_jsonl=str(audit_path)))
+    client = TestClient(app)
+    evaluated = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+            "downstream_outcome": "success",
+            "incident_flag": False,
+        },
+    )
+    assert evaluated.status_code == 200
+
+    response = client.get("/v1/analytics/policy-efficacy")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["generated_from_records"] >= 1
+    assert payload["totals"]["downstream_success"] >= 1
+    assert "dashboard_example" in payload
 
 
 def test_evaluate_dry_run_skips_audit_and_marks_response(tmp_path) -> None:
@@ -130,6 +261,38 @@ def test_evaluate_dry_run_skips_audit_and_marks_response(tmp_path) -> None:
     body = response.json()
     assert body["dry_run"] is True
     assert not audit_path.exists()
+
+
+def test_decision_explanation_export_endpoint_supports_view_modes() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    evaluate = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False, "amount": 1000},
+        },
+    )
+    assert evaluate.status_code == 200
+    decision_id = evaluate.json()["decision_id"]
+
+    analyst = client.get(f"/v1/decision/{decision_id}/explanation?view=analyst")
+    assert analyst.status_code == 200
+    assert analyst.json()["view"] == "analyst"
+    assert "analyst_summary" in analyst.json()
+
+    auditor = client.get(f"/v1/decision/{decision_id}/explanation?view=auditor")
+    assert auditor.status_code == 200
+    assert auditor.json()["view"] == "auditor"
+    assert "auditor_trace" in auditor.json()
+
+
+def test_decision_explanation_export_endpoint_returns_not_found() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    response = client.get("/v1/decision/dec_missing/explanation")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "http_not_found"
 
 
 def test_audit_verify_tree_endpoint(tmp_path) -> None:
@@ -261,10 +424,17 @@ def test_evaluate_review_package_endpoint_returns_durable_artifact() -> None:
 
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "ok"
     assert body["package_type"] == "sena.decision_review_package"
     assert body["decision_summary"]["outcome"] == "BLOCKED"
     assert body["precedence"]["explanation"]
     assert body["policy_bundle_metadata"]["bundle_name"] == "enterprise-demo"
+    assert body["determinism_contract"]["scope"] == "canonical_replay_payload_only"
+    assert "decision_timestamp" in body["determinism_contract"]["operational_metadata"]
+    assert (
+        body["determinism_contract"]["canonical_replay_payload"]
+        == body["canonical_artifacts"]["canonical_replay_payload"]
+    )
 
 
 def test_api_key_auth_blocks_unauthorized_request() -> None:
@@ -293,15 +463,15 @@ def test_api_key_auth_allows_authorized_request() -> None:
     assert response.status_code == 200
 
 
-def test_api_key_role_evaluator_cannot_promote_bundle() -> None:
+def test_api_key_role_reviewer_cannot_promote_bundle() -> None:
     app = create_app(
-        _settings(enable_api_key_auth=True, api_keys=(("eval-key", "evaluator"),))
+        _settings(enable_api_key_auth=True, api_keys=(("review-key", "reviewer"),))
     )
     client = TestClient(app)
 
     response = client.post(
         "/v1/bundle/promote",
-        headers={"x-api-key": "eval-key"},
+        headers={"x-api-key": "review-key"},
         json={
             "bundle_id": 1,
             "target_lifecycle": "active",
@@ -329,6 +499,213 @@ def test_api_key_role_policy_author_cannot_evaluate() -> None:
     assert response.json()["error"]["code"] == "forbidden"
 
 
+def test_decision_attestation_sign_and_list_supports_multiple_signatures() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    evaluate = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "attributes": {"vendor_verified": False},
+        },
+    )
+    assert evaluate.status_code == 200
+    decision_id = evaluate.json()["decision_id"]
+
+    first = client.post(
+        f"/v1/decision/{decision_id}/attestations/sign",
+        json={
+            "signer_id": "third-party-a",
+            "signer_role": "verifier",
+            "signing_key": "shared-secret-a",
+            "key_id": "vendor-a",
+        },
+    )
+    second = client.post(
+        f"/v1/decision/{decision_id}/attestations/sign",
+        json={
+            "signer_id": "third-party-b",
+            "signer_role": "verifier",
+            "signing_key": "shared-secret-b",
+            "key_id": "vendor-b",
+        },
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["verified"] is True
+    assert second.json()["verified"] is True
+
+    listed = client.get(f"/v1/decision/{decision_id}/attestations")
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["decision_id"] == decision_id
+    assert len(body["attestations"]) == 2
+    assert all(item["verified"] is True for item in body["attestations"])
+
+
+def test_decision_attestation_sign_rejects_non_verifier_role() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    evaluate = client.post(
+        "/v1/evaluate",
+        json={"action_type": "approve_vendor_payment"},
+    )
+    assert evaluate.status_code == 200
+    decision_id = evaluate.json()["decision_id"]
+
+    response = client.post(
+        f"/v1/decision/{decision_id}/attestations/sign",
+        json={
+            "signer_id": "not-allowed",
+            "signer_role": "reviewer",
+            "signing_key": "shared-secret",
+            "key_id": "external",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_api_key_role_verifier_can_sign_and_list_attestations() -> None:
+    app = create_app(
+        _settings(
+            enable_api_key_auth=True,
+            api_keys=(("admin-key", "admin"), ("verify-key", "verifier")),
+        )
+    )
+    client = TestClient(app)
+
+    evaluate = client.post(
+        "/v1/evaluate",
+        headers={"x-api-key": "admin-key"},
+        json={"action_type": "approve_vendor_payment"},
+    )
+    assert evaluate.status_code == 200
+    decision_id = evaluate.json()["decision_id"]
+
+    signed = client.post(
+        f"/v1/decision/{decision_id}/attestations/sign",
+        headers={"x-api-key": "verify-key"},
+        json={
+            "signer_id": "independent-auditor",
+            "signer_role": "verifier",
+            "signing_key": "third-party-shared-key",
+            "key_id": "auditor",
+        },
+    )
+    assert signed.status_code == 200
+    assert signed.json()["verified"] is True
+
+    listed = client.get(
+        f"/v1/decision/{decision_id}/attestations",
+        headers={"x-api-key": "verify-key"},
+    )
+    assert listed.status_code == 200
+    assert len(listed.json()["attestations"]) == 1
+
+
+def test_policy_author_cannot_promote_bundle_due_to_separation_of_duties() -> None:
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_keys=(("author-key", "policy_author"),))
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/bundle/promote",
+        headers={
+            "x-api-key": "author-key",
+            "x-step-up-auth": "mfa-ok",
+            "x-approver-id": "a1",
+            "x-secondary-approver-id": "a2",
+        },
+        json={
+            "bundle_id": 1,
+            "target_lifecycle": "active",
+            "promoted_by": "u",
+            "promotion_reason": "r",
+            "validation_artifact": "a",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["details"]["reason"].startswith(
+        "separation_of_duties"
+    )
+
+
+def test_deployer_cannot_register_bundle_due_to_separation_of_duties() -> None:
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_keys=(("deploy-key", "deployer"),))
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/bundle/register",
+        headers={"x-api-key": "deploy-key"},
+        json={"policy_dir": "src/sena/examples/policies"},
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["details"]["reason"].startswith(
+        "separation_of_duties"
+    )
+
+
+def test_promotion_requires_step_up_and_dual_approval() -> None:
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_keys=(("deploy-key", "deployer"),))
+    )
+    client = TestClient(app)
+    missing_step_up = client.post(
+        "/v1/bundle/promote",
+        headers={"x-api-key": "deploy-key"},
+        json={
+            "bundle_id": 1,
+            "target_lifecycle": "active",
+            "promoted_by": "u",
+            "promotion_reason": "r",
+            "validation_artifact": "a",
+        },
+    )
+    assert missing_step_up.status_code == 403
+    assert (
+        missing_step_up.json()["error"]["details"]["reason"] == "step_up_auth_required"
+    )
+
+    duplicate_approver = client.post(
+        "/v1/bundle/promote",
+        headers={
+            "x-api-key": "deploy-key",
+            "x-step-up-auth": "mfa-ok",
+            "x-approver-id": "same",
+            "x-secondary-approver-id": "same",
+        },
+        json={
+            "bundle_id": 1,
+            "target_lifecycle": "active",
+            "promoted_by": "u",
+            "promotion_reason": "r",
+            "validation_artifact": "a",
+        },
+    )
+    assert duplicate_approver.status_code == 403
+    assert (
+        duplicate_approver.json()["error"]["details"]["reason"]
+        == "dual_approval_requires_distinct_approvers"
+    )
+
+
+def test_audit_config_change_requires_step_up_secondary_approval() -> None:
+    app = create_app(
+        _settings(enable_api_key_auth=True, api_keys=(("audit-key", "auditor"),))
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/admin/audit/config",
+        headers={"x-api-key": "audit-key"},
+        json={"audit_verify_daily_enabled": True},
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["details"]["reason"] == "step_up_auth_required"
+
+
 def test_validation_error_shape() -> None:
     app = create_app(_settings())
     client = TestClient(app)
@@ -337,6 +714,113 @@ def test_validation_error_shape() -> None:
     assert response.status_code == 422
     body = response.json()
     assert body["error"]["code"] == "validation_error"
+
+
+def test_outbound_admin_endpoint_uses_connector_specific_not_configured_error() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    jira_response = client.get("/v1/integrations/jira/admin/outbound/completions")
+    assert jira_response.status_code == 400
+    assert jira_response.json()["error"]["code"] == "jira_mapping_not_configured"
+
+    servicenow_response = client.get(
+        "/v1/integrations/servicenow/admin/outbound/completions"
+    )
+    assert servicenow_response.status_code == 400
+    assert (
+        servicenow_response.json()["error"]["code"]
+        == "servicenow_mapping_not_configured"
+    )
+
+
+def test_outbound_admin_endpoints_bound_large_limits() -> None:
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+    response = client.get(
+        "/v1/integrations/jira/admin/outbound/completions",
+        params={"limit": 5000},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["requested_limit"] == 5000
+    assert body["limit"] == 1000
+    assert body["truncated"] is True
+
+
+def test_outbound_admin_replay_is_idempotent_for_missing_ids(tmp_path) -> None:
+    reliability_db = tmp_path / "integration_reliability.db"
+    store = SQLiteIntegrationReliabilityStore(str(reliability_db))
+    store.push(
+        DeadLetterItem(
+            operation_key="op-r1",
+            target="comment",
+            error="timeout",
+            attempts=1,
+            max_attempts=1,
+            payload={"issue_key": "RISK-1", "message": "retry me"},
+        )
+    )
+    dead_letter_id = store.list_dead_letter_records(limit=1)[0].id
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            integration_reliability_sqlite_path=str(reliability_db),
+        )
+    )
+    client = TestClient(app)
+
+    first = client.post(
+        "/v1/integrations/jira/admin/outbound/dead-letter/replay",
+        json=[dead_letter_id],
+    )
+    assert first.status_code == 200
+    assert first.json()["succeeded"] == 1
+    assert first.json()["not_found"] == 0
+
+    second = client.post(
+        "/v1/integrations/jira/admin/outbound/dead-letter/replay",
+        json=[dead_letter_id, 999_999],
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert body["status"] == "ok"
+    assert body["succeeded"] == 0
+    assert body["not_found"] == 2
+    assert all(item["status"] == "not_found" for item in body["items"])
+
+
+def test_outbound_admin_manual_redrive_validates_note_and_reports_missing_storage() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+
+    malformed_note = client.post(
+        "/v1/integrations/jira/admin/outbound/dead-letter/manual-redrive",
+        params={"note": "bad\nnote"},
+        json=[1],
+    )
+    assert malformed_note.status_code == 422
+    assert malformed_note.json()["error"]["code"] == "validation_error"
+
+    missing_storage = client.post(
+        "/v1/integrations/jira/admin/outbound/dead-letter/manual-redrive",
+        params={"note": "manual remediation completed"},
+        json=[1],
+    )
+    assert missing_storage.status_code == 200
+    assert missing_storage.json()["failed"] == 1
+    assert missing_storage.json()["items"][0]["status"] == "failed"
 
 
 def test_strict_mode_requires_actor_identity_fields() -> None:
@@ -409,6 +893,334 @@ def test_simulation_endpoint() -> None:
     assert response.json()["grouped_changes"]["source_system"]["jira"]["total"] == 1
 
 
+def _wait_for_terminal_job(
+    client: TestClient, job_id: str, timeout_seconds: float = 2.0
+) -> dict:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        response = client.get(f"/v1/jobs/{job_id}")
+        assert response.status_code == 200
+        body = response.json()
+        if body["status"] in {"succeeded", "failed", "cancelled", "timed_out"}:
+            return body
+        time.sleep(0.01)
+    raise AssertionError(f"job '{job_id}' did not reach terminal state before timeout")
+
+
+def test_simulation_async_job_lifecycle_and_result() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    submit = client.post(
+        "/v1/jobs/simulation",
+        json={
+            "baseline_policy_dir": "src/sena/examples/policies",
+            "candidate_policy_dir": "src/sena/examples/policies",
+            "scenarios": [
+                {
+                    "scenario_id": "s1",
+                    "action_type": "approve_vendor_payment",
+                    "attributes": {"vendor_verified": False},
+                    "facts": {},
+                }
+            ],
+        },
+    )
+    assert submit.status_code == 200
+    accepted = submit.json()
+    assert accepted["status"] == "accepted"
+    job_id = accepted["job"]["job_id"]
+
+    first_poll = _wait_for_terminal_job(client, job_id)
+    second_poll = client.get(f"/v1/jobs/{job_id}")
+    assert second_poll.status_code == 200
+    assert second_poll.json() == first_poll
+
+    result = client.get(f"/v1/jobs/{job_id}/result")
+    assert result.status_code == 200
+    result_body = result.json()
+    assert result_body["job_id"] == job_id
+    assert result_body["result"]["status"] == "ok"
+    assert result_body["result"]["total_scenarios"] == 1
+
+
+def test_simulation_async_job_failure_payload() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+    submit = client.post(
+        "/v1/jobs/simulation",
+        json={
+            "baseline_policy_dir": "src/sena/examples/policies",
+            "candidate_policy_dir": "src/sena/examples/does-not-exist",
+            "scenarios": [
+                {
+                    "scenario_id": "s1",
+                    "action_type": "approve_vendor_payment",
+                    "attributes": {"vendor_verified": False},
+                    "facts": {},
+                }
+            ],
+        },
+    )
+    assert submit.status_code == 200
+    job_id = submit.json()["job"]["job_id"]
+    job = _wait_for_terminal_job(client, job_id)
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "job_failed"
+
+    result = client.get(f"/v1/jobs/{job_id}/result")
+    assert result.status_code == 400
+    assert "has no result" in result.json()["error"]["message"]
+
+
+def test_simulation_async_job_timeout_and_cancellation(monkeypatch) -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    from sena.services import evaluation_service as evaluation_service_module
+
+    original_simulation = (
+        evaluation_service_module.EvaluationService.simulate_policy_change
+    )
+
+    def _slow_simulation(*_args, **_kwargs):
+        time.sleep(0.05)
+        return {
+            "total_scenarios": 1,
+            "changes": [],
+            "grouped_changes": {},
+        }
+
+    monkeypatch.setattr(
+        evaluation_service_module.EvaluationService,
+        "simulate_policy_change",
+        staticmethod(_slow_simulation),
+    )
+    try:
+        timed_out = client.post(
+            "/v1/jobs/simulation",
+            json={
+                "baseline_policy_dir": "src/sena/examples/policies",
+                "candidate_policy_dir": "src/sena/examples/policies",
+                "timeout_seconds": 0.001,
+                "scenarios": [
+                    {
+                        "scenario_id": "slow-timeout",
+                        "action_type": "approve_vendor_payment",
+                        "attributes": {"vendor_verified": False},
+                        "facts": {},
+                    }
+                ],
+            },
+        )
+        assert timed_out.status_code == 200
+        timeout_job_id = timed_out.json()["job"]["job_id"]
+        timeout_job = _wait_for_terminal_job(client, timeout_job_id)
+        assert timeout_job["status"] == "timed_out"
+
+        cancelled = client.post(
+            "/v1/jobs/simulation",
+            json={
+                "baseline_policy_dir": "src/sena/examples/policies",
+                "candidate_policy_dir": "src/sena/examples/policies",
+                "scenarios": [
+                    {
+                        "scenario_id": "slow-cancel",
+                        "action_type": "approve_vendor_payment",
+                        "attributes": {"vendor_verified": False},
+                        "facts": {},
+                    }
+                ],
+            },
+        )
+        assert cancelled.status_code == 200
+        cancel_job_id = cancelled.json()["job"]["job_id"]
+        cancel_response = client.post(f"/v1/jobs/{cancel_job_id}/cancel")
+        assert cancel_response.status_code == 200
+        final = _wait_for_terminal_job(client, cancel_job_id)
+        assert final["status"] == "cancelled"
+    finally:
+        monkeypatch.setattr(
+            evaluation_service_module.EvaluationService,
+            "simulate_policy_change",
+            original_simulation,
+        )
+
+
+def test_async_job_state_persists_after_restart(tmp_path) -> None:
+    settings = _settings(processing_sqlite_path=str(tmp_path / "runtime.db"))
+    app = create_app(settings)
+    with TestClient(app) as client:
+        submit = client.post(
+            "/v1/jobs/simulation",
+            json={
+                "baseline_policy_dir": "src/sena/examples/policies",
+                "candidate_policy_dir": "src/sena/examples/policies",
+                "scenarios": [
+                    {
+                        "scenario_id": "persist-1",
+                        "action_type": "approve_vendor_payment",
+                        "attributes": {"vendor_verified": False},
+                        "facts": {},
+                    }
+                ],
+            },
+        )
+        assert submit.status_code == 200
+        job_id = submit.json()["job"]["job_id"]
+        first_terminal = _wait_for_terminal_job(client, job_id)
+        assert first_terminal["status"] == "succeeded"
+
+    restarted = create_app(settings)
+    with TestClient(restarted) as client:
+        status = client.get(f"/v1/jobs/{job_id}")
+        assert status.status_code == 200
+        assert status.json()["status"] == "succeeded"
+        assert status.json()["result_ref"] == f"sqlite://async_jobs/{job_id}"
+        result = client.get(f"/v1/jobs/{job_id}/result")
+        assert result.status_code == 200
+        assert result.json()["job_id"] == job_id
+
+
+def test_async_job_inflight_restart_is_deterministically_failed(
+    monkeypatch, tmp_path
+) -> None:
+    settings = _settings(processing_sqlite_path=str(tmp_path / "runtime.db"))
+    app = create_app(settings)
+    block = threading.Event()
+    from sena.services import evaluation_service as evaluation_service_module
+
+    original_simulation = (
+        evaluation_service_module.EvaluationService.simulate_policy_change
+    )
+
+    def _blocked_simulation(*_args, **_kwargs):
+        block.wait(0.5)
+        return {"total_scenarios": 1, "changes": [], "grouped_changes": {}}
+
+    monkeypatch.setattr(
+        evaluation_service_module.EvaluationService,
+        "simulate_policy_change",
+        staticmethod(_blocked_simulation),
+    )
+    try:
+        with TestClient(app) as client:
+            submit = client.post(
+                "/v1/jobs/simulation",
+                json={
+                    "baseline_policy_dir": "src/sena/examples/policies",
+                    "candidate_policy_dir": "src/sena/examples/policies",
+                    "scenarios": [
+                        {
+                            "scenario_id": "restart-running",
+                            "action_type": "approve_vendor_payment",
+                            "attributes": {"vendor_verified": False},
+                            "facts": {},
+                        }
+                    ],
+                },
+            )
+            assert submit.status_code == 200
+            job_id = submit.json()["job"]["job_id"]
+            deadline = time.time() + 1.0
+            while time.time() < deadline:
+                current = client.get(f"/v1/jobs/{job_id}")
+                assert current.status_code == 200
+                if current.json()["status"] == "running":
+                    break
+                time.sleep(0.01)
+            else:
+                raise AssertionError("job did not reach running before restart")
+    finally:
+        monkeypatch.setattr(
+            evaluation_service_module.EvaluationService,
+            "simulate_policy_change",
+            original_simulation,
+        )
+
+    restarted = create_app(settings)
+    with TestClient(restarted) as client:
+        status = client.get(f"/v1/jobs/{job_id}")
+        assert status.status_code == 200
+        body = status.json()
+        assert body["status"] == "failed"
+        assert body["error"]["code"] == "interrupted_by_restart"
+
+
+def test_timeout_and_cancelled_jobs_survive_restart(monkeypatch, tmp_path) -> None:
+    settings = _settings(processing_sqlite_path=str(tmp_path / "runtime.db"))
+    app = create_app(settings)
+    from sena.services import evaluation_service as evaluation_service_module
+
+    original_simulation = (
+        evaluation_service_module.EvaluationService.simulate_policy_change
+    )
+
+    def _slow_simulation(*_args, **_kwargs):
+        time.sleep(0.05)
+        return {"total_scenarios": 1, "changes": [], "grouped_changes": {}}
+
+    monkeypatch.setattr(
+        evaluation_service_module.EvaluationService,
+        "simulate_policy_change",
+        staticmethod(_slow_simulation),
+    )
+    try:
+        with TestClient(app) as client:
+            timed_out = client.post(
+                "/v1/jobs/simulation",
+                json={
+                    "baseline_policy_dir": "src/sena/examples/policies",
+                    "candidate_policy_dir": "src/sena/examples/policies",
+                    "timeout_seconds": 0.001,
+                    "scenarios": [
+                        {
+                            "scenario_id": "restart-timeout",
+                            "action_type": "approve_vendor_payment",
+                            "attributes": {"vendor_verified": False},
+                            "facts": {},
+                        }
+                    ],
+                },
+            )
+            cancel = client.post(
+                "/v1/jobs/simulation",
+                json={
+                    "baseline_policy_dir": "src/sena/examples/policies",
+                    "candidate_policy_dir": "src/sena/examples/policies",
+                    "scenarios": [
+                        {
+                            "scenario_id": "restart-cancel",
+                            "action_type": "approve_vendor_payment",
+                            "attributes": {"vendor_verified": False},
+                            "facts": {},
+                        }
+                    ],
+                },
+            )
+            assert timed_out.status_code == 200
+            assert cancel.status_code == 200
+            timeout_job_id = timed_out.json()["job"]["job_id"]
+            cancel_job_id = cancel.json()["job"]["job_id"]
+            assert client.post(f"/v1/jobs/{cancel_job_id}/cancel").status_code == 200
+            assert _wait_for_terminal_job(client, timeout_job_id)["status"] == "timed_out"
+            assert _wait_for_terminal_job(client, cancel_job_id)["status"] == "cancelled"
+    finally:
+        monkeypatch.setattr(
+            evaluation_service_module.EvaluationService,
+            "simulate_policy_change",
+            original_simulation,
+        )
+
+    restarted = create_app(settings)
+    with TestClient(restarted) as client:
+        timeout_status = client.get(f"/v1/jobs/{timeout_job_id}")
+        cancel_status = client.get(f"/v1/jobs/{cancel_job_id}")
+        assert timeout_status.status_code == 200
+        assert cancel_status.status_code == 200
+        assert timeout_status.json()["status"] == "timed_out"
+        assert cancel_status.json()["status"] == "cancelled"
+
+
 def test_simulation_replay_endpoint(tmp_path) -> None:
     audit_path = tmp_path / "audit.jsonl"
     app = create_app(_settings(audit_sink_jsonl=str(audit_path)))
@@ -431,6 +1243,7 @@ def test_simulation_replay_endpoint(tmp_path) -> None:
     )
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "ok"
     assert "would change outcome" in body["summary"]
     assert body["total_replayed"] >= 1
 
@@ -467,6 +1280,7 @@ def test_replay_drift_endpoint() -> None:
     )
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "ok"
     assert body["replay_type"] == "sena.ai_workflow_drift"
     assert body["changed_outcomes"] == 0
 
@@ -945,6 +1759,9 @@ def test_jira_webhook_happy_path_returns_machine_readable_payload() -> None:
     assert body["status"] == "evaluated"
     assert body["mapped_action_proposal"]["request_id"] == "RISK-9"
     assert body["decision"]["decision_id"].startswith("dec_")
+    assert body["normalization"]["determinism_scope"] == "canonical_replay_payload_only"
+    assert "event_timestamp" in body["normalization"]["operational_metadata"]
+    assert "event_timestamp" not in body["normalization"]["canonical_replay_payload"]
 
 
 def test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response() -> None:
@@ -980,6 +1797,54 @@ def test_jira_webhook_duplicate_delivery_returns_stable_duplicate_response() -> 
     assert second.json()["error"]["code"] == "jira_duplicate_delivery"
     assert second.json()["error"]["request_id"].startswith("req_")
     datetime.fromisoformat(second.json()["error"]["timestamp"])
+
+
+def test_jira_webhook_duplicate_delivery_with_payload_change_returns_conflict() -> None:
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+    first_payload = {
+        "webhookEvent": "jira:issue_updated",
+        "timestamp": 1711982000,
+        "issue": {
+            "id": "10001",
+            "key": "RISK-9",
+            "fields": {
+                "customfield_approval_amount": 25000,
+                "customfield_requester_role": "finance_analyst",
+                "customfield_vendor_verified": False,
+            },
+        },
+        "user": {"accountId": "acct-99"},
+        "changelog": {"items": [{"field": "status", "toString": "Pending Approval"}]},
+    }
+    second_payload = {
+        **first_payload,
+        "issue": {
+            **first_payload["issue"],
+            "fields": {
+                **first_payload["issue"]["fields"],
+                "customfield_vendor_verified": True,
+            },
+        },
+    }
+    headers = {"x-atlassian-webhook-identifier": "jira-delivery-dup-conflict"}
+
+    first = client.post(
+        "/v1/integrations/jira/webhook", json=first_payload, headers=headers
+    )
+    second = client.post(
+        "/v1/integrations/jira/webhook", json=second_payload, headers=headers
+    )
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert (
+        second.json()["detail"]["details"]["reason"]
+        == "delivery_idempotency_payload_conflict"
+    )
 
 
 def test_jira_webhook_missing_actor_identity_returns_deterministic_error() -> None:
@@ -1031,6 +1896,162 @@ def test_jira_webhook_unsupported_event_returns_deterministic_error() -> None:
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "jira_unsupported_event_type"
+
+
+def test_jira_webhook_dead_letter_redacts_headers_and_raw_body() -> None:
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+    raw_payload = b'{"issue":{"id":"100","key":"RISK-2"}}'
+
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-sena-signature": "secret-signature",
+            "authorization": "Bearer top-secret-token",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "jira_invalid_mapping"
+
+    dlq_items = app.state.engine_state.processing_store.list_dead_letters(limit=1)
+    recorded_event = json.loads(dlq_items[0]["event_json"])
+    assert recorded_event["raw_body_sha256"] == hashlib.sha256(raw_payload).hexdigest()
+    assert recorded_event["raw_body_bytes"] == len(raw_payload)
+    assert "raw_body" not in recorded_event
+    assert recorded_event["headers"]["x-sena-signature"] == "<redacted>"
+    assert recorded_event["headers"]["authorization"] == "<redacted>"
+
+
+def test_jira_webhook_signature_verification_accepts_current_and_previous_secret() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret="current-secret",
+            jira_webhook_secret_previous="old-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+    )
+
+    current_signature = _hmac_sha256_hex("current-secret", raw_payload)
+    previous_signature = _hmac_sha256_hex("old-secret", raw_payload)
+
+    current_response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-atlassian-webhook-identifier": "jira-sig-current",
+            "x-sena-signature": current_signature,
+        },
+    )
+    previous_response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-atlassian-webhook-identifier": "jira-sig-previous",
+            "x-hub-signature-256": f"sha256={previous_signature}",
+        },
+    )
+
+    assert current_response.status_code == 200
+    assert previous_response.status_code == 200
+
+
+def test_jira_webhook_signature_verification_accepts_unprefixed_x_hub_signature_256() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret="current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+    )
+    signature = _hmac_sha256_hex("current-secret", raw_payload)
+
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-atlassian-webhook-identifier": "jira-sig-unprefixed",
+            "x-hub-signature-256": signature,
+        },
+    )
+
+    assert response.status_code == 200
+
+
+def test_jira_webhook_signature_verification_rejects_invalid_signature() -> None:
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret="current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+    )
+
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-atlassian-webhook-identifier": "jira-sig-invalid",
+            "x-sena-signature": "deadbeef",
+        },
+    )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["error"]["code"] == "jira_authentication_failed"
+    assert body["error"]["details"]["signature_error"] == "invalid_signature"
+
+
+def test_jira_webhook_signature_verification_rejects_missing_signature_when_secret_configured() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret="current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/jira/webhook_signature_payload.txt"
+    )
+
+    response = client.post(
+        "/v1/integrations/jira/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-atlassian-webhook-identifier": "jira-sig-missing",
+        },
+    )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["error"]["code"] == "jira_authentication_failed"
+    assert body["error"]["details"]["signature_error"] == "missing_signature"
 
 
 def test_servicenow_webhook_happy_path_returns_machine_readable_payload() -> None:
@@ -1085,6 +2106,33 @@ def test_servicenow_webhook_duplicate_delivery_returns_stable_duplicate_response
     datetime.fromisoformat(second.json()["error"]["timestamp"])
 
 
+def test_servicenow_webhook_duplicate_delivery_with_payload_change_returns_conflict() -> None:
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+    first_payload = _servicenow_fixture("emergency_change")
+    second_payload = _servicenow_fixture("emergency_change")
+    second_payload["requested_by"]["user_id"] = "u.change.999"
+    headers = {"x-servicenow-delivery-id": "sn-delivery-dup-conflict"}
+
+    first = client.post(
+        "/v1/integrations/servicenow/webhook", json=first_payload, headers=headers
+    )
+    second = client.post(
+        "/v1/integrations/servicenow/webhook", json=second_payload, headers=headers
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert (
+        second.json()["detail"]["details"]["reason"]
+        == "delivery_idempotency_payload_conflict"
+    )
+
+
 def test_webhook_endpoint_rejects_unknown_provider_fail_closed() -> None:
     app = create_app(
         _settings(
@@ -1130,6 +2178,36 @@ def test_servicenow_webhook_missing_actor_identity_returns_deterministic_error()
     assert response.json()["error"]["code"] == "servicenow_missing_required_fields"
 
 
+def test_servicenow_webhook_dead_letter_redacts_headers_and_raw_body() -> None:
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml"
+        )
+    )
+    client = TestClient(app)
+    raw_payload = b'{"change_request":{"number":"CHG001"}}'
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-signature": "sha256=super-secret-signature",
+            "x-api-key": "sensitive-key",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "servicenow_invalid_mapping"
+
+    dlq_items = app.state.engine_state.processing_store.list_dead_letters(limit=1)
+    recorded_event = json.loads(dlq_items[0]["event_json"])
+    assert recorded_event["raw_body_sha256"] == hashlib.sha256(raw_payload).hexdigest()
+    assert recorded_event["raw_body_bytes"] == len(raw_payload)
+    assert "raw_body" not in recorded_event
+    assert recorded_event["headers"]["x-servicenow-signature"] == "<redacted>"
+    assert recorded_event["headers"]["x-api-key"] == "<redacted>"
+
+
 def test_servicenow_webhook_audit_record_includes_source_metadata() -> None:
     app = create_app(
         _settings(
@@ -1153,6 +2231,131 @@ def test_servicenow_webhook_audit_record_includes_source_metadata() -> None:
         source_metadata["servicenow_change_number"]
         == payload["change_request"]["number"]
     )
+
+
+def test_servicenow_webhook_signature_verification_accepts_current_and_previous_secret() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+            servicenow_webhook_secret="sn-current-secret",
+            servicenow_webhook_secret_previous="sn-old-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+    )
+    current_signature = _hmac_sha256_hex("sn-current-secret", raw_payload)
+    previous_signature = _hmac_sha256_hex("sn-old-secret", raw_payload)
+
+    current_response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-delivery-id": "sn-sig-current",
+            "x-sena-signature": current_signature,
+        },
+    )
+    previous_response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-delivery-id": "sn-sig-previous",
+            "x-servicenow-signature": f"sha256={previous_signature}",
+        },
+    )
+
+    assert current_response.status_code == 200
+    assert previous_response.status_code == 200
+
+
+def test_servicenow_webhook_signature_verification_accepts_unprefixed_x_servicenow_signature() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+            servicenow_webhook_secret="sn-current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+    )
+    signature = _hmac_sha256_hex("sn-current-secret", raw_payload)
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-delivery-id": "sn-sig-unprefixed",
+            "x-servicenow-signature": signature,
+        },
+    )
+
+    assert response.status_code == 200
+
+
+def test_servicenow_webhook_signature_verification_rejects_invalid_signature() -> None:
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+            servicenow_webhook_secret="sn-current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+    )
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-delivery-id": "sn-sig-invalid",
+            "x-sena-signature": "deadbeef",
+        },
+    )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["error"]["code"] == "servicenow_authentication_failed"
+    assert body["error"]["details"]["signature_error"] == "invalid_signature"
+
+
+def test_servicenow_webhook_signature_verification_rejects_missing_signature_when_secret_configured() -> (
+    None
+):
+    app = create_app(
+        _settings(
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+            servicenow_webhook_secret="sn-current-secret",
+        )
+    )
+    client = TestClient(app)
+    raw_payload = _raw_fixture_bytes(
+        "tests/fixtures/integrations/servicenow/webhook_signature_payload.txt"
+    )
+
+    response = client.post(
+        "/v1/integrations/servicenow/webhook",
+        data=raw_payload,
+        headers={
+            "content-type": "application/json",
+            "x-servicenow-delivery-id": "sn-sig-missing",
+        },
+    )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["error"]["code"] == "servicenow_authentication_failed"
+    assert body["error"]["details"]["signature_error"] == "missing_signature"
 
 
 def test_rate_limiting_per_api_key() -> None:
@@ -1252,7 +2455,10 @@ def test_metrics_endpoint_exposes_prometheus_metrics() -> None:
     metrics_body = metrics_response.text
     assert "request_count_total" in metrics_body
     assert "sena_decisions_total" in metrics_body
-    assert 'sena_decisions_total{outcome="BLOCKED",policy="enterprise-demo:2026.03"} 1.0' in metrics_body
+    assert (
+        'sena_decisions_total{outcome="BLOCKED",policy="enterprise-demo:2026.03"} 1.0'
+        in metrics_body
+    )
     assert "sena_evaluation_seconds_bucket" in metrics_body
     assert "sena_audit_entries_total" in metrics_body
     assert "sena_merkle_root_timestamp" in metrics_body
@@ -1322,7 +2528,10 @@ def test_startup_fails_when_api_key_set_but_disabled() -> None:
 def test_startup_fails_in_production_without_api_key_auth() -> None:
     with pytest.raises(
         RuntimeError,
-        match="SENA_RUNTIME_MODE=production requires SENA_API_KEY_ENABLED=true",
+        match=(
+            "SENA_RUNTIME_MODE=production requires "
+            "SENA_API_KEY_ENABLED=true or SENA_JWT_AUTH_ENABLED=true"
+        ),
     ):
         create_app(_settings(runtime_mode="production", enable_api_key_auth=False))
 
@@ -1441,6 +2650,540 @@ def test_startup_fails_in_production_without_jira_secret(tmp_path) -> None:
         )
 
 
+def test_startup_fails_in_pilot_without_jira_secret(tmp_path) -> None:
+    mapping_path = tmp_path / "jira-mapping.json"
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "routes": {
+                    "jira:issue_updated": {
+                        "action_type": "approve_vendor_payment",
+                        "actor_id_path": "user.accountId",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_RUNTIME_MODE=pilot requires SENA_JIRA_WEBHOOK_SECRET",
+    ):
+        create_app(
+            _settings(
+                runtime_mode="pilot",
+                ingestion_queue_backend="sqlite",
+                processing_sqlite_path=str(tmp_path / "runtime.db"),
+                jira_mapping_config_path=str(mapping_path),
+                jira_webhook_secret=None,
+                jira_webhook_secret_previous=None,
+            )
+        )
+
+
+def test_startup_fails_in_pilot_without_servicenow_secret(tmp_path) -> None:
+    mapping_path = tmp_path / "servicenow-mapping.yaml"
+    mapping_path.write_text(
+        "routes:\n"
+        "  change_approval.requested:\n"
+        "    action_type: approve_change_request\n"
+        "    actor_id_path: requested_by.sys_id\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_RUNTIME_MODE=pilot requires SENA_SERVICENOW_WEBHOOK_SECRET",
+    ):
+        create_app(
+            _settings(
+                runtime_mode="pilot",
+                ingestion_queue_backend="sqlite",
+                processing_sqlite_path=str(tmp_path / "runtime.db"),
+                servicenow_mapping_config_path=str(mapping_path),
+                servicenow_webhook_secret=None,
+                servicenow_webhook_secret_previous=None,
+            )
+        )
+
+
+def test_startup_allows_secret_rotation_with_previous_jira_secret_in_production(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    app = create_app(
+        _settings(
+            runtime_mode="production",
+            enable_api_key_auth=True,
+            api_key="secret",
+            audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+            bundle_signature_strict=True,
+            bundle_signature_keyring_dir=str(keyring_dir),
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret=None,
+            jira_webhook_secret_previous="prod-previous-secret",
+            integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+        )
+    )
+
+    assert app.state.engine_state.jira_connector is not None
+
+
+def test_startup_logs_storage_profile_warnings_in_production(tmp_path, caplog) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    caplog.set_level("WARNING")
+
+    create_app(
+        _settings(
+            runtime_mode="production",
+            enable_api_key_auth=True,
+            api_key="secret",
+            audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+            bundle_signature_strict=True,
+            bundle_signature_keyring_dir=str(keyring_dir),
+        )
+    )
+
+    assert any("pilot storage backend" in message for message in caplog.messages)
+
+
+def test_startup_fails_in_production_when_jira_enabled_without_mapping_config(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(RuntimeError, match="requires SENA_JIRA_MAPPING_CONFIG"):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                jira_webhook_secret="prod-secret",
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+            )
+        )
+
+
+def test_startup_fails_in_production_when_servicenow_enabled_without_mapping_config(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(RuntimeError, match="requires SENA_SERVICENOW_MAPPING_CONFIG"):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                servicenow_webhook_secret="sn-prod-secret",
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+            )
+        )
+
+
+def test_startup_fails_in_production_when_servicenow_mapping_invalid(tmp_path) -> None:
+    mapping_path = tmp_path / "servicenow-mapping.yaml"
+    mapping_path.write_text(
+        "routes:\n  change_approval.requested:\n    actor_id_path: requested_by.sys_id\n",
+        encoding="utf-8",
+    )
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_SERVICENOW_MAPPING_CONFIG is invalid for production startup",
+    ):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                servicenow_mapping_config_path=str(mapping_path),
+                servicenow_webhook_secret="sn-prod-secret",
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+            )
+        )
+
+
+def test_startup_fails_in_production_when_jira_mapping_invalid(tmp_path) -> None:
+    mapping_path = tmp_path / "jira-mapping.yaml"
+    mapping_path.write_text(
+        "routes:\n  jira:issue_updated:\n    actor_id_path: user.accountId\n",
+        encoding="utf-8",
+    )
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(
+        RuntimeError, match="SENA_JIRA_MAPPING_CONFIG is invalid for production startup"
+    ):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                jira_mapping_config_path=str(mapping_path),
+                jira_webhook_secret="prod-secret",
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+            )
+        )
+
+
+def test_startup_fails_in_production_without_integration_reliability_db_path(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(
+        RuntimeError,
+        match="requires SENA_INTEGRATION_RELIABILITY_SQLITE_PATH",
+    ):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+                jira_webhook_secret="prod-secret",
+                integration_reliability_sqlite_path=None,
+            )
+        )
+
+
+def test_startup_fails_in_production_when_write_back_enabled_without_jira_secret(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    with pytest.raises(RuntimeError, match="requires SENA_JIRA_WEBHOOK_SECRET"):
+        create_app(
+            _settings(
+                runtime_mode="production",
+                enable_api_key_auth=True,
+                api_key="secret",
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(keyring_dir),
+                jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+                jira_write_back=True,
+                jira_webhook_secret=None,
+                jira_webhook_secret_previous=None,
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+            )
+        )
+
+
+def test_startup_fails_when_integration_reliability_sqlite_parent_missing() -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_INTEGRATION_RELIABILITY_SQLITE_PATH parent directory must exist",
+    ):
+        create_app(
+            _settings(
+                integration_reliability_sqlite_path="does/not/exist/reliability.db",
+            )
+        )
+
+
+def test_non_production_integration_reliability_path_overrides_processing_path(
+    tmp_path,
+) -> None:
+    processing_path = tmp_path / "runtime.db"
+    reliability_path = tmp_path / "custom-reliability.db"
+    app = create_app(
+        _settings(
+            runtime_mode="development",
+            processing_sqlite_path=str(processing_path),
+            integration_reliability_sqlite_path=str(reliability_path),
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+        )
+    )
+
+    connector = app.state.engine_state.jira_connector
+    assert connector is not None
+    assert isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
+    assert connector._idempotency._db_path == str(reliability_path)
+
+
+def test_non_production_jira_connector_defaults_to_durable_reliability(
+    tmp_path,
+) -> None:
+    runtime_db = tmp_path / "runtime.db"
+    app = create_app(
+        _settings(
+            runtime_mode="development",
+            processing_sqlite_path=str(runtime_db),
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+        )
+    )
+
+    connector = app.state.engine_state.jira_connector
+    assert connector is not None
+    assert isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
+
+
+def test_non_production_can_explicitly_allow_inmemory_reliability(
+    tmp_path,
+) -> None:
+    app = create_app(
+        _settings(
+            runtime_mode="development",
+            processing_sqlite_path=str(tmp_path / "runtime.db"),
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            integration_reliability_allow_inmemory=True,
+        )
+    )
+
+    connector = app.state.engine_state.jira_connector
+    assert connector is not None
+    assert not isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
+
+
+def test_development_mode_allows_missing_supported_connector_secrets_with_warning(
+    caplog,
+) -> None:
+    caplog.set_level("WARNING")
+
+    app = create_app(
+        _settings(
+            runtime_mode="development",
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+            jira_webhook_secret=None,
+            jira_webhook_secret_previous=None,
+            servicenow_webhook_secret=None,
+            servicenow_webhook_secret_previous=None,
+        )
+    )
+
+    assert app.state.engine_state.jira_connector is not None
+    assert app.state.engine_state.servicenow_connector is not None
+    assert any(
+        "Inbound Jira events are forgeable in this mode" in message
+        for message in caplog.messages
+    )
+    assert any(
+        "Inbound ServiceNow events are forgeable in this mode" in message
+        for message in caplog.messages
+    )
+
+
+def test_pilot_mode_allows_inmemory_reliability_without_explicit_sqlite_path(
+    tmp_path,
+) -> None:
+    app = create_app(
+        _settings(
+            runtime_mode="pilot",
+            ingestion_queue_backend="sqlite",
+            processing_sqlite_path=str(tmp_path / "runtime.db"),
+            jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+            jira_webhook_secret="pilot-secret",
+            integration_reliability_allow_inmemory=True,
+            integration_reliability_sqlite_path=None,
+        )
+    )
+
+    connector = app.state.engine_state.jira_connector
+    assert connector is not None
+    assert not isinstance(connector._idempotency, SQLiteIntegrationReliabilityStore)
+
+
+def test_pilot_mode_memory_ingestion_queue_fails_startup() -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="SENA_RUNTIME_MODE=pilot forbids SENA_INGESTION_QUEUE_BACKEND=memory",
+    ):
+        create_app(
+            _settings(
+                runtime_mode="pilot",
+                ingestion_queue_backend="memory",
+            )
+        )
+
+
+def test_credible_pilot_profile_requires_jira_and_servicenow_only(tmp_path) -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="requires SENA_SERVICENOW_MAPPING_CONFIG",
+    ):
+        create_app(
+            _settings(
+                deployment_profile="credible_pilot",
+                runtime_mode="pilot",
+                enable_api_key_auth=True,
+                api_keys=(("pilot-admin", "admin"),),
+                policy_store_backend="sqlite",
+                policy_store_sqlite_path=str(tmp_path / "policy.db"),
+                ingestion_queue_backend="sqlite",
+                processing_sqlite_path=str(tmp_path / "runtime.db"),
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                audit_verify_on_startup_strict=True,
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(tmp_path),
+                jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+                jira_webhook_secret="jira-secret",
+            )
+        )
+
+
+def test_credible_pilot_profile_forbids_generic_webhook_mapping(tmp_path) -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="forbids SENA_WEBHOOK_MAPPING_CONFIG",
+    ):
+        create_app(
+            _settings(
+                deployment_profile="credible_pilot",
+                runtime_mode="pilot",
+                enable_api_key_auth=True,
+                api_keys=(("pilot-admin", "admin"),),
+                policy_store_backend="sqlite",
+                policy_store_sqlite_path=str(tmp_path / "policy.db"),
+                ingestion_queue_backend="sqlite",
+                processing_sqlite_path=str(tmp_path / "runtime.db"),
+                integration_reliability_sqlite_path=str(tmp_path / "reliability.db"),
+                audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+                audit_verify_on_startup_strict=True,
+                bundle_signature_strict=True,
+                bundle_signature_keyring_dir=str(tmp_path),
+                jira_mapping_config_path="src/sena/examples/integrations/jira_mappings.yaml",
+                jira_webhook_secret="jira-secret",
+                servicenow_mapping_config_path="src/sena/examples/integrations/servicenow_mappings.yaml",
+                servicenow_webhook_secret="sn-secret",
+                webhook_mapping_config_path="src/sena/examples/integrations/webhook_mappings.yaml",
+            )
+        )
+
+
+def test_development_mode_memory_ingestion_queue_is_allowed() -> None:
+    app = create_app(
+        _settings(
+            runtime_mode="development",
+            ingestion_queue_backend="memory",
+        )
+    )
+
+    assert app.state.engine_state.reliability_service is not None
+
+
+def test_pilot_mode_disables_experimental_integration_routes_by_default(tmp_path) -> None:
+    app = create_app(
+        _settings(
+            runtime_mode="pilot",
+            ingestion_queue_backend="sqlite",
+            processing_sqlite_path=str(tmp_path / "runtime.db"),
+        )
+    )
+    client = TestClient(app)
+
+    webhook_response = client.post(
+        "/v1/integrations/webhook",
+        json={
+            "provider": "github",
+            "event_type": "pull_request_review",
+            "payload": {},
+        },
+    )
+    assert webhook_response.status_code == 404
+
+    slack_response = client.post("/v1/integrations/slack/interactions", data={})
+    assert slack_response.status_code == 404
+
+
+def test_production_mode_disables_experimental_integration_routes_by_default(
+    tmp_path,
+) -> None:
+    keyring_dir = tmp_path / "keyring"
+    keyring_dir.mkdir()
+    app = create_app(
+        _settings(
+            runtime_mode="production",
+            enable_api_key_auth=True,
+            api_key="secret",
+            audit_sink_jsonl=str(tmp_path / "audit.jsonl"),
+            bundle_signature_strict=True,
+            bundle_signature_keyring_dir=str(keyring_dir),
+        )
+    )
+    client = TestClient(app)
+
+    webhook_response = client.post(
+        "/v1/integrations/webhook",
+        json={
+            "provider": "github",
+            "event_type": "pull_request_review",
+            "payload": {},
+        },
+    )
+    assert webhook_response.status_code == 404
+
+    slack_response = client.post("/v1/integrations/slack/interactions", data={})
+    assert slack_response.status_code == 404
+
+
+def test_pilot_mode_can_explicitly_enable_experimental_routes(tmp_path) -> None:
+    app = create_app(
+        _settings(
+            runtime_mode="pilot",
+            ingestion_queue_backend="sqlite",
+            processing_sqlite_path=str(tmp_path / "runtime.db"),
+            experimental_routes_enabled=True,
+        )
+    )
+    client = TestClient(app)
+
+    webhook_response = client.post(
+        "/v1/integrations/webhook",
+        json={
+            "provider": "github",
+            "event_type": "pull_request_review",
+            "payload": {},
+        },
+    )
+    assert webhook_response.status_code != 404
+
+    slack_response = client.post("/v1/integrations/slack/interactions", data={})
+    assert slack_response.status_code != 404
+
+
+def test_development_mode_keeps_experimental_routes_enabled_by_default() -> None:
+    app = create_app(_settings(runtime_mode="development"))
+    client = TestClient(app)
+
+    webhook_response = client.post(
+        "/v1/integrations/webhook",
+        json={
+            "provider": "github",
+            "event_type": "pull_request_review",
+            "payload": {},
+        },
+    )
+    assert webhook_response.status_code != 404
+    assert webhook_response.headers["x-sena-surface-stage"] == "experimental"
+
+    slack_response = client.post("/v1/integrations/slack/interactions", data={})
+    assert slack_response.status_code != 404
+    assert slack_response.headers["x-sena-surface-stage"] == "experimental"
+
+
 def test_bundle_history_by_version_and_rollback_endpoints(tmp_path) -> None:
     from sena.policy.parser import load_policy_bundle
     from sena.policy.store import SQLitePolicyBundleRepository
@@ -1531,7 +3274,9 @@ def test_bundle_rollback_by_version_endpoint(tmp_path) -> None:
 
     metadata.lifecycle = "draft"
     id1 = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(id1, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        id1, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
     repo.transition_bundle(
         id1,
         "active",
@@ -1543,7 +3288,9 @@ def test_bundle_rollback_by_version_endpoint(tmp_path) -> None:
     metadata.version = "2026.99"
     metadata.lifecycle = "draft"
     id2 = repo.register_bundle(metadata, rules)
-    repo.transition_bundle(id2, "candidate", promoted_by="ops", promotion_reason="ready")
+    repo.transition_bundle(
+        id2, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
     repo.transition_bundle(
         id2,
         "active",
@@ -1573,6 +3320,84 @@ def test_bundle_rollback_by_version_endpoint(tmp_path) -> None:
     )
     assert rollback.status_code == 200
     assert rollback.json()["active_bundle_id"] == id1
+
+
+def test_bundle_rollback_preview_returns_impact_without_mutating_active(
+    tmp_path,
+) -> None:
+    from sena.policy.parser import load_policy_bundle
+    from sena.policy.store import SQLitePolicyBundleRepository
+
+    db_path = tmp_path / "policy_registry.db"
+    repo = SQLitePolicyBundleRepository(str(db_path))
+    repo.initialize()
+    rules, metadata = load_policy_bundle("src/sena/examples/policies")
+
+    metadata.lifecycle = "draft"
+    id1 = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(
+        id1, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
+    repo.transition_bundle(
+        id1,
+        "active",
+        promoted_by="ops",
+        promotion_reason="go",
+        validation_artifact="CAB-1",
+        evidence_json='{"simulation":"ok"}',
+    )
+
+    metadata.version = "2026.98"
+    metadata.lifecycle = "draft"
+    id2 = repo.register_bundle(metadata, rules)
+    repo.transition_bundle(
+        id2, "candidate", promoted_by="ops", promotion_reason="ready"
+    )
+    repo.transition_bundle(
+        id2,
+        "active",
+        promoted_by="ops",
+        promotion_reason="go",
+        validation_artifact="CAB-2",
+        evidence_json='{"simulation":"ok"}',
+    )
+
+    app = create_app(
+        _settings(
+            policy_store_backend="sqlite",
+            policy_store_sqlite_path=str(db_path),
+            bundle_name=metadata.bundle_name,
+        )
+    )
+    client = TestClient(app)
+    preview = client.post(
+        "/v1/bundle/rollback",
+        json={
+            "bundle_name": metadata.bundle_name,
+            "to_bundle_id": id1,
+            "promoted_by": "ops",
+            "promotion_reason": "incident-drill",
+            "validation_artifact": "INC-PR-1",
+            "preview_only": True,
+            "simulation_scenarios": [
+                {
+                    "scenario_id": "vendor-payment",
+                    "action_type": "approve_vendor_payment",
+                    "attributes": {"amount": 1200, "vendor_verified": False},
+                    "facts": {},
+                }
+            ],
+        },
+    )
+    assert preview.status_code == 200
+    assert preview.json()["status"] == "preview"
+    assert preview.json()["preview"]["to_bundle_id"] == id1
+
+    active = client.get(
+        "/v1/bundles/active", params={"bundle_name": metadata.bundle_name}
+    )
+    assert active.status_code == 200
+    assert active.json()["bundle_id"] == id2
 
 
 def test_bundle_promote_invalid_transition_returns_machine_readable_failure(
@@ -1648,3 +3473,91 @@ def test_bundle_rollback_target_not_found_returns_machine_readable_failure(
     body = response.json()
     assert body["error"]["code"] == "promotion_validation_failed"
     assert body["error"]["details"]["errors"] == ["rollback target bundle not found"]
+
+
+def test_exception_endpoints_and_simulation_mode() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    expiry = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    create_response = client.post(
+        "/v1/exceptions/create",
+        json={
+            "exception_id": "exc-api-1",
+            "scope": {
+                "action_type": "approve_vendor_payment",
+                "actor": "user-42",
+                "attributes": {"vendor_verified": True},
+            },
+            "expiry": expiry,
+            "approver_class": "finance_director",
+            "justification": "Emergency vendor payment window",
+        },
+    )
+    assert create_response.status_code == 200
+
+    approve_response = client.post(
+        "/v1/exceptions/approve",
+        json={
+            "exception_id": "exc-api-1",
+            "approver_role": "finance_director",
+            "approver_id": "director-1",
+        },
+    )
+    assert approve_response.status_code == 200
+
+    active_response = client.get("/v1/exceptions/active")
+    assert active_response.status_code == 200
+    assert active_response.json()["count"] == 1
+
+    evaluate_response = client.post(
+        "/v1/evaluate",
+        json={
+            "action_type": "approve_vendor_payment",
+            "actor_id": "user-42",
+            "attributes": {
+                "amount": 15000,
+                "vendor_verified": True,
+                "requester_role": "finance_analyst",
+            },
+            "simulate_exceptions": True,
+        },
+    )
+    assert evaluate_response.status_code == 200
+    body = evaluate_response.json()
+    assert body["baseline_outcome"] == "ESCALATE_FOR_HUMAN_REVIEW"
+    assert body["outcome"] == "APPROVED"
+    assert body["exception_simulation"]["changed"] is True
+    assert body["audit_record"]["applied_exception_ids"] == ["exc-api-1"]
+
+
+def test_expired_exceptions_not_returned_active() -> None:
+    app = create_app(_settings())
+    client = TestClient(app)
+
+    expiry = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    create_response = client.post(
+        "/v1/exceptions/create",
+        json={
+            "exception_id": "exc-expired-api",
+            "scope": {"action_type": "approve_vendor_payment"},
+            "expiry": expiry,
+            "approver_class": "finance_director",
+            "justification": "Expired exception",
+        },
+    )
+    assert create_response.status_code == 200
+
+    approve_response = client.post(
+        "/v1/exceptions/approve",
+        json={
+            "exception_id": "exc-expired-api",
+            "approver_role": "finance_director",
+            "approver_id": "director-2",
+        },
+    )
+    assert approve_response.status_code == 200
+
+    active_response = client.get("/v1/exceptions/active")
+    assert active_response.status_code == 200
+    assert active_response.json()["count"] == 0

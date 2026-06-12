@@ -1,0 +1,89 @@
+{
+  "bundle": {
+    "expected_name": "enterprise-compliance-controls",
+    "expected_version": "2026.03",
+    "path": "src/sena/examples/policies"
+  },
+  "case_id": "jira_originated_normalized_event",
+  "description": "Jira event should normalize into supported action proposal and evaluate deterministically.",
+  "expected": {
+    "applied_exception_ids": [],
+    "baseline_outcome": "BLOCKED",
+    "bundle_identity": {
+      "name": "enterprise-compliance-controls",
+      "version": "2026.03"
+    },
+    "decision_hash": "8b918da8696258143890de9afbbda89205d88732836ae9382e68b9f08d13c00e",
+    "matched_rules": [
+      "payment_block_unverified_vendor",
+      "payment_escalate_high_amount_non_director"
+    ],
+    "missing_evidence": [],
+    "missing_fields": [
+      "ai_metadata.human_owner",
+      "ai_metadata.originating_model",
+      "ai_metadata.risk_classification.level",
+      "impact_scope"
+    ],
+    "normalized_proposal": {
+      "action_origin": "autonomous_tool",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "acct-1",
+      "actor_role": null,
+      "ai_metadata": null,
+      "attributes": {
+        "amount": 12000,
+        "approval_workflow": "finance",
+        "business_unit": "finance",
+        "correlation_key": "RISK-9",
+        "escalation_deadline_at": "2026-04-10T18:00:00Z",
+        "evidence_references": [
+          "RISK-9"
+        ],
+        "external_state": "Pending Approval",
+        "idempotency_key": "replay-jira-1",
+        "jira_issue_key": "RISK-9",
+        "jira_transition": [
+          {
+            "field": "status",
+            "toString": "Pending Approval"
+          }
+        ],
+        "requested_action": "approve_vendor_payment",
+        "requester_role": "finance_analyst",
+        "risk_attributes": {
+          "approval_amount": 12000,
+          "vendor_verified": false
+        },
+        "sla_deadline_at": "2026-04-11T00:00:00Z",
+        "source_event_type": "jira:issue_updated",
+        "source_object_id": "10001",
+        "source_object_type": "jira_issue",
+        "source_system": "jira",
+        "tenant_id": "tenant-finance",
+        "ticket_priority": "P2",
+        "vendor_verified": false,
+        "workflow_id": "wf-ap-01",
+        "workflow_stage": "pending_approval"
+      },
+      "autonomous_metadata": {
+        "supervising_owner": "acct-1",
+        "tool_name": "jira",
+        "trigger_reference": "10001",
+        "trigger_type": "jira:issue_updated"
+      },
+      "request_id": "RISK-9"
+    },
+    "outcome": "BLOCKED"
+  },
+  "fixture_schema": "sena.replay_fixture.v1",
+  "input": {
+    "event_fixture_path": "tests/replay_corpus/fixtures/events/jira_issue_updated_vendor_block.json",
+    "facts": {},
+    "headers": {
+      "x-atlassian-webhook-identifier": "replay-jira-1"
+    },
+    "mode": "mapped_event",
+    "source_system": "jira"
+  }
+}

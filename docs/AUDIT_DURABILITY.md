@@ -36,6 +36,8 @@ When configured with `SENA_AUDIT_SINK_JSONL=/path/to/audit.jsonl`:
 
 The local sink is **tamper-evident**, not immutable.
 
+For fast incident triage steps and diagnostic category meanings, see `docs/AUDIT_VERIFICATION_GUIDE.md`.
+
 It does **not** provide:
 - WORM retention lock,
 - multi-host replication/quorum durability,

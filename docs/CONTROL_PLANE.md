@@ -1,63 +1,37 @@
 # SENA Control Plane (Alpha)
 
-SENA’s control plane is an **alpha deterministic governance layer** for AI-assisted enterprise approval workflows.
+Read `READINESS.md` and defer all maturity claims to the **"Canonical maturity statement (source of truth)"** section.
 
-## Positioning
+Terminology follows README: `supported`, `experimental`, `labs/demo`, and `legacy`.
 
-SENA is a deterministic policy decision system, not a generalized AI safety platform and not a formal verification framework.
+## Supported product (current scope)
 
-## Primary wedge
+SENA is an **alpha control-plane core for Jira + ServiceNow approval decisioning**.
 
-**One normalized policy model across Jira + ServiceNow approval events**, with deterministic outcomes and evidence-first release workflows.
+The supported path is concrete and implemented: ingest Jira/ServiceNow approval events, normalize them into one policy context, evaluate deterministically against versioned bundles, and return machine-actionable outcomes with replayable evidence.
+
+- Outcomes: `APPROVED`, `BLOCKED`, `ESCALATE_FOR_HUMAN_REVIEW`
+- Same policy semantics across Jira and ServiceNow
+- Deterministic replay artifacts + hash-linked audit verification
 
 ## Implemented capabilities
 
-1. **Deterministic evaluation core**
-   - Strict rule validation and deterministic precedence handling.
-   - Explicit outcomes: allow, block, escalate.
+1. Deterministic policy evaluation core.
+2. Jira + ServiceNow normalized integration routes.
+3. Bundle diff, simulation, and promotion-validation release evidence primitives.
+4. Hash-linked audit records with verification endpoints.
+5. Policy lifecycle state transitions.
 
-2. **Normalized integration depth (supported today)**
-   - Jira webhook normalization + evaluation.
-   - ServiceNow webhook normalization + evaluation.
-   - Shared normalized approval contract enables portable policy bundles.
+## Maturity statement
 
-3. **Release evidence primitives**
-   - Bundle diff and promotion validation APIs.
-   - Scenario simulation for baseline vs candidate impact.
-   - Trace/provenance metadata for every decision.
+SENA is **alpha**. This document intentionally describes implemented control-plane behavior only; maturity and readiness claims are centralized in `docs/READINESS.md`.
 
-4. **Auditable decision records**
-   - Hash-linked JSONL audit chain.
-   - Verification endpoint for tamper detection.
+## Non-goals (current phase)
 
-5. **Policy lifecycle controls**
-   - Bundle lifecycle states (`draft`, `candidate`, `active`, `deprecated`).
-   - Registry/promotion endpoints for explicit state transitions.
+- Broad connector marketplace expansion before Jira + ServiceNow depth hardening.
+- Generalized AI safety positioning as the primary product narrative.
+- Formal verification claims.
 
-## Integration status labels
+## Strategy conflict marker
 
-### Supported (productized depth)
-- `POST /v1/integrations/jira/webhook`
-- `POST /v1/integrations/servicenow/webhook`
-
-### Experimental (evaluation-only)
-- `POST /v1/integrations/webhook`
-- `POST /v1/integrations/slack/interactions`
-
-Experimental surfaces are intentionally unstable and may change without backward-compatibility guarantees.
-
-## Current maturity boundary
-
-SENA is **alpha** and should be represented as pilot-prep infrastructure.
-
-Not yet included as built-in platform controls:
-- tenant isolation and enterprise identity/RBAC administration,
-- replicated/WORM-native audit storage,
-- asynchronous long-running simulation orchestration,
-- full policy authoring/approval UI.
-
-## Near-term roadmap alignment
-
-1. Harden Jira + ServiceNow workflows and failure-mode coverage.
-2. Enforce simulation-backed promotion gates with better evidence packaging.
-3. Improve operational durability (persistence + audit recovery drills).
+Any materials framing Kubernetes or other labs/demo connectors as the primary product wedge are historical.

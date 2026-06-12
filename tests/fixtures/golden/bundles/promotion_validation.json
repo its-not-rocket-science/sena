@@ -1,7 +1,9 @@
 {
   "valid": false,
   "errors": [
-    "promotion to active requires validation artifact",
+    "promotion to approved/active requires validation artifact",
+    "promotion from candidate requires simulation report",
+    "promotion from candidate requires at least two approver attestations",
     "target bundle contains duplicate rule ids",
     "active bundle must include at least one BLOCK rule"
   ]

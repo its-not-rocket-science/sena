@@ -8,16 +8,22 @@ from typing import Any
 
 from sena.audit.chain import verify_audit_chain
 from sena.api.config import ApiSettings
+from sena.api.deployment_profiles import (
+    VALID_DEPLOYMENT_PROFILES,
+    validate_credible_pilot_profile,
+)
 from sena.integrations.jira import load_jira_mapping_config
 from sena.integrations.servicenow import load_servicenow_mapping_config
 from sena.integrations.webhook import load_webhook_mapping_config
 from sena.policy.parser import PolicyParseError, load_policy_bundle
 from sena.policy.release_signing import verify_release_manifest
 from sena.policy.store import SQLitePolicyBundleRepository
+from sena.storage_backends import get_capability
 
-VALID_API_ROLES = {"admin", "policy_author", "evaluator"}
+VALID_API_ROLES = {"admin", "policy_author", "reviewer", "deployer", "auditor"}
 VALID_RUNTIME_MODES = {"development", "pilot", "production"}
 VALID_POLICY_STORE_BACKENDS = {"filesystem", "sqlite"}
+VALID_INGESTION_QUEUE_BACKENDS = {"memory", "redis", "sqlite"}
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,14 @@ def _validate_env_coherence(settings: ApiSettings) -> list[str]:
     if settings.runtime_mode not in VALID_RUNTIME_MODES:
         errors.append(
             f"SENA_RUNTIME_MODE must be one of {sorted(VALID_RUNTIME_MODES)}; got '{settings.runtime_mode}'"
+        )
+    if (
+        settings.deployment_profile is not None
+        and settings.deployment_profile not in VALID_DEPLOYMENT_PROFILES
+    ):
+        errors.append(
+            "SENA_DEPLOYMENT_PROFILE must be one of "
+            f"{sorted(VALID_DEPLOYMENT_PROFILES)}; got '{settings.deployment_profile}'"
         )
     if settings.policy_store_backend not in VALID_POLICY_STORE_BACKENDS:
         errors.append(
@@ -110,7 +124,54 @@ def _validate_env_coherence(settings: ApiSettings) -> list[str]:
                 errors.append(
                     f"{env_name} must point to an existing file: {config_path}"
                 )
+    if settings.integration_reliability_sqlite_path:
+        reliability_parent = (
+            Path(settings.integration_reliability_sqlite_path)
+            .expanduser()
+            .resolve()
+            .parent
+        )
+        if not reliability_parent.exists() or not reliability_parent.is_dir():
+            errors.append(
+                "SENA_INTEGRATION_RELIABILITY_SQLITE_PATH parent directory must exist: "
+                f"{settings.integration_reliability_sqlite_path}"
+            )
+    if settings.ingestion_queue_backend not in VALID_INGESTION_QUEUE_BACKENDS:
+        errors.append(
+            "SENA_INGESTION_QUEUE_BACKEND must be one of "
+            f"{sorted(VALID_INGESTION_QUEUE_BACKENDS)}"
+        )
+    if settings.ingestion_queue_backend == "redis" and not settings.ingestion_queue_redis_url:
+        errors.append(
+            "SENA_INGESTION_QUEUE_REDIS_URL is required when backend is redis"
+        )
+    if settings.runtime_mode in {"pilot", "production"} and settings.ingestion_queue_backend == "memory":
+        errors.append(
+            f"SENA_RUNTIME_MODE={settings.runtime_mode} forbids "
+            "SENA_INGESTION_QUEUE_BACKEND=memory because queued inbound work "
+            "must survive process restart. Configure redis or sqlite."
+        )
+    if settings.ingestion_queue_backend == "sqlite":
+        sqlite_parent = Path(settings.processing_sqlite_path).expanduser().resolve().parent
+        if not sqlite_parent.exists() or not sqlite_parent.is_dir():
+            errors.append(
+                "SENA_PROCESSING_SQLITE_PATH parent directory must exist when "
+                "SENA_INGESTION_QUEUE_BACKEND=sqlite: "
+                f"{settings.processing_sqlite_path}"
+            )
 
+    jira_enabled = bool(
+        settings.jira_mapping_config_path
+        or settings.jira_webhook_secret
+        or settings.jira_webhook_secret_previous
+        or settings.jira_write_back
+    )
+    servicenow_enabled = bool(
+        settings.servicenow_mapping_config_path
+        or settings.servicenow_webhook_secret
+        or settings.servicenow_webhook_secret_previous
+        or settings.servicenow_write_back
+    )
     if settings.runtime_mode == "production":
         if not settings.audit_sink_jsonl:
             errors.append("SENA_RUNTIME_MODE=production requires SENA_AUDIT_SINK_JSONL")
@@ -127,15 +188,73 @@ def _validate_env_coherence(settings: ApiSettings) -> list[str]:
                 "SENA_BUNDLE_SIGNATURE_KEYRING_DIR must point to an existing directory: "
                 f"{settings.bundle_signature_keyring_dir}"
             )
-        if settings.jira_mapping_config_path and not settings.jira_webhook_secret:
+        if jira_enabled and not settings.jira_mapping_config_path:
             errors.append(
-                "SENA_RUNTIME_MODE=production requires SENA_JIRA_WEBHOOK_SECRET when Jira integration is enabled"
+                "SENA_RUNTIME_MODE=production requires SENA_JIRA_MAPPING_CONFIG when Jira integration is enabled"
+            )
+        if servicenow_enabled and not settings.servicenow_mapping_config_path:
+            errors.append(
+                "SENA_RUNTIME_MODE=production requires SENA_SERVICENOW_MAPPING_CONFIG when ServiceNow integration is enabled"
+            )
+        if settings.integration_reliability_allow_inmemory:
+            errors.append(
+                "SENA_RUNTIME_MODE=production forbids SENA_INTEGRATION_RELIABILITY_ALLOW_INMEMORY=true"
+            )
+        if (jira_enabled or servicenow_enabled) and not settings.integration_reliability_sqlite_path:
+            errors.append(
+                "SENA_RUNTIME_MODE=production requires SENA_INTEGRATION_RELIABILITY_SQLITE_PATH when Jira or ServiceNow integration is enabled"
+            )
+    if settings.runtime_mode in {"pilot", "production"}:
+        if jira_enabled and not (
+            settings.jira_webhook_secret or settings.jira_webhook_secret_previous
+        ):
+            errors.append(
+                f"SENA_RUNTIME_MODE={settings.runtime_mode} requires "
+                "SENA_JIRA_WEBHOOK_SECRET (or SENA_JIRA_WEBHOOK_SECRET_PREVIOUS) "
+                "when Jira integration is enabled; allow-all verifier is disabled"
+            )
+        if servicenow_enabled and not (
+            settings.servicenow_webhook_secret
+            or settings.servicenow_webhook_secret_previous
+        ):
+            errors.append(
+                f"SENA_RUNTIME_MODE={settings.runtime_mode} requires "
+                "SENA_SERVICENOW_WEBHOOK_SECRET (or "
+                "SENA_SERVICENOW_WEBHOOK_SECRET_PREVIOUS) when ServiceNow "
+                "integration is enabled; allow-all verifier is disabled"
             )
     if settings.audit_verify_on_startup_strict and not settings.audit_sink_jsonl:
         errors.append(
             "SENA_AUDIT_VERIFY_ON_STARTUP_STRICT=true requires SENA_AUDIT_SINK_JSONL"
         )
     return errors
+
+
+def _storage_backend_profile_warnings(settings: ApiSettings) -> list[str]:
+    warnings: list[str] = []
+    selected: list[tuple[str, str]] = [
+        ("audit", settings.audit_storage_backend),
+        ("policy_bundle", settings.policy_store_backend),
+        ("runtime_processing", "sqlite"),
+        ("ingestion_queue", settings.ingestion_queue_backend),
+    ]
+    reliability_backend = (
+        "inmemory" if settings.integration_reliability_allow_inmemory else "sqlite"
+    )
+    selected.append(("integration_reliability", reliability_backend))
+    for concern, backend in selected:
+        capability = get_capability(concern, backend)
+        if capability is None or settings.runtime_mode != "production":
+            continue
+        if capability.deployment_suitability == "local_dev":
+            warnings.append(
+                f"unsafe local/dev backend selected in production: {concern}={backend}"
+            )
+        elif capability.deployment_suitability == "pilot":
+            warnings.append(
+                f"pilot backend selected in production: {concern}={backend}"
+            )
+    return warnings
 
 
 def _policy_backend_ready(settings: ApiSettings) -> list[str]:
@@ -261,6 +380,16 @@ def run_production_readiness_check(settings: ApiSettings) -> dict[str, Any]:
         "integration mapping existence and schema validity",
         fatal=True,
         details=integration_details,
+    )
+    add(
+        "storage backend suitability",
+        fatal=True,
+        details=_storage_backend_profile_warnings(settings),
+    )
+    add(
+        "credible pilot profile invariants",
+        fatal=True,
+        details=validate_credible_pilot_profile(settings),
     )
 
     audit_details: list[str] = []

@@ -25,6 +25,10 @@
   ],
   "correlation_key": "T-100",
   "idempotency_key": "idem-1",
+  "external_state": null,
+  "previous_external_state": null,
+  "sla_deadline_at": null,
+  "escalation_deadline_at": null,
   "source_metadata": {
     "source_delivery_id": "delivery-9"
   }

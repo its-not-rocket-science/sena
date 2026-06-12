@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
@@ -27,19 +28,45 @@ class EvaluateRequest(EvaluatePayload):
 
 
 class WebhookEvaluateRequest(BaseModel):
-    model_config = ConfigDict(json_schema_extra={"example": {"provider": "jira", "event_type": "issue_updated", "payload": {"id": "ISSUE-101"}, "facts": {}, "default_decision": "APPROVED", "strict_require_allow": False}})
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "provider": "jira",
+                "event_type": "issue_updated",
+                "payload": {"id": "ISSUE-101"},
+                "facts": {},
+                "default_decision": "APPROVED",
+                "strict_require_allow": False,
+            }
+        }
+    )
     provider: NonEmptyStr
     event_type: NonEmptyStr
+    tenant_id: str | None = None
+    region: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     facts: dict[str, Any] = Field(default_factory=dict)
     default_decision: Literal[
         "APPROVED", "BLOCKED", "ESCALATE", "ESCALATE_FOR_HUMAN_REVIEW"
     ] = "APPROVED"
     strict_require_allow: bool = False
+    downstream_outcome: Literal["success", "failure"] | None = None
+    incident_flag: bool | None = None
 
 
 class BatchEvaluateRequest(BaseModel):
-    model_config = ConfigDict(json_schema_extra={"example": {"items": [{"action_type": "approve_vendor_payment", "attributes": {"amount": 500, "vendor_verified": True}}]}})
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "items": [
+                    {
+                        "action_type": "approve_vendor_payment",
+                        "attributes": {"amount": 500, "vendor_verified": True},
+                    }
+                ]
+            }
+        }
+    )
     items: list[EvaluateRequest] = Field(min_length=1, max_length=500)
 
 
@@ -77,6 +104,57 @@ class SimulationReplayRequest(BaseModel):
     max_samples: int = Field(default=10, ge=1, le=100)
 
 
+class SimulationJobSubmitRequest(SimulationRequest):
+    timeout_seconds: float | None = Field(default=None, gt=0)
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: Literal[
+        "queued", "running", "succeeded", "failed", "cancelled", "timed_out"
+    ]
+    submitted_at: str
+    started_at: str | None = None
+    completed_at: str | None = None
+    result_ref: str | None = None
+    error: dict[str, Any] | None = None
+
+
+class JobAcceptedResponse(BaseModel):
+    status: Literal["accepted"] = "accepted"
+    job: JobStatusResponse
+
+
+class JobResultResponse(BaseModel):
+    job_id: str
+    status: Literal["succeeded"] = "succeeded"
+    result: dict[str, Any]
+
+
+class ExceptionScopeRequest(BaseModel):
+    action_type: NonEmptyStr
+    actor: str | None = None
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExceptionCreateRequest(BaseModel):
+    exception_id: NonEmptyStr
+    scope: ExceptionScopeRequest
+    expiry: datetime
+    approver_class: NonEmptyStr
+    justification: NonEmptyStr
+
+
+class ExceptionApproveRequest(BaseModel):
+    exception_id: NonEmptyStr
+    approver_role: NonEmptyStr
+    approver_id: NonEmptyStr
+
+
+class ExceptionActiveQuery(BaseModel):
+    as_of: datetime | None = None
+
+
 class BundleInfo(BaseModel):
     bundle_name: str
     version: str
@@ -110,7 +188,9 @@ class BundleRegisterRequest(BaseModel):
     policy_dir: str | None = None
     bundle_name: str | None = None
     bundle_version: str | None = None
-    lifecycle: Literal["draft", "candidate", "active", "deprecated"] = "draft"
+    lifecycle: Literal["draft", "candidate", "approved", "active", "deprecated"] = (
+        "draft"
+    )
     created_by: NonEmptyStr = "system"
     creation_reason: str | None = None
     source_bundle_id: int | None = Field(default=None, gt=0)
@@ -129,7 +209,7 @@ class BundlePromoteRequest(BaseModel):
         required_risk_categories: list[str] = Field(default_factory=list)
 
     bundle_id: int = Field(gt=0)
-    target_lifecycle: Literal["candidate", "active", "deprecated"]
+    target_lifecycle: Literal["candidate", "approved", "active", "deprecated"]
     promoted_by: NonEmptyStr
     promotion_reason: NonEmptyStr
     validation_artifact: str | None = None
@@ -138,6 +218,7 @@ class BundlePromoteRequest(BaseModel):
     thresholds: PromotionThresholds | None = None
     break_glass: bool = False
     break_glass_reason: str | None = None
+    approver_attestations: list[str] = Field(default_factory=list)
 
 
 class BundleRollbackRequest(BaseModel):
@@ -147,13 +228,17 @@ class BundleRollbackRequest(BaseModel):
     promoted_by: NonEmptyStr
     promotion_reason: NonEmptyStr
     validation_artifact: NonEmptyStr
+    preview_only: bool = False
+    simulation_scenarios: list[SimulationScenarioRequest] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_target(self) -> "BundleRollbackRequest":
         if self.to_bundle_id is None and not self.version:
             raise ValueError("rollback requires either to_bundle_id or version")
         if self.to_bundle_id is not None and self.version:
-            raise ValueError("rollback target must specify only one of to_bundle_id or version")
+            raise ValueError(
+                "rollback target must specify only one of to_bundle_id or version"
+            )
         return self
 
 
@@ -165,3 +250,27 @@ class AuditTreeVerifyRequest(BaseModel):
     decision_id: NonEmptyStr
     merkle_proof: list[NonEmptyStr]
     expected_root: NonEmptyStr
+
+
+class DecisionAttestationSignRequest(BaseModel):
+    signer_id: NonEmptyStr
+    signer_role: Literal["verifier"] = "verifier"
+    signing_key: NonEmptyStr
+    key_id: NonEmptyStr = "third_party_verifier"
+
+
+class DecisionAttestationResponse(BaseModel):
+    attestation_id: str
+    decision_id: str
+    decision_hash: str
+    signer_id: str
+    signer_role: str
+    key_id: str
+    signature: str
+    signed_at: str
+    verified: bool
+
+
+class DecisionAttestationsResponse(BaseModel):
+    decision_id: str
+    attestations: list[DecisionAttestationResponse] = Field(default_factory=list)

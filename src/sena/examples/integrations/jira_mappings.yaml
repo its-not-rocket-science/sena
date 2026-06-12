@@ -7,6 +7,27 @@ routes:
     static_source_object_type: jira_issue
     static_workflow_stage: pending_approval
     static_requested_action: approve_vendor_payment
+    external_state_path: issue.fields.status.name
+    previous_external_state_path: issue.fields.previous_status.name
+    external_to_internal_state:
+      Pending Approval: pending_approval
+      In Review: in_review
+      Approved: approved
+      Rejected: rejected
+    internal_to_external_state:
+      blocked: Rejected
+      allowed: Approved
+      approved: Approved
+      rejected: Rejected
+    allowed_state_transitions:
+      pending_approval:
+        - in_review
+        - approved
+        - rejected
+      in_review:
+        - pending_approval
+        - approved
+        - rejected
     correlation_key_path: issue.key
     required_fields:
       - issue.id
@@ -18,6 +39,17 @@ routes:
       requester_role: issue.fields.customfield_requester_role
       vendor_verified: issue.fields.customfield_vendor_verified
       jira_transition: changelog.items
+    context_fields:
+      ticket_priority: issue.fields.priority.name
+      business_unit: issue.fields.customfield_business_unit
+    metadata_fields:
+      tenant_id: issue.fields.customfield_tenant_id
+      workflow_id: issue.fields.customfield_workflow_id
+    required_metadata_fields:
+      - tenant_id
+      - workflow_id
+    sla_deadline_path: issue.fields.customfield_sla_deadline_at
+    escalation_deadline_path: issue.fields.customfield_escalation_deadline_at
     risk_attributes:
       approval_amount: issue.fields.customfield_approval_amount
       vendor_verified: issue.fields.customfield_vendor_verified
@@ -45,3 +77,4 @@ routes:
       dpo_approved: issue.fields.customfield_dpo_approved
 outbound:
   mode: both
+  max_attempts: 3

@@ -1,0 +1,568 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Literal, Protocol
+
+from sena.integrations.approval import DeadLetterItem
+
+
+@dataclass(frozen=True)
+class DeliveryCompletionRecord:
+    operation_key: str
+    target: str
+    completed_at: str
+    attempts: int
+    max_attempts: int
+    payload: dict[str, Any]
+    result: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class OutboundDeadLetterRecord:
+    id: int
+    operation_key: str
+    target: str
+    error: str
+    attempts: int
+    max_attempts: int | None
+    first_failed_at: str | None
+    last_failed_at: str | None
+    payload: dict[str, Any]
+    created_at: str
+
+
+class IntegrationReliabilityStore(Protocol):
+    def mark_if_new(
+        self, delivery_id: str, *, payload_fingerprint: str | None = None
+    ) -> Literal["new", "duplicate", "conflict"]: ...
+
+    def mark_completed(
+        self,
+        operation_key: str,
+        *,
+        target: str,
+        payload: dict[str, Any],
+        result: dict[str, Any] | None,
+        attempts: int,
+        max_attempts: int,
+    ) -> None: ...
+
+    def has_completed(self, operation_key: str) -> bool: ...
+
+    def get_completion(self, operation_key: str) -> DeliveryCompletionRecord | None: ...
+
+    def push(self, item: DeadLetterItem) -> None: ...
+
+    def items(self) -> list[DeadLetterItem]: ...
+
+
+class SQLiteIntegrationReliabilityStore:
+    """SQLite-backed store for supported connector reliability state."""
+
+    def __init__(self, db_path: str) -> None:
+        self._db_path = db_path
+        Path(db_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = FULL")
+        return conn
+
+    def _initialize(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS delivery_idempotency_keys (
+                    delivery_id TEXT PRIMARY KEY,
+                    observed_at TEXT NOT NULL,
+                    last_seen_at TEXT,
+                    seen_count INTEGER NOT NULL DEFAULT 1,
+                    suppressed_count INTEGER NOT NULL DEFAULT 0,
+                    conflict_count INTEGER NOT NULL DEFAULT 0,
+                    payload_fingerprint TEXT
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS outbound_delivery_completion (
+                    operation_key TEXT PRIMARY KEY,
+                    target TEXT NOT NULL,
+                    completed_at TEXT NOT NULL,
+                    attempts INTEGER NOT NULL,
+                    max_attempts INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    result_json TEXT
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS outbound_delivery_dead_letter (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    operation_key TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    error TEXT NOT NULL,
+                    attempts INTEGER NOT NULL,
+                    max_attempts INTEGER,
+                    first_failed_at TEXT,
+                    last_failed_at TEXT,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS outbound_delivery_duplicate_suppression (
+                    operation_key TEXT PRIMARY KEY,
+                    target TEXT NOT NULL,
+                    first_suppressed_at TEXT NOT NULL,
+                    last_suppressed_at TEXT NOT NULL,
+                    suppressed_count INTEGER NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS outbound_delivery_admin_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_type TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    error TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(delivery_idempotency_keys)")
+            }
+            if "last_seen_at" not in columns:
+                conn.execute(
+                    "ALTER TABLE delivery_idempotency_keys ADD COLUMN last_seen_at TEXT"
+                )
+            if "seen_count" not in columns:
+                conn.execute(
+                    "ALTER TABLE delivery_idempotency_keys ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 1"
+                )
+            if "suppressed_count" not in columns:
+                conn.execute(
+                    "ALTER TABLE delivery_idempotency_keys ADD COLUMN suppressed_count INTEGER NOT NULL DEFAULT 0"
+                )
+            if "conflict_count" not in columns:
+                conn.execute(
+                    "ALTER TABLE delivery_idempotency_keys ADD COLUMN conflict_count INTEGER NOT NULL DEFAULT 0"
+                )
+            if "payload_fingerprint" not in columns:
+                conn.execute(
+                    "ALTER TABLE delivery_idempotency_keys ADD COLUMN payload_fingerprint TEXT"
+                )
+
+    def mark_if_new(
+        self, delivery_id: str, *, payload_fingerprint: str | None = None
+    ) -> Literal["new", "duplicate", "conflict"]:
+        observed_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO delivery_idempotency_keys (
+                    delivery_id,
+                    observed_at,
+                    last_seen_at,
+                    seen_count,
+                    suppressed_count,
+                    conflict_count,
+                    payload_fingerprint
+                )
+                VALUES (?, ?, ?, 1, 0, 0, ?)
+                ON CONFLICT(delivery_id) DO UPDATE SET
+                    last_seen_at = excluded.last_seen_at,
+                    seen_count = delivery_idempotency_keys.seen_count + 1,
+                    suppressed_count = delivery_idempotency_keys.suppressed_count
+                        + CASE
+                            WHEN delivery_idempotency_keys.payload_fingerprint IS excluded.payload_fingerprint
+                            THEN 1
+                            ELSE 0
+                        END,
+                    conflict_count = delivery_idempotency_keys.conflict_count
+                        + CASE
+                            WHEN delivery_idempotency_keys.payload_fingerprint IS excluded.payload_fingerprint
+                            THEN 0
+                            ELSE 1
+                        END
+                """,
+                (delivery_id, observed_at, observed_at, payload_fingerprint),
+            )
+            row = conn.execute(
+                "SELECT seen_count, payload_fingerprint FROM delivery_idempotency_keys WHERE delivery_id = ?",
+                (delivery_id,),
+            ).fetchone()
+            if row is None:
+                return "duplicate"
+            if int(row["seen_count"]) == 1:
+                return "new"
+            if row["payload_fingerprint"] == payload_fingerprint:
+                return "duplicate"
+            return "conflict"
+
+    def mark_completed(
+        self,
+        operation_key: str,
+        *,
+        target: str,
+        payload: dict[str, Any],
+        result: dict[str, Any] | None,
+        attempts: int,
+        max_attempts: int,
+    ) -> None:
+        completed_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO outbound_delivery_completion (
+                    operation_key,
+                    target,
+                    completed_at,
+                    attempts,
+                    max_attempts,
+                    payload_json,
+                    result_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    operation_key,
+                    target,
+                    completed_at,
+                    attempts,
+                    max_attempts,
+                    json.dumps(payload, sort_keys=True, separators=(",", ":")),
+                    json.dumps(result, sort_keys=True, separators=(",", ":"))
+                    if result is not None
+                    else None,
+                ),
+            )
+
+    def has_completed(self, operation_key: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM outbound_delivery_completion WHERE operation_key = ?",
+                (operation_key,),
+            ).fetchone()
+            return row is not None
+
+    def get_completion(self, operation_key: str) -> DeliveryCompletionRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM outbound_delivery_completion WHERE operation_key = ?",
+                (operation_key,),
+            ).fetchone()
+        if row is None:
+            return None
+        result_raw = row["result_json"]
+        return DeliveryCompletionRecord(
+            operation_key=str(row["operation_key"]),
+            target=str(row["target"]),
+            completed_at=str(row["completed_at"]),
+            attempts=int(row["attempts"]),
+            max_attempts=int(row["max_attempts"]),
+            payload=json.loads(str(row["payload_json"])),
+            result=json.loads(result_raw) if result_raw else None,
+        )
+
+    def push(self, item: DeadLetterItem) -> None:
+        created_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO outbound_delivery_dead_letter (
+                    operation_key,
+                    target,
+                    error,
+                    attempts,
+                    max_attempts,
+                    first_failed_at,
+                    last_failed_at,
+                    payload_json,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item.operation_key,
+                    item.target,
+                    item.error,
+                    item.attempts,
+                    item.max_attempts,
+                    item.first_failed_at,
+                    item.last_failed_at,
+                    json.dumps(item.payload, sort_keys=True, separators=(",", ":")),
+                    created_at,
+                ),
+            )
+
+    def record_outbound_duplicate_suppression(
+        self, *, operation_key: str, target: str
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO outbound_delivery_duplicate_suppression (
+                    operation_key, target, first_suppressed_at, last_suppressed_at, suppressed_count
+                )
+                VALUES (?, ?, ?, ?, 1)
+                ON CONFLICT(operation_key) DO UPDATE SET
+                    last_suppressed_at = excluded.last_suppressed_at,
+                    suppressed_count =
+                        outbound_delivery_duplicate_suppression.suppressed_count + 1
+                """,
+                (operation_key, target, now, now),
+            )
+
+    def items(self) -> list[DeadLetterItem]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT operation_key, target, error, attempts, max_attempts,
+                       first_failed_at, last_failed_at, payload_json
+                FROM outbound_delivery_dead_letter
+                ORDER BY id ASC
+                """
+            ).fetchall()
+        return [
+            DeadLetterItem(
+                operation_key=str(row["operation_key"]),
+                target=str(row["target"]),
+                error=str(row["error"]),
+                attempts=int(row["attempts"]),
+                payload=json.loads(str(row["payload_json"])),
+                max_attempts=(
+                    int(row["max_attempts"]) if row["max_attempts"] is not None else None
+                ),
+                first_failed_at=(
+                    str(row["first_failed_at"])
+                    if row["first_failed_at"] is not None
+                    else None
+                ),
+                last_failed_at=(
+                    str(row["last_failed_at"])
+                    if row["last_failed_at"] is not None
+                    else None
+                ),
+            )
+            for row in rows
+        ]
+
+    def list_completion_records(self, *, limit: int = 100) -> list[DeliveryCompletionRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM outbound_delivery_completion
+                ORDER BY completed_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            DeliveryCompletionRecord(
+                operation_key=str(row["operation_key"]),
+                target=str(row["target"]),
+                completed_at=str(row["completed_at"]),
+                attempts=int(row["attempts"]),
+                max_attempts=int(row["max_attempts"]),
+                payload=json.loads(str(row["payload_json"])),
+                result=(
+                    json.loads(str(row["result_json"]))
+                    if row["result_json"] is not None
+                    else None
+                ),
+            )
+            for row in rows
+        ]
+
+    def list_dead_letter_records(self, *, limit: int = 100) -> list[OutboundDeadLetterRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, operation_key, target, error, attempts, max_attempts,
+                       first_failed_at, last_failed_at, payload_json, created_at
+                FROM outbound_delivery_dead_letter
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            OutboundDeadLetterRecord(
+                id=int(row["id"]),
+                operation_key=str(row["operation_key"]),
+                target=str(row["target"]),
+                error=str(row["error"]),
+                attempts=int(row["attempts"]),
+                max_attempts=(
+                    int(row["max_attempts"]) if row["max_attempts"] is not None else None
+                ),
+                first_failed_at=(
+                    str(row["first_failed_at"])
+                    if row["first_failed_at"] is not None
+                    else None
+                ),
+                last_failed_at=(
+                    str(row["last_failed_at"]) if row["last_failed_at"] is not None else None
+                ),
+                payload=json.loads(str(row["payload_json"])),
+                created_at=str(row["created_at"]),
+            )
+            for row in rows
+        ]
+
+    def get_dead_letter_record(self, dead_letter_id: int) -> OutboundDeadLetterRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, operation_key, target, error, attempts, max_attempts,
+                       first_failed_at, last_failed_at, payload_json, created_at
+                FROM outbound_delivery_dead_letter
+                WHERE id = ?
+                """,
+                (dead_letter_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return OutboundDeadLetterRecord(
+            id=int(row["id"]),
+            operation_key=str(row["operation_key"]),
+            target=str(row["target"]),
+            error=str(row["error"]),
+            attempts=int(row["attempts"]),
+            max_attempts=int(row["max_attempts"]) if row["max_attempts"] is not None else None,
+            first_failed_at=str(row["first_failed_at"]) if row["first_failed_at"] is not None else None,
+            last_failed_at=str(row["last_failed_at"]) if row["last_failed_at"] is not None else None,
+            payload=json.loads(str(row["payload_json"])),
+            created_at=str(row["created_at"]),
+        )
+
+    def delete_dead_letter_record(self, dead_letter_id: int) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM outbound_delivery_dead_letter WHERE id = ?",
+                (dead_letter_id,),
+            )
+            return int(cursor.rowcount) == 1
+
+    def duplicate_suppression_summary(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            inbound = conn.execute(
+                """
+                SELECT COALESCE(SUM(suppressed_count), 0) AS suppressed_total,
+                       COALESCE(SUM(seen_count), 0) AS seen_total,
+                       COALESCE(SUM(conflict_count), 0) AS conflict_total,
+                       COUNT(*) AS unique_delivery_ids
+                FROM delivery_idempotency_keys
+                """
+            ).fetchone()
+            outbound = conn.execute(
+                """
+                SELECT COALESCE(SUM(suppressed_count), 0) AS suppressed_total,
+                       COUNT(*) AS unique_operation_keys
+                FROM outbound_delivery_duplicate_suppression
+                """
+            ).fetchone()
+            outbound_by_target_rows = conn.execute(
+                """
+                SELECT target, COALESCE(SUM(suppressed_count), 0) AS suppressed_total
+                FROM outbound_delivery_duplicate_suppression
+                GROUP BY target
+                ORDER BY target ASC
+                """
+            ).fetchall()
+        return {
+            "inbound": {
+                "unique_delivery_ids": int(inbound["unique_delivery_ids"]),
+                "seen_total": int(inbound["seen_total"]),
+                "suppressed_total": int(inbound["suppressed_total"]),
+                "conflict_total": int(inbound["conflict_total"]),
+            },
+            "outbound": {
+                "unique_operation_keys": int(outbound["unique_operation_keys"]),
+                "suppressed_total": int(outbound["suppressed_total"]),
+                "by_target": {
+                    str(row["target"]): int(row["suppressed_total"])
+                    for row in outbound_by_target_rows
+                },
+            },
+        }
+
+    def record_admin_event(
+        self, *, event_type: str, target: str, status: str, error: str | None = None
+    ) -> None:
+        created_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO outbound_delivery_admin_events (
+                    event_type, target, status, error, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (event_type, target, status, error, created_at),
+            )
+
+    def reliability_summary(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            dead_letter = conn.execute(
+                "SELECT COUNT(*) AS total FROM outbound_delivery_dead_letter"
+            ).fetchone()
+            completions = conn.execute(
+                """
+                SELECT target, COUNT(*) AS total
+                FROM outbound_delivery_completion
+                GROUP BY target
+                ORDER BY target ASC
+                """
+            ).fetchall()
+            replay = conn.execute(
+                """
+                SELECT status, COUNT(*) AS total
+                FROM outbound_delivery_admin_events
+                WHERE event_type = 'replay'
+                GROUP BY status
+                """
+            ).fetchall()
+            manual = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM outbound_delivery_admin_events
+                WHERE event_type = 'manual_redrive' AND status = 'success'
+                """
+            ).fetchone()
+        completion_by_target = {str(row["target"]): int(row["total"]) for row in completions}
+        replay_counts = {str(row["status"]): int(row["total"]) for row in replay}
+        return {
+            "dead_letter_volume": int(dead_letter["total"]),
+            "completion_total": sum(completion_by_target.values()),
+            "completion_by_target": completion_by_target,
+            "replay": {
+                "success_total": int(replay_counts.get("success", 0)),
+                "failure_total": int(replay_counts.get("failure", 0)),
+            },
+            "manual_redrive_total": int(manual["total"]),
+            "duplicate_suppression": self.duplicate_suppression_summary(),
+        }
+
+
+# Backward-compatible alias for older naming.
+PilotSQLiteIntegrationReliabilityStore = SQLiteIntegrationReliabilityStore

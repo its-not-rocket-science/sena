@@ -1,0 +1,29 @@
+{
+  "event_type": "change_approval.requested",
+  "table": "change_request",
+  "change_request": {
+    "sys_id": "abc123",
+    "number": "CHG0091005",
+    "table": "change_request"
+  },
+  "requested_by": {
+    "user_id": "sn-user-42",
+    "role": "change_manager"
+  },
+  "risk": {
+    "level": "high"
+  },
+  "flags": {
+    "emergency_change": true,
+    "privileged_change": false,
+    "out_of_hours_change": true
+  },
+  "evidence": {
+    "cab_review": true,
+    "approver_chain": [
+      "u1",
+      "u2"
+    ]
+  },
+  "sys_updated_on": "2026-04-10T17:10:00Z"
+}

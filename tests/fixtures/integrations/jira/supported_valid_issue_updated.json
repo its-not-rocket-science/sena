@@ -1,0 +1,23 @@
+{
+  "webhookEvent": "jira:issue_updated",
+  "timestamp": 1711982000,
+  "issue": {
+    "id": "10001",
+    "key": "RISK-9",
+    "fields": {
+      "customfield_approval_amount": 12000,
+      "customfield_requester_role": "finance_analyst",
+      "customfield_vendor_verified": false,
+      "customfield_tenant_id": "tenant-finance",
+      "customfield_workflow_id": "wf-ap-01",
+      "customfield_sla_deadline_at": "2026-04-11T00:00:00Z",
+      "customfield_escalation_deadline_at": "2026-04-10T18:00:00Z",
+      "customfield_business_unit": "finance",
+      "status": {"name": "Pending Approval"},
+      "previous_status": {"name": "In Review"},
+      "priority": {"name": "P2"}
+    }
+  },
+  "user": {"accountId": "acct-1"},
+  "changelog": {"items": [{"field": "status", "toString": "Pending Approval"}]}
+}

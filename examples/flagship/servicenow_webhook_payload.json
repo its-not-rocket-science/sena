@@ -1,0 +1,28 @@
+{
+  "event_type": "change_approval.requested",
+  "source_system": "servicenow",
+  "requested_action": "approve_change_request",
+  "service_tier": "tier0",
+  "environment": "production",
+  "risk": {
+    "score": 82
+  },
+  "flags": {
+    "privileged": true,
+    "emergency": true
+  },
+  "requested_by": {
+    "user_id": "u.change.003",
+    "role": "platform_engineer"
+  },
+  "change_request": {
+    "number": "CHG0091003",
+    "sys_id": "d31dd3a017dd2010ba2d55368b4bcf21",
+    "table": "change_request",
+    "stage": "awaiting_approval"
+  },
+  "cab_review": {
+    "evidence_id": "CAB-REV-7001"
+  },
+  "approver_chain": null
+}

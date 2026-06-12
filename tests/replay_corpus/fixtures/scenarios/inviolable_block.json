@@ -1,0 +1,108 @@
+{
+  "bundle": {
+    "expected_name": "enterprise-compliance-controls",
+    "expected_version": "2026.03",
+    "path": "src/sena/examples/policies"
+  },
+  "case_id": "inviolable_block",
+  "description": "AI-assisted high-risk payment without governance evidence should block due to inviolable control.",
+  "expected": {
+    "applied_exception_ids": [],
+    "baseline_outcome": "BLOCKED",
+    "bundle_identity": {
+      "name": "enterprise-compliance-controls",
+      "version": "2026.03"
+    },
+    "decision_hash": "9b464204ab6635003a18f031f58066948475711229e037ebc76e151b74b76066",
+    "matched_rules": [
+      "payment_ai_assisted_high_risk_governance_evidence"
+    ],
+    "missing_evidence": [
+      "change_ticket",
+      "human_owner",
+      "rollback_plan",
+      "simulation_preview",
+      "source_citations"
+    ],
+    "missing_fields": [
+      "ai_metadata.evidence_references",
+      "ai_metadata.human_owner",
+      "ai_metadata.prompt_context_ref",
+      "evidence.change_ticket",
+      "evidence.human_owner",
+      "evidence.rollback_plan",
+      "evidence.simulation_preview",
+      "evidence.source_citations",
+      "impact_scope"
+    ],
+    "normalized_proposal": {
+      "action_origin": "ai_suggested",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "actor-inviolable",
+      "actor_role": "finance_manager",
+      "ai_metadata": {
+        "citation_references": [],
+        "confidence": null,
+        "evidence_references": [],
+        "human_approver": null,
+        "human_owner": "",
+        "human_requester": "requester-2",
+        "originating_model": "gpt-model-v2",
+        "originating_system": "risk-assistant",
+        "prompt_context_ref": null,
+        "requested_action": "approve_vendor_payment",
+        "requested_tool": null,
+        "risk_classification": {
+          "category": "payment_risk",
+          "level": "high",
+          "rationale": "High risk recommendation",
+          "tags": [
+            "governance"
+          ]
+        },
+        "uncertainty": null
+      },
+      "attributes": {
+        "amount": 2000,
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "autonomous_metadata": null,
+      "request_id": "req-inviolable-1"
+    },
+    "outcome": "BLOCKED"
+  },
+  "fixture_schema": "sena.replay_fixture.v1",
+  "input": {
+    "facts": {},
+    "mode": "normalized_proposal",
+    "proposal": {
+      "action_origin": "ai_suggested",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "actor-inviolable",
+      "actor_role": "finance_manager",
+      "ai_metadata": {
+        "citation_references": [],
+        "human_owner": "",
+        "human_requester": "requester-2",
+        "originating_model": "gpt-model-v2",
+        "originating_system": "risk-assistant",
+        "requested_action": "approve_vendor_payment",
+        "risk_classification": {
+          "category": "payment_risk",
+          "level": "high",
+          "rationale": "High risk recommendation",
+          "tags": [
+            "governance"
+          ]
+        }
+      },
+      "attributes": {
+        "amount": 2000,
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "request_id": "req-inviolable-1"
+    }
+  }
+}

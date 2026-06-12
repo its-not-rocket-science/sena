@@ -17,6 +17,16 @@ from sena.audit.archive import (
     restore_audit_archive,
     verify_audit_archive,
 )
+from sena.audit.evidentiary import (
+    AuditRecordVerifier,
+    export_evidence_bundle,
+    load_signer_from_keyring_file,
+)
+from sena.audit.compliance import (
+    build_control_mapping,
+    build_evidence_vault,
+    export_control_audit_package,
+)
 from sena.api.config import load_settings_from_env
 from sena.api.production_check import run_production_readiness_check
 from sena.core.enums import DecisionOutcome
@@ -25,15 +35,17 @@ from sena.engine.evaluator import PolicyEvaluator
 from sena.engine.replay import (
     build_drift_report,
     evaluate_replay_cases,
+    export_canonical_replay_artifact,
     load_replay_cases,
 )
+from sena.engine.parallel import run_parallel_mode
 from sena.engine.explain import format_trace
 from sena.engine.review_package import build_decision_review_package
 from sena.engine.simulation import SimulationScenario, simulate_bundle_impact
 from sena.evidence_pack import build_evidence_pack, stable_zip_dir
 from sena.examples import DEFAULT_POLICY_DIR
 from sena.policy.lifecycle import (
-    PromotionGatePolicy,
+    build_promotion_gate_policy,
     diff_rule_sets,
     evaluate_promotion_gate,
     validate_promotion,
@@ -62,8 +74,11 @@ from sena.policy.disaster_recovery import (
 )
 from sena.policy.store import SQLitePolicyBundleRepository
 from sena.policy.validation import PolicyValidationError, validate_policy_coverage
+from sena.policy.importer import PolicyImportError, import_legacy_policy_file
 from sena.schemas import EvaluatePayload
 from sena.policy.test_runner import PolicyTestRunnerError, run_policy_tests
+from sena.services.rollout import RolloutConfigError, load_rollout_config
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
 TEMPLATES_ROOT = (
     Path(__file__).resolve().parent.parent / "examples" / "policy_templates"
@@ -312,6 +327,21 @@ def _run_policy_test(args: argparse.Namespace) -> None:
     print(json.dumps(report, indent=2))
     if int(report.get("failures", 0)) > 0:
         raise SystemExit("Policy tests failed")
+
+
+def _run_policy_import_legacy(args: argparse.Namespace) -> None:
+    try:
+        result = import_legacy_policy_file(
+            source_path=args.source,
+            output_dir=args.output_dir,
+            bundle_name=args.bundle_name,
+            bundle_version=args.bundle_version,
+            owner=args.owner,
+            description=args.description,
+        )
+    except PolicyImportError as exc:
+        raise SystemExit(_format_error("Policy import failed", exc)) from exc
+    print(json.dumps(result.__dict__, indent=2))
 
 
 def _run_policy_schema_version(args: argparse.Namespace) -> None:
@@ -593,33 +623,36 @@ def _run_registry_promote(args: argparse.Namespace) -> None:
         thresholds["max_changed_risk_categories"][risk] = int(raw_max)
 
     settings = load_settings_from_env()
-    regression_budget = dict(settings.promotion_gate_max_regressions_by_outcome_type)
-    if args.max_block_to_approve_regressions is not None:
-        regression_budget["BLOCKED->APPROVED"] = args.max_block_to_approve_regressions
+    regression_budget_overrides: dict[str, int] = {}
     for item in args.max_regression_budget or []:
         transition, _, raw_max = item.partition("=")
         if not transition or not raw_max:
             raise SystemExit(
                 "Invalid --max-regression-budget format. Use BEFORE->AFTER=max_count"
             )
-        regression_budget[transition] = int(raw_max)
+        regression_budget_overrides[transition] = int(raw_max)
     gate_failures = evaluate_promotion_gate(
         target_lifecycle=args.target_lifecycle,
         validation_artifact=args.validation_artifact,
         simulation_report=simulation_report,
         break_glass=args.break_glass,
         break_glass_reason=args.break_glass_reason,
-        policy=PromotionGatePolicy(
+        policy=build_promotion_gate_policy(
             require_validation_artifact=settings.promotion_gate_require_validation_artifact,
             require_simulation=settings.promotion_gate_require_simulation,
             required_scenario_ids=settings.promotion_gate_required_scenario_ids,
-            max_changed_outcomes=(
+            default_max_changed_outcomes=settings.promotion_gate_max_changed_outcomes,
+            default_max_regressions_by_outcome_type=dict(
+                settings.promotion_gate_max_regressions_by_outcome_type
+            ),
+            break_glass_enabled=settings.promotion_gate_break_glass_enabled,
+            override_max_changed_outcomes=(
                 args.max_changed_outcomes
                 if args.max_changed_outcomes is not None
-                else settings.promotion_gate_max_changed_outcomes
+                else None
             ),
-            max_regressions_by_outcome_type=regression_budget,
-            break_glass_enabled=settings.promotion_gate_break_glass_enabled,
+            override_max_regressions_by_outcome_type=regression_budget_overrides,
+            override_max_block_to_approve_regressions=args.max_block_to_approve_regressions,
         ),
     )
     must_block = (not args.break_glass) or any(
@@ -868,6 +901,50 @@ def _run_audit_restore_archive(args: argparse.Namespace) -> None:
         raise SystemExit("Restored audit chain failed verification")
 
 
+def _run_audit_verify_evidence(args: argparse.Namespace) -> None:
+    signer = load_signer_from_keyring_file(args.keyring)
+    verifier = AuditRecordVerifier.from_signer(signer)
+    result = verify_audit_chain(str(args.audit_path), verifier=verifier)
+    print(json.dumps(result, indent=2))
+    if not result.get("valid", False):
+        raise SystemExit("Audit evidentiary verification failed")
+
+
+def _run_audit_export_bundle(args: argparse.Namespace) -> None:
+    bundle = export_evidence_bundle(str(args.audit_path), args.decision_id)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(bundle, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps({"status": "ok", "output": str(args.output)}, indent=2))
+
+
+def _run_audit_export_control_mapping(args: argparse.Namespace) -> None:
+    rules, _ = load_policy_bundle(args.policy_dir)
+    payload = build_control_mapping(rules)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps({"status": "ok", "output": str(args.output)}, indent=2))
+
+
+def _run_audit_export_evidence_vault(args: argparse.Namespace) -> None:
+    rules, _ = load_policy_bundle(args.policy_dir)
+    payload = build_evidence_vault(str(args.audit_path), rules)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps({"status": "ok", "output": str(args.output)}, indent=2))
+
+
+def _run_audit_export_control_package(args: argparse.Namespace) -> None:
+    rules, _ = load_policy_bundle(args.policy_dir)
+    package = export_control_audit_package(
+        str(args.audit_path),
+        rules,
+        args.control_id,
+    )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(package, indent=2, sort_keys=True), encoding="utf-8")
+    print(json.dumps({"status": "ok", "output": str(args.output)}, indent=2))
+
+
 def _run_production_check(args: argparse.Namespace) -> None:
     settings = load_settings_from_env()
     report = run_production_readiness_check(settings)
@@ -887,6 +964,43 @@ def _run_production_check(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def _run_pilot_check(args: argparse.Namespace) -> None:
+    settings = load_settings_from_env()
+    report = run_production_readiness_check(settings)
+    profile_errors: list[str] = []
+    if settings.deployment_profile != "credible_pilot":
+        profile_errors.append(
+            "SENA_DEPLOYMENT_PROFILE must be set to 'credible_pilot' for pilot-check"
+        )
+    if settings.runtime_mode != "pilot":
+        profile_errors.append("SENA_RUNTIME_MODE must be 'pilot' for pilot-check")
+    if profile_errors:
+        report["ok"] = False
+        report["fatal_failures"].append("pilot-check profile selection")
+        report["fatal_failure_count"] = len(report["fatal_failures"])
+        report["checks"].append(
+            {
+                "name": "pilot-check profile selection",
+                "status": "fail",
+                "fatal": True,
+                "details": profile_errors,
+            }
+        )
+
+    if args.format in {"text", "both"}:
+        status = "PASS" if report["ok"] else "FAIL"
+        print(f"Credible pilot check: {status}")
+        for check in report["checks"]:
+            marker = "✓" if check["status"] == "pass" else "✗"
+            print(f"- {marker} {check['name']}")
+            for detail in check["details"]:
+                print(f"    • {detail}")
+    if args.format in {"json", "both"}:
+        print(json.dumps(report, indent=2))
+    if not report["ok"]:
+        raise SystemExit(1)
+
+
 def _run_evidence_pack(args: argparse.Namespace) -> None:
     result = build_evidence_pack(
         reference_root=args.reference_root,
@@ -897,6 +1011,56 @@ def _run_evidence_pack(args: argparse.Namespace) -> None:
         stable_zip_dir(args.output_dir, args.output_zip)
         result["output_zip"] = str(args.output_zip)
     print(json.dumps(result, indent=2, sort_keys=True))
+
+
+def _run_integrations_reliability_completions(args: argparse.Namespace) -> None:
+    store = SQLiteIntegrationReliabilityStore(str(args.sqlite_path))
+    payload = {
+        "items": [
+            record.__dict__ for record in store.list_completion_records(limit=args.limit)
+        ]
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _run_integrations_reliability_dead_letter(args: argparse.Namespace) -> None:
+    store = SQLiteIntegrationReliabilityStore(str(args.sqlite_path))
+    payload = {
+        "items": [
+            record.__dict__
+            for record in store.list_dead_letter_records(limit=args.limit)
+        ]
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _run_integrations_reliability_manual_redrive(args: argparse.Namespace) -> None:
+    store = SQLiteIntegrationReliabilityStore(str(args.sqlite_path))
+    records = (
+        [store.get_dead_letter_record(args.id)]
+        if args.id is not None
+        else store.list_dead_letter_records(limit=args.limit)
+    )
+    items: list[dict[str, Any]] = []
+    for record in records:
+        if record is None:
+            continue
+        store.mark_completed(
+            record.operation_key,
+            target=record.target,
+            payload=record.payload,
+            result={"status": "manually_redriven", "note": args.note},
+            attempts=record.attempts,
+            max_attempts=record.max_attempts or record.attempts,
+        )
+        store.delete_dead_letter_record(record.id)
+        items.append({"dead_letter_id": record.id, "status": "manually_redriven"})
+    print(json.dumps({"items": items, "note": args.note}, indent=2, sort_keys=True))
+
+
+def _run_integrations_reliability_duplicates(args: argparse.Namespace) -> None:
+    store = SQLiteIntegrationReliabilityStore(str(args.sqlite_path))
+    print(json.dumps(store.duplicate_suppression_summary(), indent=2, sort_keys=True))
 
 
 def _run_replay_drift(args: argparse.Namespace) -> None:
@@ -941,6 +1105,72 @@ def _run_replay_drift(args: argparse.Namespace) -> None:
         candidate_label=f"{candidate_meta.bundle_name}:{candidate_meta.version}",
     )
     print(json.dumps(report, indent=2))
+
+
+def _run_replay_parallel(args: argparse.Namespace) -> None:
+    replay_payload = _load_json_file(args.replay_file, "replay fixture")
+    old_rules, old_meta = load_policy_bundle(args.old_policy_dir)
+    new_rules, new_meta = load_policy_bundle(args.new_policy_dir)
+    cases = load_replay_cases(
+        replay_payload,
+        mapping_mode=args.mapping_mode,
+        mapping_config_path=(
+            str(args.mapping_config_path) if args.mapping_config_path else None
+        ),
+    )
+    report = run_parallel_mode(
+        cases=cases,
+        old_rules=old_rules,
+        old_metadata=old_meta,
+        new_rules=new_rules,
+        new_metadata=new_meta,
+    )
+    print(json.dumps(report, indent=2))
+
+
+def _run_replay_export_canonical(args: argparse.Namespace) -> None:
+    payload = _load_json_file(args.scenario, "scenario")
+    cli_request = EvaluatePayload.model_validate(payload)
+    proposal = cli_request.to_action_proposal(
+        cli_request.request_id or payload.get("request_id") or "req-cli-canonical"
+    )
+    rules, metadata = load_policy_bundle(
+        args.policy_dir,
+        bundle_name=args.policy_bundle_name,
+        version=args.bundle_version,
+    )
+    evaluator = PolicyEvaluator(
+        rules,
+        policy_bundle=metadata,
+        config=EvaluatorConfig(
+            default_decision=cli_request.to_default_decision(),
+            require_allow_match=cli_request.strict_require_allow,
+        ),
+    )
+    trace = evaluator.evaluate(proposal, cli_request.facts)
+    artifact = export_canonical_replay_artifact(trace)
+    serialized = json.dumps(artifact, indent=2, default=str)
+    if args.output:
+        args.output.write_text(serialized + "\n", encoding="utf-8")
+    else:
+        print(serialized)
+
+
+def _run_rollout_resolve(args: argparse.Namespace) -> None:
+    try:
+        config = load_rollout_config(args.config)
+        target = config.resolve(business_unit=args.business_unit, region=args.region)
+    except RolloutConfigError as exc:
+        raise SystemExit(_format_error("Rollout resolution failed", exc)) from exc
+    payload = {
+        "business_unit": args.business_unit,
+        "region": args.region,
+        "mode": target.mode,
+        "policy_bundle": target.policy_bundle,
+        "parallel_candidate_bundle": target.parallel_candidate_bundle,
+        "matched_rule_index": target.matched_rule_index,
+    }
+    print(json.dumps(payload, indent=2))
 
 
 def _build_evaluate_parser() -> argparse.ArgumentParser:
@@ -1105,6 +1335,17 @@ def _build_policy_parser() -> argparse.ArgumentParser:
     compatibility_parser.add_argument("--max-evaluator-version")
     compatibility_parser.set_defaults(handler=_run_policy_verify_compatibility)
 
+    import_parser = sub.add_parser(
+        "import-legacy", help="Convert legacy policy files to SENA bundle format"
+    )
+    import_parser.add_argument("--source", type=Path, required=True)
+    import_parser.add_argument("--output-dir", type=Path, required=True)
+    import_parser.add_argument("--bundle-name", required=True)
+    import_parser.add_argument("--bundle-version", required=True)
+    import_parser.add_argument("--owner")
+    import_parser.add_argument("--description")
+    import_parser.set_defaults(handler=_run_policy_import_legacy)
+
     return parser
 
 
@@ -1132,7 +1373,7 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     register.add_argument(
         "--lifecycle",
         default="draft",
-        choices=["draft", "candidate", "active", "deprecated"],
+        choices=["draft", "candidate", "approved", "active", "deprecated"],
     )
     register.add_argument("--created-by", default="system")
     register.add_argument("--creation-reason")
@@ -1159,7 +1400,7 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     validate.add_argument(
         "--target-lifecycle",
         required=True,
-        choices=["candidate", "active", "deprecated"],
+        choices=["candidate", "approved", "active", "deprecated"],
     )
     validate.add_argument("--validation-artifact")
     validate.set_defaults(handler=_run_registry_validate)
@@ -1169,7 +1410,7 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     promote.add_argument(
         "--target-lifecycle",
         required=True,
-        choices=["candidate", "active", "deprecated"],
+        choices=["candidate", "approved", "active", "deprecated"],
     )
     promote.add_argument("--promoted-by", required=True)
     promote.add_argument("--promotion-reason", required=True)
@@ -1183,6 +1424,7 @@ def _build_registry_parser() -> argparse.ArgumentParser:
     promote.add_argument("--max-changed-risk-category", action="append")
     promote.add_argument("--break-glass", action="store_true")
     promote.add_argument("--break-glass-reason")
+    promote.add_argument("--approver-attestation", action="append")
     promote.set_defaults(handler=_run_registry_promote)
 
     rollback = sub.add_parser("rollback")
@@ -1321,6 +1563,46 @@ def _build_audit_parser() -> argparse.ArgumentParser:
     restore_archive.add_argument("--restore-audit-path", type=Path, required=True)
     restore_archive.add_argument("--verify-after-restore", action="store_true")
     restore_archive.set_defaults(handler=_run_audit_restore_archive)
+
+    verify_evidence = sub.add_parser(
+        "verify-evidence",
+        help="Verify chain integrity plus per-record signatures and trusted timestamp hashes",
+    )
+    verify_evidence.add_argument("--keyring", type=Path, required=True)
+    verify_evidence.set_defaults(handler=_run_audit_verify_evidence)
+
+    export_bundle = sub.add_parser(
+        "export-evidence-bundle",
+        help="Export evidentiary bundle JSON for one decision",
+    )
+    export_bundle.add_argument("decision_id")
+    export_bundle.add_argument("--output", type=Path, required=True)
+    export_bundle.set_defaults(handler=_run_audit_export_bundle)
+
+    export_control_mapping = sub.add_parser(
+        "export-control-mapping",
+        help="Export framework control mapping from policy rule control_ids",
+    )
+    export_control_mapping.add_argument("--policy-dir", type=Path, required=True)
+    export_control_mapping.add_argument("--output", type=Path, required=True)
+    export_control_mapping.set_defaults(handler=_run_audit_export_control_mapping)
+
+    export_evidence_vault = sub.add_parser(
+        "export-evidence-vault",
+        help="Export decision-to-control evidence vault using matched audit decisions",
+    )
+    export_evidence_vault.add_argument("--policy-dir", type=Path, required=True)
+    export_evidence_vault.add_argument("--output", type=Path, required=True)
+    export_evidence_vault.set_defaults(handler=_run_audit_export_evidence_vault)
+
+    export_control_package = sub.add_parser(
+        "export-control-package",
+        help="Export an audit package for one control_id with all related evidence bundles",
+    )
+    export_control_package.add_argument("--policy-dir", type=Path, required=True)
+    export_control_package.add_argument("--control-id", required=True)
+    export_control_package.add_argument("--output", type=Path, required=True)
+    export_control_package.set_defaults(handler=_run_audit_export_control_package)
     return parser
 
 
@@ -1343,6 +1625,33 @@ def _build_evidence_pack_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_integrations_reliability_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="SENA outbound connector reliability inspection commands"
+    )
+    parser.add_argument("--sqlite-path", type=Path, required=True)
+    sub = parser.add_subparsers(dest="reliability_command", required=True)
+
+    completions = sub.add_parser("completions")
+    completions.add_argument("--limit", type=int, default=100)
+    completions.set_defaults(handler=_run_integrations_reliability_completions)
+
+    dead_letter = sub.add_parser("dead-letter")
+    dead_letter.add_argument("--limit", type=int, default=100)
+    dead_letter.set_defaults(handler=_run_integrations_reliability_dead_letter)
+
+    manual_redrive = sub.add_parser("manual-redrive")
+    manual_redrive.add_argument("--id", type=int)
+    manual_redrive.add_argument("--limit", type=int, default=100)
+    manual_redrive.add_argument("--note", default="manually redriven via CLI")
+    manual_redrive.set_defaults(handler=_run_integrations_reliability_manual_redrive)
+
+    duplicates = sub.add_parser("duplicates-summary")
+    duplicates.set_defaults(handler=_run_integrations_reliability_duplicates)
+
+    return parser
+
+
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "production-check":
         parser = argparse.ArgumentParser(
@@ -1356,6 +1665,19 @@ def main() -> None:
         )
         args = parser.parse_args(sys.argv[2:])
         _run_production_check(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "pilot-check":
+        parser = argparse.ArgumentParser(
+            description="SENA credible-pilot profile validation"
+        )
+        parser.add_argument(
+            "--format",
+            choices=["text", "json", "both"],
+            default="both",
+            help="Output format for readiness report",
+        )
+        args = parser.parse_args(sys.argv[2:])
+        _run_pilot_check(args)
         return
     if len(sys.argv) > 1 and sys.argv[1] == "policy":
         parser = _build_policy_parser()
@@ -1387,6 +1709,11 @@ def main() -> None:
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return
+    if len(sys.argv) > 1 and sys.argv[1] == "integrations-reliability":
+        parser = _build_integrations_reliability_parser()
+        args = parser.parse_args(sys.argv[2:])
+        args.handler(args)
+        return
     if len(sys.argv) > 1 and sys.argv[1] == "replay":
         parser = argparse.ArgumentParser(
             description="SENA replay and drift detection commands"
@@ -1405,6 +1732,46 @@ def main() -> None:
         )
         drift.add_argument("--candidate-mapping-config-path", type=Path)
         drift.set_defaults(handler=_run_replay_drift)
+        parallel = sub.add_parser("parallel-run")
+        parallel.add_argument("--replay-file", type=Path, required=True)
+        parallel.add_argument("--old-policy-dir", type=Path, required=True)
+        parallel.add_argument("--new-policy-dir", type=Path, required=True)
+        parallel.add_argument("--mapping-mode", choices=["jira", "servicenow", "webhook"])
+        parallel.add_argument("--mapping-config-path", type=Path)
+        parallel.set_defaults(handler=_run_replay_parallel)
+        export = sub.add_parser("export-canonical")
+        export.add_argument("scenario", type=Path, help="Path to JSON scenario payload")
+        export.add_argument(
+            "--policy-dir",
+            type=Path,
+            default=DEFAULT_POLICY_DIR,
+            help="Directory containing YAML policy files",
+        )
+        export.add_argument(
+            "--policy-bundle-name",
+            default="enterprise-compliance-controls",
+            help="Name for the policy bundle metadata in output",
+        )
+        export.add_argument(
+            "--bundle-version",
+            default="2026.03",
+            help="Version string for the policy bundle metadata in output",
+        )
+        export.add_argument("--output", type=Path)
+        export.set_defaults(handler=_run_replay_export_canonical)
+        args = parser.parse_args(sys.argv[2:])
+        args.handler(args)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "rollout":
+        parser = argparse.ArgumentParser(
+            description="SENA phased rollout controls"
+        )
+        sub = parser.add_subparsers(dest="rollout_command", required=True)
+        resolve = sub.add_parser("resolve")
+        resolve.add_argument("--config", type=Path, required=True)
+        resolve.add_argument("--business-unit", required=True)
+        resolve.add_argument("--region", required=True)
+        resolve.set_defaults(handler=_run_rollout_resolve)
         args = parser.parse_args(sys.argv[2:])
         args.handler(args)
         return

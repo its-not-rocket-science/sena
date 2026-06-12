@@ -1,0 +1,79 @@
+{
+  "bundle": {
+    "expected_name": "enterprise-compliance-controls",
+    "expected_version": "2026.03",
+    "path": "src/sena/examples/policies"
+  },
+  "case_id": "exception_overlay_changes_outcome",
+  "description": "Exception overlay should convert baseline escalation to approved.",
+  "exceptions": [
+    {
+      "approved_at": "2026-01-01T00:00:00+00:00",
+      "approved_by": "director-9",
+      "approver_class": "finance_director",
+      "exception_id": "exc-payroll-1",
+      "expiry": "2030-01-01T00:00:00+00:00",
+      "justification": "Emergency payroll run",
+      "scope": {
+        "action_type": "approve_vendor_payment",
+        "actor": "user-1",
+        "attributes": {
+          "vendor_verified": true
+        }
+      }
+    }
+  ],
+  "expected": {
+    "applied_exception_ids": [
+      "exc-payroll-1"
+    ],
+    "baseline_outcome": "ESCALATE_FOR_HUMAN_REVIEW",
+    "bundle_identity": {
+      "name": "enterprise-compliance-controls",
+      "version": "2026.03"
+    },
+    "decision_hash": "184d3d1dc41fe09927683591519ada4af335d4376db8dd02eb8b74e8b72ce2cd",
+    "matched_rules": [
+      "payment_escalate_high_amount_non_director"
+    ],
+    "missing_evidence": [],
+    "missing_fields": [
+      "ai_metadata.human_owner",
+      "ai_metadata.originating_model",
+      "ai_metadata.risk_classification.level",
+      "impact_scope"
+    ],
+    "normalized_proposal": {
+      "action_origin": "human",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "user-1",
+      "actor_role": "finance_analyst",
+      "ai_metadata": null,
+      "attributes": {
+        "amount": 50000,
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "autonomous_metadata": null,
+      "request_id": "req-exc-1"
+    },
+    "outcome": "APPROVED"
+  },
+  "fixture_schema": "sena.replay_fixture.v1",
+  "input": {
+    "facts": {},
+    "mode": "normalized_proposal",
+    "proposal": {
+      "action_origin": "human",
+      "action_type": "approve_vendor_payment",
+      "actor_id": "user-1",
+      "actor_role": "finance_analyst",
+      "attributes": {
+        "amount": 50000,
+        "source_system": "jira",
+        "vendor_verified": true
+      },
+      "request_id": "req-exc-1"
+    }
+  }
+}

@@ -2,57 +2,87 @@ from __future__ import annotations
 
 import json
 import os
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
 from sena.audit.chain import append_audit_record
 from sena.audit.sinks import JsonlFileAuditSink
+from sena.audit.sqlite_sink import SQLiteAppendOnlyAuditSink
 
 
 class AuditStorageError(RuntimeError):
     """Raised when an audit storage backend is misconfigured or unavailable."""
 
 
-class AuditStorage(ABC):
-    @abstractmethod
+ENTRY_ID_FIELDS = ("storage_entry_id", "decision_id", "chain_hash")
+
+
+class AuditStorage(Protocol):
     def append(self, entry: dict[str, Any]) -> str: ...
 
-    @abstractmethod
     def read(self, entry_id: str) -> dict[str, Any]: ...
 
-    @abstractmethod
     def verify_immutable(self) -> bool: ...
 
 
+def _storage_entry_id(entry: dict[str, Any], *, prefix: str) -> str:
+    return str(entry.get("decision_id") or f"{prefix}-{uuid4().hex}")
+
+
+def _read_record_by_id(rows: list[dict[str, Any]], entry_id: str) -> dict[str, Any]:
+    for row in rows:
+        keys = tuple(str(row.get(field) or "") for field in ENTRY_ID_FIELDS)
+        if entry_id in keys:
+            return row
+    raise KeyError(f"audit entry not found: {entry_id}")
+
+
 @dataclass
-class LocalFileStorage(AuditStorage):
+class DevelopmentJsonlAuditStorage(AuditStorage):
     path: str
 
     def append(self, entry: dict[str, Any]) -> str:
         payload = dict(entry)
-        payload.setdefault("storage_entry_id", payload.get("decision_id") or f"loc-{uuid4().hex}")
+        payload.setdefault("storage_entry_id", _storage_entry_id(payload, prefix="loc"))
         persisted = append_audit_record(JsonlFileAuditSink(path=self.path), payload)
-        return str(persisted.get("storage_entry_id") or persisted.get("decision_id") or persisted.get("chain_hash"))
+        return _storage_entry_id(persisted, prefix="loc")
 
     def read(self, entry_id: str) -> dict[str, Any]:
         sink = JsonlFileAuditSink(path=self.path)
-        for row in sink.load_records():
-            keys = (
-                str(row.get("storage_entry_id") or ""),
-                str(row.get("decision_id") or ""),
-                str(row.get("chain_hash") or ""),
-            )
-            if entry_id in keys:
-                return row
-        raise KeyError(f"audit entry not found: {entry_id}")
+        return _read_record_by_id(sink.load_records(), entry_id)
 
     def verify_immutable(self) -> bool:
         # Local JSONL development sink is append-focused but not WORM-enforced.
         return False
+
+
+@dataclass
+class PilotSQLiteAppendOnlyAuditStorage(AuditStorage):
+    sqlite_path: str
+    table_name: str = "audit_log"
+
+    def _sink(self) -> SQLiteAppendOnlyAuditSink:
+        return SQLiteAppendOnlyAuditSink(
+            sqlite_path=self.sqlite_path, table_name=self.table_name
+        )
+
+    def append(self, entry: dict[str, Any]) -> str:
+        payload = dict(entry)
+        payload.setdefault(
+            "storage_entry_id", _storage_entry_id(payload, prefix="sqlite")
+        )
+        persisted = append_audit_record(self._sink(), payload)
+        return _storage_entry_id(persisted, prefix="sqlite")
+
+    def read(self, entry_id: str) -> dict[str, Any]:
+        return _read_record_by_id(self._sink().load_records(), entry_id)
+
+    def verify_immutable(self) -> bool:
+        # SQLite triggers reject UPDATE/DELETE operations for append-only chain table.
+        return True
 
 
 @dataclass
@@ -72,7 +102,7 @@ class S3ObjectLockStorage(AuditStorage):
         return boto3.client("s3")
 
     def append(self, entry: dict[str, Any]) -> str:
-        entry_id = str(entry.get("decision_id") or f"s3-{uuid4().hex}")
+        entry_id = _storage_entry_id(entry, prefix="s3")
         key = f"{self.prefix.rstrip('/')}/{datetime.now(tz=timezone.utc).strftime('%Y/%m/%d')}/{entry_id}.json"
         body = json.dumps(entry, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
         retain_until = datetime.now(tz=timezone.utc) + timedelta(days=self.retention_days)
@@ -128,7 +158,7 @@ class AzureImmutableBlobStorage(AuditStorage):
         return BlobServiceClient.from_connection_string(conn)
 
     def append(self, entry: dict[str, Any]) -> str:
-        entry_id = str(entry.get("decision_id") or f"azure-{uuid4().hex}")
+        entry_id = _storage_entry_id(entry, prefix="azure")
         blob_name = f"{self.prefix.rstrip('/')}/{datetime.now(tz=timezone.utc).strftime('%Y/%m/%d')}/{entry_id}.json"
         container = self._client().get_container_client(self.container)
         body = json.dumps(entry, sort_keys=True, separators=(",", ":"), default=str)
@@ -167,7 +197,15 @@ def storage_from_env(audit_sink_jsonl: str | None) -> AuditStorage | None:
                 "SENA_AUDIT_SINK_JSONL must be configured for local_file backend"
             )
         Path(audit_sink_jsonl).parent.mkdir(parents=True, exist_ok=True)
-        return LocalFileStorage(path=audit_sink_jsonl)
+        return DevelopmentJsonlAuditStorage(path=audit_sink_jsonl)
+    if backend == "sqlite_append_only":
+        sqlite_path = os.getenv("SENA_AUDIT_SQLITE_PATH")
+        table_name = os.getenv("SENA_AUDIT_SQLITE_TABLE", "audit_log")
+        if not sqlite_path:
+            raise AuditStorageError("SENA_AUDIT_SQLITE_PATH is required")
+        return PilotSQLiteAppendOnlyAuditStorage(
+            sqlite_path=sqlite_path, table_name=table_name
+        )
     if backend == "s3_object_lock":
         bucket = os.getenv("SENA_AUDIT_S3_BUCKET")
         prefix = os.getenv("SENA_AUDIT_S3_PREFIX", "sena/audit")
@@ -191,3 +229,8 @@ def storage_from_env(audit_sink_jsonl: str | None) -> AuditStorage | None:
             retention_days=days,
         )
     raise AuditStorageError(f"Unsupported SENA_AUDIT_STORAGE_BACKEND: {backend}")
+
+
+# Backward-compatible aliases for prior names.
+LocalFileStorage = DevelopmentJsonlAuditStorage
+SQLiteAppendOnlyStorage = PilotSQLiteAppendOnlyAuditStorage

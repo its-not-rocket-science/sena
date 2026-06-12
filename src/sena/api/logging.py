@@ -15,6 +15,12 @@ except ModuleNotFoundError:  # pragma: no cover - default in minimal installs
 _request_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "request_id", default=None
 )
+_trace_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "trace_id", default=None
+)
+_span_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "span_id", default=None
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -25,18 +31,33 @@ class JsonFormatter(logging.Formatter):
             "module": record.module,
             "message": record.getMessage(),
             "request_id": _request_id_ctx.get(),
+            "trace_id": _trace_id_ctx.get(),
+            "span_id": _span_id_ctx.get(),
         }
         for field_name in (
             "method",
             "path",
             "status_code",
             "duration_ms",
+            "error_code",
             "decision_id",
             "outcome",
             "policy_bundle",
             "evaluation_ms",
             "endpoint",
             "errors",
+            "connector",
+            "provider",
+            "event_type",
+            "action",
+            "target",
+            "delivery_id",
+            "dead_letter_id",
+            "note",
+            "applied_exception_count",
+            "job_id",
+            "job_type",
+            "job_status",
         ):
             if hasattr(record, field_name):
                 payload[field_name] = getattr(record, field_name)
@@ -101,6 +122,9 @@ class _StdlibJsonLogger:
     def warning(self, event: str, **fields: Any) -> None:
         self._logger.warning(event, extra=fields)
 
+    def exception(self, event: str, **fields: Any) -> None:
+        self._logger.exception(event, extra=fields)
+
 
 def get_logger(name: str):
     if _structlog is not None:
@@ -108,14 +132,22 @@ def get_logger(name: str):
     return _StdlibJsonLogger(name)
 
 
-def bind_request_context(*, request_id: str) -> None:
+def bind_request_context(
+    *, request_id: str, trace_id: str | None = None, span_id: str | None = None
+) -> None:
     _request_id_ctx.set(request_id)
+    _trace_id_ctx.set(trace_id)
+    _span_id_ctx.set(span_id)
     if _structlog is not None:
         _structlog.contextvars.clear_contextvars()
-        _structlog.contextvars.bind_contextvars(request_id=request_id)
+        _structlog.contextvars.bind_contextvars(
+            request_id=request_id, trace_id=trace_id, span_id=span_id
+        )
 
 
 def clear_request_context() -> None:
     _request_id_ctx.set(None)
+    _trace_id_ctx.set(None)
+    _span_id_ctx.set(None)
     if _structlog is not None:
         _structlog.contextvars.clear_contextvars()

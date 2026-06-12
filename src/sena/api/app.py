@@ -1,18 +1,25 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 from sena import __version__ as SENA_VERSION
 from sena.audit.chain import verify_audit_chain
 from sena.audit.verification_service import DailyAuditVerificationService
+from sena.api.auth import build_auth_manager
 from sena.api.config import ApiSettings, load_settings_from_env
 from sena.api.error_handlers import error_payload, register_error_handlers
 from sena.api.logging import configure_logging
 from sena.api.middleware import FixedWindowRateLimiter, register_request_middleware
 from sena.api.routes.bundles import create_bundles_router
+from sena.api.routes.analytics import create_analytics_router
 from sena.api.routes.evaluate import create_evaluate_router
+from sena.api.routes.exceptions import create_exceptions_router
 from sena.api.routes.health import create_health_router
-from sena.api.routes.integrations import create_integrations_router
+from sena.api.routes.integrations import (
+    EXPERIMENTAL_INTEGRATION_ROUTE_PATHS,
+    create_integrations_router,
+)
 from sena.api.schemas import AuditTreeVerifyRequest
 from sena.services.audit_service import AuditService
 from sena.api.runtime import (
@@ -23,10 +30,12 @@ from sena.api.runtime import (
 )
 
 try:
-    from fastapi import APIRouter, FastAPI
+    from fastapi import APIRouter, FastAPI, Request
     from fastapi.responses import JSONResponse, Response
 except ModuleNotFoundError:  # pragma: no cover
     FastAPI = None  # type: ignore
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_runtime_limits(settings: ApiSettings) -> None:
@@ -60,6 +69,19 @@ def initialize_runtime(settings: ApiSettings):
     return build_runtime_state(settings, rules, metadata, policy_repo)
 
 
+def _experimental_routes_enabled(settings: ApiSettings) -> bool:
+    """Return whether experimental HTTP routes should be registered.
+
+    Runtime contract:
+    - development: enabled by default
+    - pilot/production: disabled by default
+    - explicit override: `SENA_ENABLE_EXPERIMENTAL_ROUTES=true|false`
+    """
+    if settings.experimental_routes_enabled is not None:
+        return settings.experimental_routes_enabled
+    return settings.runtime_mode == "development"
+
+
 def build_app(state):
     if FastAPI is None:
         raise RuntimeError(
@@ -67,20 +89,24 @@ def build_app(state):
         )
 
     app = FastAPI(
-        title="SENA Compliance Engine API",
+        title="SENA Jira + ServiceNow Decisioning API",
         version=SENA_VERSION,
         openapi_url="/openapi.json",
         docs_url="/docs",
         description=(
-            "Policy enforcement API for deterministic governance decisions.\n\n"
-            "Authentication: pass `X-API-Key: <key>` on every protected request. "
-            "Set keys via `SENA_API_KEYS` (comma-separated) and role mappings via "
-            "`SENA_API_KEY_ROLES`."
+            "Deterministic Jira + ServiceNow approval decisioning API with replayable audit evidence.\n\n"
+            "Authentication: pass either `X-API-Key: <key>` or `Authorization: Bearer <token>` "
+            "on protected requests. Configure API-key mode with `SENA_API_KEYS` and JWT mode with "
+            "`SENA_JWT_AUTH_ENABLED` + JWT verification settings."
         ),
     )
     app.state.engine_state = state
 
     api_key_roles = build_api_key_roles(state.settings)
+    auth_manager = build_auth_manager(
+        settings=state.settings,
+        api_key_roles=api_key_roles,
+    )
     rate_limiter = FixedWindowRateLimiter(
         max_requests=state.settings.rate_limit_requests,
         window_seconds=state.settings.rate_limit_window_seconds,
@@ -88,16 +114,39 @@ def build_app(state):
     register_request_middleware(
         app,
         state=state,
-        api_key_roles=api_key_roles,
+        auth_manager=auth_manager,
         rate_limiter=rate_limiter,
     )
     register_error_handlers(app)
 
     api_v1 = APIRouter(prefix="/v1")
     api_v1.include_router(create_health_router(state))
+    api_v1.include_router(create_analytics_router(state))
     api_v1.include_router(create_evaluate_router(state))
+    api_v1.include_router(create_exceptions_router(state))
     api_v1.include_router(create_bundles_router(state))
-    api_v1.include_router(create_integrations_router(state))
+    include_experimental_routes = _experimental_routes_enabled(state.settings)
+    if include_experimental_routes:
+        experimental_routes = ", ".join(
+            f"/v1{path}" for path in EXPERIMENTAL_INTEGRATION_ROUTE_PATHS
+        )
+        logger.info(
+            "experimental_routes_enabled runtime_mode=%s routes=%s",
+            state.settings.runtime_mode,
+            experimental_routes,
+        )
+    else:
+        logger.info(
+            "experimental_routes_disabled runtime_mode=%s routes=%s",
+            state.settings.runtime_mode,
+            ", ".join(f"/v1{path}" for path in EXPERIMENTAL_INTEGRATION_ROUTE_PATHS),
+        )
+    api_v1.include_router(
+        create_integrations_router(
+            state,
+            include_experimental=include_experimental_routes,
+        )
+    )
 
     @api_v1.get("/audit/verify")
     def audit_verify() -> dict:
@@ -124,7 +173,23 @@ def build_app(state):
         return result
 
     @api_v1.post("/audit/hold/{decision_id}")
-    def audit_place_hold(decision_id: str) -> dict:
+    def audit_place_hold(decision_id: str, request: Request) -> dict:
+        from sena.api.auth import evaluate_sensitive_operation
+        from sena.api.errors import raise_api_error
+
+        principal = getattr(request.state, "auth_principal", None)
+        decision = evaluate_sensitive_operation(
+            operation="audit_legal_hold",
+            principal=principal,
+            headers=request.headers,
+            require_signed_step_up=state.settings.require_signed_step_up,
+            step_up_hs256_secret=state.settings.step_up_hs256_secret,
+            step_up_max_age_seconds=state.settings.step_up_max_age_seconds,
+            step_up_issuer=state.settings.step_up_issuer,
+            step_up_key_id=state.settings.step_up_key_id,
+        )
+        if not decision.allowed:
+            raise_api_error("forbidden", details=decision.details())
         audit_service = AuditService(state.settings.audit_sink_jsonl)
         return {"hold": audit_service.place_legal_hold(decision_id)}
 
@@ -160,6 +225,7 @@ def build_app(state):
             state.dlq_worker.stop()
         if state.recovery_service is not None:
             state.recovery_service.stop()
+        state.job_manager.shutdown()
 
 
     deprecation_date = "2026-04-01"

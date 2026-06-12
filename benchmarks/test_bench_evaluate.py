@@ -39,7 +39,8 @@ def test_bench_audit_writes_per_second(tmp_path: Path, benchmark: pytest.Benchma
 
     def _write_once() -> None:
         trace = evaluator.evaluate(proposal, {})
-        audit.record(trace)
+        assert trace.audit_record is not None
+        audit.append_record(trace.audit_record.__dict__)
 
     benchmark(_write_once)
 

@@ -1,40 +1,40 @@
-# Migration Notes: Legacy Prototype → Compliance Engine
+# Migration Notes: Package Reorganization for Supported Product Path
 
-## What moved
+This migration note documents the package boundary reorganization that makes
+supported product paths obvious from layout alone.
 
-Legacy modules were moved under `src/sena/legacy`:
+## New package map (recommended import roots)
 
-- `src/sena/core/types.py` → `src/sena/legacy/core/types.py`
-- `src/sena/production_systems/experta_adapter.py` → `src/sena/legacy/production_systems/experta_adapter.py`
-- `src/sena/evolutionary/deap_adapter.py` → `src/sena/legacy/evolutionary/deap_adapter.py`
-- `src/sena/llm/simulated_adapter.py` → `src/sena/legacy/llm/simulated_adapter.py`
-- `src/sena/orchestrator/sena.py` → `src/sena/legacy/orchestrator/sena.py`
+- `sena.core_policy_engine`
+- `sena.supported_integrations`
+- `sena.runtime`
+- `sena.audit_evidence`
+- `sena.experimental`
 
-Compatibility shims remain at the old import paths but emit deprecation warnings.
+These are organizational entry points that re-export existing modules. Existing
+imports keep working.
 
-## What is now primary
+## Relabeled module boundaries
 
-Primary path:
-- `sena.policy.*`
-- `sena.engine.evaluator`
-- `sena.cli.main`
-- `sena.api.app`
+| Old/low-signal import area | New high-signal import root | Notes |
+| --- | --- | --- |
+| `sena.policy`, `sena.engine`, `sena.core` | `sena.core_policy_engine` | Supported deterministic engine path. |
+| `sena.integrations.jira`, `sena.integrations.servicenow`, `sena.integrations.persistence` | `sena.supported_integrations` | Productized connectors + reliability persistence. |
+| `sena.api`, `sena.cli`, `sena.services` | `sena.runtime` | Runtime and operator entry surfaces. |
+| `sena.audit`, `sena.evidence_pack`, `sena.verification.attestations` | `sena.audit_evidence` | Audit chain + evidence artifacts and verification. |
+| `sena.integrations.webhook`, `sena.integrations.slack`, `sena.integrations.langchain`, `sena.llm`, `sena.evolutionary`, `sena.production_systems`, `sena.orchestrator`, `sena.monitoring` | `sena.experimental` | Explicitly unstable/evaluation-only area. |
 
-## What is deprecated
+## Compatibility and legacy behavior
 
-Anything under `sena.legacy` (and old shim imports) is historical/experimental and not the recommended path for enterprise compliance workflows.
+- Existing module paths remain valid; this change adds higher-signal import roots.
+- `sena.legacy` remains intentionally unavailable (importing it still fails).
+- Legacy import guardrails continue to live in `sena._legacy_guard` for controlled migration policies.
 
-## Eval contradiction removal
+## Contributor guidance
 
-Dynamic `eval(...)` usage exists only in legacy modules. The supported compliance engine evaluates structured conditions through an allowed-operator interpreter.
+For new code and docs:
 
-
-## Import guardrails
-
-To reduce accidental dependency on legacy code paths:
-
-- Legacy imports emit explicit deprecation warnings by default.
-- Set `SENA_STRICT_LEGACY_IMPORTS=true` to fail legacy imports immediately (`ImportError`).
-- Set `SENA_RUNTIME_MODE=production` to block `sena.legacy` imports at runtime (`RuntimeError`).
-- A temporary override exists: `SENA_ALLOW_LEGACY_IN_PRODUCTION=true` (use only during tightly controlled migration windows).
-
+1. Prefer the new package map to explain supported vs experimental scope.
+2. Keep implementation modules in existing locations unless a dedicated follow-up
+   move is planned with compatibility shims and tests.
+3. Treat `sena.experimental` as unstable and outside support commitments.

@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack demo-k8s demo-monitoring
+.PHONY: install install-dev test lint format quality api docker-up bump-version pilot-evidence pilot-integration-pack durability-evidence-pack demo-k8s demo-monitoring integration-matrix-check replay-refresh
 
 install:
 	pip install -e .
@@ -38,6 +38,10 @@ pilot-evidence:
 pilot-integration-pack:
 	PYTHONPATH=src python scripts/generate_integration_pilot_pack.py --output-dir docs/examples/pilot_integration_pack --clean
 
+
+durability-evidence-pack:
+	PYTHONPATH=src python scripts/generate_sqlite_reliability_evidence.py --output-dir docs/examples/sqlite_reliability_evidence --output-zip docs/examples/sqlite_reliability_evidence.zip --clean
+
 demo-k8s:
 	@mkdir -p examples/k8s_admission_demo/artifacts/audit
 	@touch examples/k8s_admission_demo/artifacts/audit/demo_audit.jsonl
@@ -60,3 +64,11 @@ demo-monitoring:
 	@touch monitoring/artifacts/demo_audit.jsonl
 	docker compose -f docker-compose-monitoring.yml up --build -d
 	PYTHONPATH=src python scripts/generate_traffic.py --base-url http://127.0.0.1:8000
+
+
+integration-matrix-check:
+	PYTHONPATH=src python scripts/generate_integration_confidence_matrix.py --check
+
+
+replay-refresh:
+	PYTHONPATH=src python scripts/refresh_replay_corpus.py

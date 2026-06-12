@@ -18,10 +18,10 @@ echo "== Register candidate bundle =="
 python -m sena.cli.main registry --sqlite-path "${DB_PATH}" register \
   --policy-dir "${ROOT_DIR}/src/sena/examples/policies" \
   --bundle-name enterprise-compliance-controls \
-  --bundle-version 2026.10 \
+  --bundle-version 2026.03 \
   --created-by ops
 
-BUNDLE_ID="$(python -m sena.cli.main registry --sqlite-path "${DB_PATH}" fetch --bundle-name enterprise-compliance-controls --version 2026.10 | python -c 'import json,sys; print(json.load(sys.stdin)["bundle_id"])')"
+BUNDLE_ID="$(python -m sena.cli.main registry --sqlite-path "${DB_PATH}" fetch --bundle-name enterprise-compliance-controls --version 2026.03 | python -c 'import json,sys; print(json.load(sys.stdin)["bundle_id"])')"
 
 python -m sena.cli.main registry --sqlite-path "${DB_PATH}" promote \
   --bundle-id "${BUNDLE_ID}" \

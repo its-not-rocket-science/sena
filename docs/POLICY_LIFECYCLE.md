@@ -7,13 +7,17 @@ This document describes SENA's operator-facing policy lifecycle control-plane ca
 Supported states and transitions:
 
 - `draft -> candidate`
-- `candidate -> active`
+- `candidate -> approved`
+- `approved -> active`
 - `active -> deprecated`
 - `rollback` is an explicit controlled action that deprecates current active and re-activates a previous bundle.
 
-Promotion to `active` is gate-driven and requires either:
-- an attached simulation result (or generated simulation report from provided scenarios), or
-- a validation artifact (for example: CI run URL, signed approval record, or change ticket).
+Promotion from `candidate` requires:
+- validation artifact,
+- simulation report (inline or generated from scenarios),
+- at least two approver attestations.
+
+Bundle versions are immutable (`name + version` uniqueness) and releases carry signed-manifest verification metadata.
 
 Break-glass promotion is available with explicit `break_glass=true` + reason; the action is annotated and marked in history/audit fields.
 
@@ -61,9 +65,18 @@ python -m sena.cli.main registry --sqlite-path /tmp/policy.db validate-promotion
 ```bash
 python -m sena.cli.main registry --sqlite-path /tmp/policy.db promote \
   --bundle-id 12 \
-  --target-lifecycle active \
+  --target-lifecycle approved \
   --promoted-by sre-oncall \
   --promotion-reason "CAB-884 approved" \
+  --validation-artifact "CAB-884" \
+  --approver-attestation cab-chair \
+  --approver-attestation security
+
+python -m sena.cli.main registry --sqlite-path /tmp/policy.db promote \
+  --bundle-id 12 \
+  --target-lifecycle active \
+  --promoted-by sre-oncall \
+  --promotion-reason "deploy approved bundle" \
   --validation-artifact "CAB-884"
 ```
 
@@ -102,6 +115,7 @@ Primary endpoints:
 - `GET /v1/bundles/history`
 
 Payloads are stable JSON structures and invalid transitions return `promotion_validation_failed` with explicit errors.
+Rollback supports impact preview mode via `preview_only=true` and optional simulation scenarios.
 
 ## Alpha boundaries
 

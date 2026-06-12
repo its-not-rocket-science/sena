@@ -10,6 +10,7 @@ from sena.integrations.jira import (
     SharedSecretJiraWebhookVerifier,
     load_jira_mapping_config,
 )
+from sena.integrations.persistence import SQLiteIntegrationReliabilityStore
 
 
 def _payload(actor: str = "acct-1") -> dict:
@@ -23,6 +24,14 @@ def _payload(actor: str = "acct-1") -> dict:
                 "customfield_approval_amount": 12000,
                 "customfield_requester_role": "finance_analyst",
                 "customfield_vendor_verified": False,
+                "customfield_tenant_id": "tenant-finance",
+                "customfield_workflow_id": "wf-ap-01",
+                "customfield_sla_deadline_at": "2026-04-11T00:00:00Z",
+                "customfield_escalation_deadline_at": "2026-04-10T18:00:00Z",
+                "customfield_business_unit": "finance",
+                "status": {"name": "Pending Approval"},
+                "previous_status": {"name": "In Review"},
+                "priority": {"name": "P2"},
             },
         },
         "user": {"accountId": actor},
@@ -34,6 +43,25 @@ def test_load_jira_mapping_config() -> None:
     cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
     assert "jira:issue_updated" in cfg.routes
     assert cfg.outbound.mode == "both"
+
+
+def test_load_jira_mapping_rejects_non_list_required_metadata_fields(tmp_path) -> None:
+    config_path = tmp_path / "jira_bad_required_metadata.yaml"
+    config_path.write_text(
+        """
+routes:
+  jira:issue_updated:
+    action_type: approve_vendor_payment
+    actor_id_path: user.accountId
+    attributes: {}
+    required_metadata_fields: issue.fields.customfield_tenant_id
+""".strip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        JiraIntegrationError, match="required_metadata_fields must be a list"
+    ):
+        load_jira_mapping_config(str(config_path))
 
 
 def test_jira_connector_maps_payload_to_action_proposal() -> None:
@@ -53,6 +81,22 @@ def test_jira_connector_maps_payload_to_action_proposal() -> None:
     assert proposal.request_id == "RISK-9"
     assert proposal.actor_id == "acct-1"
     assert proposal.attributes["amount"] == 12000
+
+
+def test_jira_connector_rejects_multiple_durability_sources(tmp_path) -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    with pytest.raises(
+        JiraIntegrationError,
+        match="configure exactly one durability source",
+    ):
+        JiraConnector(
+            config=cfg,
+            verifier=AllowAllJiraWebhookVerifier(),
+            reliability_store=SQLiteIntegrationReliabilityStore(
+                str(tmp_path / "connector-reliability.db")
+            ),
+            reliability_db_path=str(tmp_path / "other-reliability.db"),
+        )
 
 
 def test_jira_connector_missing_actor_identity_is_deterministic() -> None:
@@ -85,6 +129,55 @@ def test_jira_connector_duplicate_delivery_is_replay_safe() -> None:
         connector.handle_event(envelope)
 
 
+def test_jira_connector_duplicate_delivery_with_envelope_variance_is_still_duplicate() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+    payload = _payload()
+    connector.handle_event(
+        {
+            "headers": {"x-atlassian-webhook-identifier": "delivery-3-variance"},
+            "payload": payload,
+            "raw_body": json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        }
+    )
+
+    with pytest.raises(JiraIntegrationError, match="duplicate delivery"):
+        connector.handle_event(
+            {
+                "headers": {
+                    "x-atlassian-webhook-identifier": "delivery-3-variance",
+                    "x-random-debug-header": "noop",
+                },
+                "payload": payload,
+                "raw_body": json.dumps(payload, indent=2).encode("utf-8"),
+            }
+        )
+
+
+def test_jira_connector_duplicate_delivery_with_payload_change_conflicts() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+    first_payload = _payload()
+    second_payload = _payload()
+    second_payload["issue"]["fields"]["customfield_vendor_verified"] = True
+
+    connector.handle_event(
+        {
+            "headers": {"x-atlassian-webhook-identifier": "delivery-3-conflict"},
+            "payload": first_payload,
+            "raw_body": json.dumps(first_payload).encode("utf-8"),
+        }
+    )
+    with pytest.raises(JiraIntegrationError, match="idempotency payload conflict"):
+        connector.handle_event(
+            {
+                "headers": {"x-atlassian-webhook-identifier": "delivery-3-conflict"},
+                "payload": second_payload,
+                "raw_body": json.dumps(second_payload).encode("utf-8"),
+            }
+        )
+
+
 def test_jira_verifier_rejects_invalid_signature() -> None:
     cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
     connector = JiraConnector(
@@ -103,6 +196,30 @@ def test_jira_verifier_rejects_invalid_signature() -> None:
                 "raw_body": json.dumps(payload).encode("utf-8"),
             }
         )
+
+
+def test_jira_verifier_accepts_unprefixed_x_hub_signature_256() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(
+        config=cfg,
+        verifier=SharedSecretJiraWebhookVerifier("topsecret"),
+    )
+    payload = _payload()
+    raw_body = json.dumps(payload).encode("utf-8")
+    signature = _hmac_sha256("topsecret", raw_body)
+
+    event = connector.handle_event(
+        {
+            "headers": {
+                "x-atlassian-webhook-identifier": "delivery-4a",
+                "x-hub-signature-256": signature,
+            },
+            "payload": payload,
+            "raw_body": raw_body,
+        }
+    )
+
+    assert event["normalized_event"]["source_system"] == "jira"
 
 
 def test_jira_round_trip_source_payload_to_normalized_to_action_proposal() -> None:
@@ -165,3 +282,55 @@ def test_jira_send_decision_returns_stable_payload() -> None:
     )
     assert response["status"] == "delivered"
     assert len(response["results"]) == 2
+
+
+def test_jira_send_decision_is_idempotent_for_retries() -> None:
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(config=cfg, verifier=AllowAllJiraWebhookVerifier())
+    payload = DecisionPayload(
+        decision_id="dec_dupe_1",
+        request_id="RISK-11",
+        action_type="approve_vendor_payment",
+        matched_rule_ids=["RULE-1"],
+        summary="ALLOWED",
+    )
+    first = connector.send_decision(payload)
+    second = connector.send_decision(payload)
+    assert first["status"] == "delivered"
+    assert all(item["status"] == "duplicate_suppressed" for item in second["results"])
+
+
+def test_jira_send_decision_writes_dlq_after_retry_exhaustion() -> None:
+    class _FailingClient:
+        def publish_comment(self, issue_key: str, message: str) -> dict:
+            del issue_key, message
+            raise RuntimeError("comment endpoint unavailable")
+
+        def publish_status(self, issue_key: str, payload: dict) -> dict:
+            del issue_key, payload
+            raise RuntimeError("status endpoint unavailable")
+
+    cfg = load_jira_mapping_config("src/sena/examples/integrations/jira_mappings.yaml")
+    connector = JiraConnector(
+        config=cfg,
+        verifier=AllowAllJiraWebhookVerifier(),
+        delivery_client=_FailingClient(),
+    )
+    response = connector.send_decision(
+        DecisionPayload(
+            decision_id="dec_fail_1",
+            request_id="RISK-12",
+            action_type="approve_vendor_payment",
+            matched_rule_ids=["RULE-1"],
+            summary="BLOCKED",
+        )
+    )
+    assert response["status"] == "partial_failure"
+    assert len(connector.dead_letter_items()) == 2
+
+
+def _hmac_sha256(secret: str, raw_body: bytes) -> str:
+    import hashlib
+    import hmac
+
+    return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()

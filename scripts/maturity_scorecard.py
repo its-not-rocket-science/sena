@@ -3,350 +3,432 @@ from __future__ import annotations
 import argparse
 import ast
 import json
-import os
-import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+SUPPORTED_CONNECTORS = {"jira", "servicenow"}
 
 
 @dataclass(frozen=True)
-class MetricScore:
+class ScoreSignal:
     name: str
     score: int
     max_score: int
+    required_min_score: int
     details: dict[str, Any]
+
+    @property
+    def gate_pass(self) -> bool:
+        return self.score >= self.required_min_score
 
 
 def _safe_read(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
-def _python_files(base: Path) -> list[Path]:
-    if not base.exists():
+def _parse_python(path: Path) -> ast.AST | None:
+    source = _safe_read(path)
+    if not source.strip():
+        return None
+    try:
+        return ast.parse(source)
+    except SyntaxError:
+        return None
+
+
+def _test_function_names(path: Path) -> list[str]:
+    tree = _parse_python(path)
+    if tree is None:
         return []
-    return sorted(path for path in base.rglob("*.py") if path.is_file())
-
-
-def _non_empty_non_comment_lines(path: Path) -> int:
-    count = 0
-    for raw_line in _safe_read(path).splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        count += 1
-    return count
-
-
-def _collect_test_names(tests_root: Path) -> list[str]:
-    names: list[str] = []
-    for file_path in _python_files(tests_root):
-        source = _safe_read(file_path)
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
-                names.append(node.name)
-    return names
-
-
-def _score_api_layer_complexity(repo_root: Path) -> MetricScore:
-    api_files = _python_files(repo_root / "src" / "sena" / "api")
-    if not api_files:
-        return MetricScore(
-            name="api_layer_complexity_file_concentration",
-            score=0,
-            max_score=100,
-            details={"reason": "No API files discovered"},
-        )
-
-    file_line_counts = {str(path.relative_to(repo_root)): _non_empty_non_comment_lines(path) for path in api_files}
-    total_lines = sum(file_line_counts.values())
-    largest_file = max(file_line_counts.items(), key=lambda x: x[1])
-    concentration = (largest_file[1] / total_lines) if total_lines else 1.0
-
-    branches = 0
-    functions = 0
-    for file_path in api_files:
-        try:
-            tree = ast.parse(_safe_read(file_path))
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                functions += 1
-            if isinstance(node, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Match, ast.Try, ast.BoolOp)):
-                branches += 1
-
-    avg_branch_density = (branches / functions) if functions else float(branches)
-
-    concentration_score = max(0.0, 1.0 - max(0.0, concentration - 0.15) / 0.45)
-    complexity_score = max(0.0, 1.0 - max(0.0, avg_branch_density - 2.0) / 5.0)
-    final_score = round(100 * ((concentration_score * 0.6) + (complexity_score * 0.4)))
-
-    return MetricScore(
-        name="api_layer_complexity_file_concentration",
-        score=final_score,
-        max_score=100,
-        details={
-            "total_api_files": len(api_files),
-            "total_api_non_comment_loc": total_lines,
-            "largest_file": {"path": largest_file[0], "loc": largest_file[1]},
-            "largest_file_concentration_ratio": round(concentration, 4),
-            "branch_nodes": branches,
-            "function_nodes": functions,
-            "avg_branch_density": round(avg_branch_density, 4),
-            "scoring_model": "higher score favors distributed API surface and lower branch density",
-        },
-    )
-
-
-def _score_service_layer_coverage(repo_root: Path) -> MetricScore:
-    services = _python_files(repo_root / "src" / "sena" / "services")
-    tests = _python_files(repo_root / "tests")
-    tests_text = "\n".join(_safe_read(path) for path in tests)
-
-    covered = []
-    missing = []
-    for service_file in services:
-        if service_file.name == "__init__.py":
-            continue
-        module_name = service_file.stem
-        dotted = f"sena.services.{module_name}"
-        if module_name in tests_text or dotted in tests_text:
-            covered.append(str(service_file.relative_to(repo_root)))
-        else:
-            missing.append(str(service_file.relative_to(repo_root)))
-
-    considered = len(covered) + len(missing)
-    ratio = (len(covered) / considered) if considered else 0.0
-    score = round(100 * ratio)
-    return MetricScore(
-        name="service_layer_coverage",
-        score=score,
-        max_score=100,
-        details={
-            "services_considered": considered,
-            "services_referenced_by_tests": len(covered),
-            "coverage_ratio": round(ratio, 4),
-            "covered_services": covered,
-            "missing_service_references": missing,
-        },
-    )
-
-
-def _score_failure_mode_test_count(repo_root: Path) -> MetricScore:
-    test_names = _collect_test_names(repo_root / "tests")
-    pattern = re.compile(r"(fail|error|invalid|unsupported|drift|disaster|recovery|guard)")
-    matching = sorted(name for name in test_names if pattern.search(name))
-    target = 30
-    score = min(100, round((len(matching) / target) * 100))
-    return MetricScore(
-        name="failure_mode_test_count",
-        score=score,
-        max_score=100,
-        details={
-            "matching_tests": len(matching),
-            "target_for_full_score": target,
-            "examples": matching[:25],
-        },
-    )
-
-
-def _score_migration_coverage(repo_root: Path) -> MetricScore:
-    migrations = sorted((repo_root / "scripts" / "migrations").glob("*.sql"))
-    tests_text = "\n".join(_safe_read(path) for path in _python_files(repo_root / "tests"))
-
-    covered = []
-    missing = []
-    for migration in migrations:
-        if migration.name in tests_text or migration.stem in tests_text:
-            covered.append(migration.name)
-        else:
-            missing.append(migration.name)
-
-    ratio = (len(covered) / len(migrations)) if migrations else 0.0
-    score = round(100 * ratio)
-    return MetricScore(
-        name="migration_coverage",
-        score=score,
-        max_score=100,
-        details={
-            "migration_scripts": len(migrations),
-            "covered_migrations": covered,
-            "missing_migrations": missing,
-            "coverage_ratio": round(ratio, 4),
-        },
-    )
-
-
-def _score_persistence_audit_recovery_coverage(repo_root: Path) -> MetricScore:
-    tests_text = "\n".join(_safe_read(path) for path in _python_files(repo_root / "tests"))
-
-    source_checks = {
-        "policy_disaster_recovery": (repo_root / "src" / "sena" / "policy" / "disaster_recovery.py").exists(),
-        "audit_chain": (repo_root / "src" / "sena" / "audit" / "chain.py").exists(),
-        "audit_sinks": (repo_root / "src" / "sena" / "audit" / "sinks.py").exists(),
-        "persistence_architecture_doc": (repo_root / "docs" / "PERSISTENCE_ARCHITECTURE.md").exists(),
-        "audit_guarantees_doc": (repo_root / "docs" / "AUDIT_GUARANTEES.md").exists(),
-    }
-
-    test_checks = {
-        "test_policy_registry_disaster_recovery": "test_policy_registry_disaster_recovery" in tests_text,
-        "test_audit_chain": "test_audit_chain" in tests_text,
-        "test_audit_sinks": "test_audit_sinks" in tests_text,
-        "test_persistence_architecture": "test_persistence_architecture" in tests_text,
-    }
-
-    checks = {**source_checks, **test_checks}
-    passed = sum(1 for value in checks.values() if value)
-    total = len(checks)
-    score = round((passed / total) * 100)
-
-    return MetricScore(
-        name="persistence_audit_recovery_coverage",
-        score=score,
-        max_score=100,
-        details={"checks": checks, "passed": passed, "total": total},
-    )
-
-
-def _score_documentation_completeness(repo_root: Path) -> MetricScore:
-    required_docs = [
-        "docs/ARCHITECTURE.md",
-        "docs/CONTROL_PLANE.md",
-        "docs/POLICY_LIFECYCLE.md",
-        "docs/DECISION_REVIEW_PACKAGES.md",
-        "docs/examples/portable_policy_pack_jira_servicenow.md",
-        "docs/MIGRATION.md",
+    return [
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
     ]
-    readme_text = _safe_read(repo_root / "README.md")
-
-    doc_results: dict[str, bool] = {}
-    for rel_path in required_docs:
-        path = repo_root / rel_path
-        exists = path.exists()
-        linked_in_readme = rel_path in readme_text
-        doc_results[rel_path] = exists and linked_in_readme
-
-    passed = sum(1 for ok in doc_results.values() if ok)
-    score = round((passed / len(required_docs)) * 100)
-
-    return MetricScore(
-        name="documentation_completeness_flagship_workflows",
-        score=score,
-        max_score=100,
-        details={
-            "required_docs": required_docs,
-            "docs_present_and_linked_from_readme": doc_results,
-            "passed": passed,
-            "total": len(required_docs),
-            "note": "requires docs to exist and be discoverable from README",
-        },
-    )
 
 
-def _score_evidence_pack_generation_success(repo_root: Path) -> MetricScore:
-    output_dir = repo_root / ".maturity_tmp" / "evidence_pack"
-    output_zip = repo_root / ".maturity_tmp" / "evidence_pack.zip"
-    output_dir.parent.mkdir(parents=True, exist_ok=True)
+def _score_replay_supported_path_coverage(repo_root: Path) -> ScoreSignal:
+    scenarios_dir = repo_root / "tests" / "replay_corpus" / "fixtures" / "scenarios"
+    fixtures = sorted(scenarios_dir.glob("*.json")) if scenarios_dir.exists() else []
 
-    cmd = [
-        os.environ.get("PYTHON", "python"),
-        str(repo_root / "scripts" / "generate_evidence_pack.py"),
-        "--output-dir",
-        str(output_dir),
-        "--output-zip",
-        str(output_zip),
-        "--clean",
-    ]
-    proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)
-    success = proc.returncode == 0 and output_zip.exists()
-    score = 100 if success else 0
+    connectors_seen: set[str] = set()
+    supported_fixture_count = 0
+    malformed: list[str] = []
+    for fixture in fixtures:
+        try:
+            payload = json.loads(fixture.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            malformed.append(fixture.name)
+            continue
+        source_system = str(payload.get("input", {}).get("source_system", "")).lower().strip()
+        if source_system in SUPPORTED_CONNECTORS:
+            connectors_seen.add(source_system)
+            supported_fixture_count += 1
 
-    stdout = proc.stdout.strip().splitlines()
-    stderr = proc.stderr.strip().splitlines()
-    return MetricScore(
-        name="evidence_pack_generation_success",
-        score=score,
-        max_score=100,
-        details={
-            "command": " ".join(cmd),
-            "return_code": proc.returncode,
-            "output_zip_exists": output_zip.exists(),
-            "stdout_tail": stdout[-10:],
-            "stderr_tail": stderr[-10:],
-        },
-    )
-
-
-def _score_replay_drift_coverage(repo_root: Path) -> MetricScore:
-    tests_text = "\n".join(_safe_read(path) for path in _python_files(repo_root / "tests"))
-    scenarios = sorted((repo_root / "src" / "sena" / "examples" / "scenarios").glob("*.json"))
+    tests_file = repo_root / "tests" / "test_replay_corpus.py"
+    replay_tests = _test_function_names(tests_file)
 
     checks = {
-        "replay_drift_tests_present": "replay" in tests_text and "drift" in tests_text,
-        "explicit_replay_drift_test_file": (repo_root / "tests" / "test_replay_drift.py").exists(),
-        "ai_assisted_scenarios_present": any("ai_assisted" in path.name for path in scenarios),
-        "simulation_scenarios_fixture_present": any("simulation_scenarios" in path.name for path in scenarios),
+        "fixture_schema_dir_present": scenarios_dir.exists(),
+        "supported_connectors_both_present": connectors_seen == SUPPORTED_CONNECTORS,
+        "supported_fixture_count_at_least_two": supported_fixture_count >= 2,
+        "replay_contract_tests_present": len(replay_tests) >= 2,
+        "no_malformed_replay_fixtures": not malformed,
+    }
+    passed = sum(1 for value in checks.values() if value)
+    score = round((passed / len(checks)) * 100)
+
+    return ScoreSignal(
+        name="replay_corpus_supported_path_coverage",
+        score=score,
+        max_score=100,
+        required_min_score=100,
+        details={
+            "checks": checks,
+            "supported_connectors_seen": sorted(connectors_seen),
+            "supported_fixture_count": supported_fixture_count,
+            "replay_tests": replay_tests,
+            "malformed_fixture_files": malformed,
+        },
+    )
+
+
+def _score_adversarial_audit_verification_coverage(repo_root: Path) -> ScoreSignal:
+    test_path = repo_root / "tests" / "test_audit_chain_adversarial.py"
+    source = _safe_read(test_path)
+    test_names = _test_function_names(test_path)
+
+    expected_categories = [
+        "chain_link_mismatch",
+        "duplicate_decision_id",
+        "segment_sequence_gap",
+        "manifest_segment_record_count_mismatch",
+        "record_malformed_json",
+        "signature_present_but_no_verifier",
+    ]
+    category_hits = {category: (category in source) for category in expected_categories}
+
+    checks = {
+        "adversarial_test_file_present": test_path.exists(),
+        "adversarial_test_count_minimum": len(test_names) >= 6,
+        "all_expected_verification_categories_asserted": all(category_hits.values()),
+        "audit_chain_verifier_module_present": (
+            repo_root / "src" / "sena" / "audit" / "chain.py"
+        ).exists(),
     }
 
     passed = sum(1 for value in checks.values() if value)
-    total = len(checks)
-    score = round((passed / total) * 100)
+    score = round((passed / len(checks)) * 100)
 
-    return MetricScore(
-        name="replay_drift_coverage_ai_assisted_actions",
+    return ScoreSignal(
+        name="adversarial_audit_verification_coverage",
         score=score,
         max_score=100,
-        details={"checks": checks, "passed": passed, "total": total},
+        required_min_score=100,
+        details={
+            "checks": checks,
+            "adversarial_test_names": sorted(test_names),
+            "category_hits": category_hits,
+        },
+    )
+
+
+def _score_supported_path_e2e_coverage(repo_root: Path) -> ScoreSignal:
+    test_path = repo_root / "tests" / "test_supported_integrations_e2e.py"
+    source = _safe_read(test_path)
+    test_names = _test_function_names(test_path)
+    connectors_asserted = {name for name in SUPPORTED_CONNECTORS if f'"{name}"' in source}
+
+    checks = {
+        "supported_e2e_test_file_present": test_path.exists(),
+        "supported_e2e_test_present": any("supported_connector_e2e" in name for name in test_names),
+        "jira_and_servicenow_paths_exercised": connectors_asserted == SUPPORTED_CONNECTORS,
+        "supported_mapping_fixtures_referenced": (
+            "jira_mappings.yaml" in source and "servicenow_mappings.yaml" in source
+        ),
+    }
+    passed = sum(1 for value in checks.values() if value)
+    score = round((passed / len(checks)) * 100)
+
+    return ScoreSignal(
+        name="supported_path_end_to_end_test_coverage",
+        score=score,
+        max_score=100,
+        required_min_score=100,
+        details={
+            "checks": checks,
+            "connectors_asserted": sorted(connectors_asserted),
+            "test_names": sorted(test_names),
+        },
+    )
+
+
+def _score_backup_restore_verification_drill(repo_root: Path) -> ScoreSignal:
+    drill_script = repo_root / "scripts" / "registry_backup_restore_drill.py"
+    operations_test_path = repo_root / "tests" / "test_operations_scripts.py"
+    dr_test_path = repo_root / "tests" / "test_policy_registry_disaster_recovery.py"
+
+    dry_run_ok = False
+    dry_run_payload: dict[str, Any] = {}
+    if drill_script.exists():
+        cmd = [
+            sys.executable,
+            str(drill_script),
+            "--sqlite-path",
+            "/tmp/policy.db",
+            "--audit-chain",
+            "/tmp/audit.jsonl",
+            "--work-dir",
+            "/tmp/sena-drill",
+            "--dry-run",
+        ]
+        proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True, check=False)
+        if proc.returncode == 0:
+            try:
+                dry_run_payload = json.loads(proc.stdout)
+            except json.JSONDecodeError:
+                dry_run_payload = {"raw_stdout": proc.stdout[-1000:]}
+        dry_run_ok = proc.returncode == 0 and dry_run_payload.get("status") == "dry_run"
+    else:
+        proc = None
+
+    operations_source = _safe_read(operations_test_path)
+    dr_tests = _test_function_names(dr_test_path)
+
+    checks = {
+        "backup_restore_drill_script_present": drill_script.exists(),
+        "drill_dry_run_executes": dry_run_ok,
+        "drill_script_tests_present": "test_registry_backup_restore_drill_dry_run" in operations_source,
+        "disaster_recovery_restore_tests_present": any("restore" in name for name in dr_tests),
+    }
+    passed = sum(1 for value in checks.values() if value)
+    score = round((passed / len(checks)) * 100)
+
+    return ScoreSignal(
+        name="backup_restore_verification_drill",
+        score=score,
+        max_score=100,
+        required_min_score=100,
+        details={
+            "checks": checks,
+            "dry_run_status": dry_run_payload.get("status"),
+            "dry_run_command_count": len(dry_run_payload.get("commands", []))
+            if isinstance(dry_run_payload.get("commands"), list)
+            else 0,
+            "dry_run_stderr_tail": [] if proc is None else proc.stderr.strip().splitlines()[-10:],
+            "disaster_recovery_test_names": sorted(dr_tests),
+        },
+    )
+
+
+def _score_idempotency_conflict_handling(repo_root: Path) -> ScoreSignal:
+    idempotency_tests = repo_root / "tests" / "test_idempotency.py"
+    persistence_module = repo_root / "src" / "sena" / "integrations" / "persistence.py"
+    source = _safe_read(idempotency_tests)
+    persistence_source = _safe_read(persistence_module)
+
+    checks = {
+        "idempotency_test_file_present": idempotency_tests.exists(),
+        "evaluate_conflict_asserts_409": (
+            "test_evaluate_idempotency_key_conflicts_on_semantic_payload_change" in source
+            and "== 409" in source
+        ),
+        "webhook_conflict_asserts_409": (
+            "test_webhook_idempotency_key_conflicts_on_semantic_payload_change" in source
+            and "idempotency_key_conflict" in source
+        ),
+        "persistence_layer_conflict_state_present": (
+            'Literal["new", "duplicate", "conflict"]' in persistence_source
+            and "conflict_count" in persistence_source
+        ),
+    }
+    passed = sum(1 for value in checks.values() if value)
+    score = round((passed / len(checks)) * 100)
+
+    return ScoreSignal(
+        name="idempotency_conflict_handling",
+        score=score,
+        max_score=100,
+        required_min_score=100,
+        details={"checks": checks},
+    )
+
+
+def _score_authorization_coverage_privileged_routes(repo_root: Path) -> ScoreSignal:
+    authz_tests = repo_root / "tests" / "test_api_authz_security.py"
+    source = _safe_read(authz_tests)
+
+    privileged_routes = [
+        "/v1/admin/data/payloads/1/hold",
+        "/v1/audit/hold/dec_123",
+        "/v1/integrations/jira/admin/outbound/dead-letter/replay",
+        "/v1/integrations/jira/admin/outbound/dead-letter/manual-redrive",
+        "/v1/bundle/promote",
+    ]
+    route_hits = {route: (route in source) for route in privileged_routes}
+
+    checks = {
+        "authz_security_test_file_present": authz_tests.exists(),
+        "privileged_routes_explicitly_tested": all(route_hits.values()),
+        "step_up_rejection_asserted": "step_up_auth_required" in source,
+        "signed_step_up_assertion_validation_tested": "step_up_assertion_invalid" in source,
+    }
+    passed = sum(1 for value in checks.values() if value)
+    score = round((passed / len(checks)) * 100)
+
+    return ScoreSignal(
+        name="authorization_coverage_on_privileged_routes",
+        score=score,
+        max_score=100,
+        required_min_score=100,
+        details={
+            "checks": checks,
+            "privileged_route_hits": route_hits,
+            "test_names": sorted(_test_function_names(authz_tests)),
+        },
+    )
+
+
+def _score_migration_safety_tests(repo_root: Path) -> ScoreSignal:
+    registry_tests = repo_root / "tests" / "test_registry_migrations.py"
+    failure_mode_tests = repo_root / "tests" / "test_failure_modes_and_migration_safety.py"
+    migrations_dir = repo_root / "scripts" / "migrations"
+
+    registry_source = _safe_read(registry_tests)
+    failure_source = _safe_read(failure_mode_tests)
+    migration_scripts = sorted(path.name for path in migrations_dir.glob("*.sql")) if migrations_dir.exists() else []
+
+    checks = {
+        "migration_scripts_present": len(migration_scripts) > 0,
+        "checksum_mismatch_test_present": "test_checksum_mismatch_is_detected" in registry_source,
+        "partial_failure_rollback_test_present": "test_partial_migration_failure_rolls_back_failed_step_only" in registry_source,
+        "duplicate_version_guard_test_present": "duplicate migration versions" in failure_source,
+        "legacy_fixture_forward_migration_test_present": "test_legacy_storage_state_fixture_migrates_forward" in failure_source,
+    }
+    passed = sum(1 for value in checks.values() if value)
+    score = round((passed / len(checks)) * 100)
+
+    return ScoreSignal(
+        name="migration_safety_tests",
+        score=score,
+        max_score=100,
+        required_min_score=100,
+        details={
+            "checks": checks,
+            "migration_script_count": len(migration_scripts),
+            "migration_scripts": migration_scripts,
+        },
     )
 
 
 def build_scorecard(repo_root: Path) -> dict[str, Any]:
-    metrics = [
-        _score_api_layer_complexity(repo_root),
-        _score_service_layer_coverage(repo_root),
-        _score_failure_mode_test_count(repo_root),
-        _score_migration_coverage(repo_root),
-        _score_persistence_audit_recovery_coverage(repo_root),
-        _score_documentation_completeness(repo_root),
-        _score_evidence_pack_generation_success(repo_root),
-        _score_replay_drift_coverage(repo_root),
+    signals = [
+        _score_replay_supported_path_coverage(repo_root),
+        _score_adversarial_audit_verification_coverage(repo_root),
+        _score_supported_path_e2e_coverage(repo_root),
+        _score_backup_restore_verification_drill(repo_root),
+        _score_idempotency_conflict_handling(repo_root),
+        _score_authorization_coverage_privileged_routes(repo_root),
+        _score_migration_safety_tests(repo_root),
     ]
 
-    weighted = [metric.score for metric in metrics]
-    overall = round(sum(weighted) / len(weighted)) if weighted else 0
+    overall = round(sum(signal.score for signal in signals) / len(signals)) if signals else 0
+    required_signals = [signal for signal in signals if signal.required_min_score > 0]
+    failed_required = [signal.name for signal in required_signals if not signal.gate_pass]
+
+    gate = {
+        "decision": "GO" if not failed_required else "NO_GO",
+        "failed_required_signals": failed_required,
+        "required_signals": [
+            {
+                "name": signal.name,
+                "required_min_score": signal.required_min_score,
+                "score": signal.score,
+                "pass": signal.gate_pass,
+            }
+            for signal in required_signals
+        ],
+        "note": "External validation should be blocked when any required hard-signal gate fails.",
+    }
 
     return {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "repository": repo_root.name,
-        "scoring_principles": {
-            "objective": "all metrics are computed from repository files, AST analysis, and executable scripts",
-            "anti_vanity": "scores prioritize coverage signals and operational checks over raw line counts",
-            "architecture_nudge": "metrics favor supported src/sena architecture, tests, docs, and deterministic release evidence",
+        "scoring_model": {
+            "type": "hard-signal-scorecard",
+            "anti_metrics": [
+                "raw_loc",
+                "documentation_count",
+                "total_test_count",
+            ],
+            "meaning": "Higher score means stronger evidence that supported-path controls are covered by executable checks.",
+            "non_meaning": "Score does not prove enterprise-complete security/compliance or eliminate need for manual release review.",
         },
         "overall_score": overall,
-        "metrics": [
+        "gate": gate,
+        "signals": [
             {
-                "name": metric.name,
-                "score": metric.score,
-                "max_score": metric.max_score,
-                "details": metric.details,
+                "name": signal.name,
+                "score": signal.score,
+                "max_score": signal.max_score,
+                "required_min_score": signal.required_min_score,
+                "gate_pass": signal.gate_pass,
+                "details": signal.details,
             }
-            for metric in metrics
+            for signal in signals
         ],
     }
 
 
+def render_markdown(scorecard: dict[str, Any]) -> str:
+    lines = [
+        "# SENA Hard-Signal Scorecard",
+        "",
+        f"- Generated (UTC): `{scorecard['generated_at_utc']}`",
+        f"- Overall score: **{scorecard['overall_score']} / 100**",
+        f"- External validation gate: **{scorecard['gate']['decision']}**",
+        "",
+        "## Gate outcome",
+    ]
+
+    failed = scorecard["gate"]["failed_required_signals"]
+    if failed:
+        lines.extend(["", "Required signals below threshold:"])
+        lines.extend([f"- ❌ `{name}`" for name in failed])
+    else:
+        lines.extend(["", "- ✅ All required hard-signal gates passed."])
+
+    lines.extend(["", "## Signal breakdown"])
+    for signal in scorecard["signals"]:
+        status = "✅" if signal["gate_pass"] else "❌"
+        lines.append(
+            f"- {status} `{signal['name']}`: {signal['score']}/{signal['max_score']} "
+            f"(required ≥ {signal['required_min_score']})"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Interpretation",
+            "- This scorecard is a pre-validation engineering gate for the supported Jira + ServiceNow path.",
+            "- It rewards executable evidence for replay determinism, adversarial audit verification, "
+            "backup/restore drills, idempotency conflict handling, privileged-route authorization, and migration safety.",
+            "- It is intentionally not a KPI dashboard for productivity or output volume.",
+            "- A high score does not replace threat modeling, independent security review, legal/compliance review, "
+            "or environment-specific operational approval.",
+        ]
+    )
+
+    return "\n".join(lines) + "\n"
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Compute repository maturity scorecard")
+    parser = argparse.ArgumentParser(description="Compute hard-signal engineering scorecard")
     parser.add_argument(
         "--repo-root",
         type=Path,
@@ -359,6 +441,12 @@ def parse_args() -> argparse.Namespace:
         default=ROOT / "artifacts" / "maturity_scorecard.json",
         help="Path to write the JSON scorecard artifact",
     )
+    parser.add_argument(
+        "--output-markdown",
+        type=Path,
+        default=ROOT / "artifacts" / "maturity_scorecard.md",
+        help="Path to write the Markdown scorecard report",
+    )
     return parser.parse_args()
 
 
@@ -368,6 +456,10 @@ def main() -> None:
 
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(scorecard, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    args.output_markdown.parent.mkdir(parents=True, exist_ok=True)
+    args.output_markdown.write_text(render_markdown(scorecard), encoding="utf-8")
+
     print(json.dumps(scorecard, indent=2, sort_keys=True))
 
 

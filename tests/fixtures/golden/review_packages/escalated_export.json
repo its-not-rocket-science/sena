@@ -7,7 +7,7 @@
     "decision": "ESCALATE_FOR_HUMAN_REVIEW",
     "outcome": "ESCALATE_FOR_HUMAN_REVIEW",
     "action_type": "export_customer_data",
-    "summary": "Decision <decision_id>: ESCALATE_FOR_HUMAN_REVIEW for rule(s) (export_escalate_sensitive_fields_without_dpo).",
+    "summary": "ESCALATE_FOR_HUMAN_REVIEW for rule(s) (export_escalate_sensitive_fields_without_dpo).",
     "decision_timestamp": "<timestamp>"
   },
   "rules": {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from sena.core.enums import ActionOrigin, DecisionOutcome, RuleDecision, Severity
 
@@ -93,6 +93,7 @@ class PolicyRule:
     condition: dict[str, Any]
     decision: RuleDecision
     reason: str
+    control_ids: list[str] = field(default_factory=list)
     required_evidence: list[str] = field(default_factory=list)
     missing_evidence_decision: RuleDecision | None = None
 
@@ -106,6 +107,44 @@ class RuleEvaluationResult:
     reason: str | None = None
     required_evidence: list[str] = field(default_factory=list)
     missing_evidence: list[str] = field(default_factory=list)
+    condition_matched: bool | None = None
+    condition_missing_fields: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PrecedenceResolutionStep:
+    stage: str
+    description: str
+    matched_rule_ids: list[str] = field(default_factory=list)
+    outcome: DecisionOutcome | None = None
+
+
+@dataclass
+class ExceptionScope:
+    action_type: str
+    actor: str | None = None
+    attributes: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PolicyException:
+    exception_id: str
+    scope: ExceptionScope
+    expiry: datetime
+    approver_class: str
+    justification: str
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+
+
+@dataclass
+class ExceptionEvaluationResult:
+    exception_id: str
+    matched: bool
+    expired: bool
+    changed_outcome: bool
+    override_outcome: DecisionOutcome | None = None
+    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -113,6 +152,7 @@ class EvaluatorConfig:
     default_decision: DecisionOutcome = DecisionOutcome.APPROVED
     require_allow_match: bool = False
     enforce_context_schema: bool = True
+    deterministic_mode: bool = False
     on_escalation: Callable[["EvaluationTrace"], None] | None = None
 
 
@@ -126,6 +166,7 @@ class DecisionReasoning:
     risk_summary: dict[str, Any] = field(default_factory=dict)
     reviewer_guidance: list[str] = field(default_factory=list)
     provenance: dict[str, Any] = field(default_factory=dict)
+    exception_summary: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -146,13 +187,20 @@ class AuditRecord:
     precedence_explanation: str
     input_fingerprint: str
     decision_hash: str
+    baseline_outcome: DecisionOutcome | None = None
+    applied_exception_ids: list[str] = field(default_factory=list)
+    evaluated_exception_ids: list[str] = field(default_factory=list)
     source_metadata: dict[str, Any] = field(default_factory=dict)
     request_correlation_id: str | None = None
     evaluator_version: str | None = None
     policy_bundle_release_id: str | None = None
+    downstream_outcome: Literal["success", "failure"] | None = None
+    incident_flag: bool | None = None
     storage_sequence_number: int | None = None
     chain_hash: str | None = None
     previous_chain_hash: str | None = None
+    canonical_replay_payload: dict[str, Any] = field(default_factory=dict)
+    operational_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -172,10 +220,16 @@ class EvaluationTrace:
     matched_rules: list[RuleEvaluationResult] = field(default_factory=list)
     evaluated_invariants: list[InvariantEvaluationResult] = field(default_factory=list)
     matched_invariants: list[InvariantEvaluationResult] = field(default_factory=list)
+    baseline_outcome: DecisionOutcome | None = None
+    evaluated_exceptions: list[ExceptionEvaluationResult] = field(default_factory=list)
+    applied_exceptions: list[ExceptionEvaluationResult] = field(default_factory=list)
     conflicting_rules: list[str] = field(default_factory=list)
+    precedence_steps: list[PrecedenceResolutionStep] = field(default_factory=list)
     missing_fields: list[str] = field(default_factory=list)
     context: dict[str, Any] = field(default_factory=dict)
     audit_record: AuditRecord | None = None
+    canonical_replay_payload: dict[str, Any] = field(default_factory=dict)
+    operational_metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)

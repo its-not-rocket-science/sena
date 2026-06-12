@@ -85,6 +85,9 @@ ERROR_CODE_CATALOG: dict[str, ErrorCatalogEntry] = {
     "servicenow_mapping_not_configured": ErrorCatalogEntry(
         400, "ServiceNow mapping config is not set."
     ),
+    "servicenow_authentication_failed": ErrorCatalogEntry(
+        401, "ServiceNow webhook authenticity check failed."
+    ),
     "servicenow_unsupported_event_type": ErrorCatalogEntry(
         400, "Unsupported ServiceNow event type."
     ),

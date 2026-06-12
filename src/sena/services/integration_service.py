@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -12,6 +13,96 @@ from sena.integrations.base import DecisionPayload
 class IntegrationService:
     state: Any
     evaluation_service: Any
+
+    @staticmethod
+    def _canonical_payload_hash(canonical_replay_payload: dict[str, Any]) -> str:
+        return hashlib.sha256(
+            json.dumps(
+                canonical_replay_payload, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+
+    @classmethod
+    def _build_normalization_contract(cls, mapped: dict[str, Any]) -> dict[str, Any]:
+        canonical_replay_payload = dict(mapped.get("canonical_replay_payload", {}))
+        operational_metadata = dict(mapped.get("operational_metadata", {}))
+        canonical_replay_payload_hash = cls._canonical_payload_hash(
+            canonical_replay_payload
+        )
+        return {
+            "canonical_replay_payload": canonical_replay_payload,
+            "operational_metadata": operational_metadata,
+            "determinism_scope": "canonical_replay_payload_only",
+            "determinism_contract": {
+                "scope": "canonical_replay_payload_only",
+                "canonical_replay_payload": canonical_replay_payload,
+                "operational_metadata": operational_metadata,
+                "canonical_replay_payload_hash": canonical_replay_payload_hash,
+            },
+        }
+
+    @staticmethod
+    def _build_mapped_action_proposal(proposal: Any, *, include_actor_role: bool) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "action_type": proposal.action_type,
+            "request_id": proposal.request_id,
+            "actor_id": proposal.actor_id,
+            "attributes": proposal.attributes,
+        }
+        if include_actor_role:
+            payload["actor_role"] = proposal.actor_role
+        return payload
+
+    @staticmethod
+    def _build_decision_payload(decision: dict[str, Any], proposal: Any) -> DecisionPayload:
+        return DecisionPayload(
+            decision_id=decision["decision_id"],
+            request_id=proposal.request_id,
+            action_type=proposal.action_type,
+            matched_rule_ids=[item["rule_id"] for item in decision["matched_rules"]],
+            summary=decision["summary"],
+            merkle_proof=decision.get("decision_hash"),
+        )
+
+    def _policy_bundle_info(self) -> dict[str, Any]:
+        metadata = self.state.metadata
+        return {
+            "schema_version": "1",
+            "bundle_name": getattr(metadata, "bundle_name", "unknown"),
+            "version": getattr(metadata, "version", "unknown"),
+            "integrity_sha256": getattr(metadata, "integrity_sha256", None),
+        }
+
+    def _supported_contract(
+        self,
+        *,
+        connector: str,
+        normalization: dict[str, Any],
+        decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        decision_determinism = dict(decision.get("determinism_contract") or {})
+        normalization_determinism = dict(normalization.get("determinism_contract") or {})
+        normalized_event = dict(normalization.get("normalized_event") or {})
+        return {
+            "schema_version": "1",
+            "connector": connector,
+            "policy_bundle": self._policy_bundle_info(),
+            "decision_artifact": {
+                "decision_id": decision.get("decision_id"),
+                "outcome": decision.get("outcome"),
+                "decision_hash": decision.get("decision_hash"),
+                "canonical_replay_payload_hash": decision_determinism.get(
+                    "canonical_replay_payload_hash"
+                ),
+            },
+            "normalization_artifact": {
+                "source_event_type": normalized_event.get("source_event_type"),
+                "request_id": normalized_event.get("request_id"),
+                "canonical_replay_payload_hash": normalization_determinism.get(
+                    "canonical_replay_payload_hash"
+                ),
+            },
+        }
 
     def handle_webhook_event(
         self,
@@ -34,10 +125,15 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
+        normalization = {
+            "normalized_event": normalized,
+            **self._build_normalization_contract(mapped),
+        }
         decision = self.evaluation_service.evaluate(
             proposal=proposal,
             facts=facts,
             endpoint="/v1/integrations/webhook",
+            source_connector="webhook",
             default_decision=default_decision,
             strict_require_allow=strict_require_allow,
             notify_on_escalation=True,
@@ -46,13 +142,11 @@ class IntegrationService:
         return {
             "provider": provider,
             "event_type": event_type,
+            "normalization": normalization,
             "normalized_event": normalized,
-            "mapped_action_proposal": {
-                "action_type": proposal.action_type,
-                "request_id": proposal.request_id,
-                "actor_id": proposal.actor_id,
-                "attributes": proposal.attributes,
-            },
+            "mapped_action_proposal": self._build_mapped_action_proposal(
+                proposal, include_actor_role=False
+            ),
             "decision": decision,
             "reasoning": decision.get("reasoning"),
         }
@@ -72,6 +166,10 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
+        normalization = {
+            "normalized_event": normalized,
+            **self._build_normalization_contract(mapped),
+        }
         event_route = self.state.jira_connector.route_for_event_type(
             normalized["source_event_type"]
         )
@@ -85,34 +183,44 @@ class IntegrationService:
             proposal=proposal,
             facts={},
             endpoint="/v1/integrations/jira/webhook",
+            source_connector="jira",
             default_decision=DecisionOutcome.APPROVED,
             strict_require_allow=False,
             notify_on_escalation=False,
             append_audit=False,
         )
-        outbound = self.state.jira_connector.send_decision(
-            DecisionPayload(
-                decision_id=decision["decision_id"],
-                request_id=proposal.request_id,
-                action_type=proposal.action_type,
-                matched_rule_ids=[
-                    item["rule_id"] for item in decision["matched_rules"]
-                ],
-                summary=decision["summary"],
-                merkle_proof=decision.get("decision_hash"),
+        reliability = self.state.reliability_service
+        decision_payload = self._build_decision_payload(decision, proposal)
+        if reliability is None:
+            outbound = self.state.jira_connector.send_decision(decision_payload)
+        else:
+            outbound = reliability.call_dependency(
+                dependency_name="jira",
+                operation=lambda: self.state.jira_connector.send_decision(
+                    decision_payload
+                ),
+                fallback=lambda reason: self._degraded_outbound_fallback(
+                    dependency="jira",
+                    reason=reason,
+                    decision=decision,
+                    request_id=proposal.request_id,
+                ),
             )
-        )
         return {
             "status": "evaluated",
+            "policy_bundle": self._policy_bundle_info(),
+            "normalization": normalization,
             "normalized_event": normalized,
-            "mapped_action_proposal": {
-                "action_type": proposal.action_type,
-                "request_id": proposal.request_id,
-                "actor_id": proposal.actor_id,
-                "attributes": proposal.attributes,
-            },
+            "mapped_action_proposal": self._build_mapped_action_proposal(
+                proposal, include_actor_role=False
+            ),
             "decision": decision,
             "outbound_delivery": outbound,
+            "supported_contract": self._supported_contract(
+                connector="jira",
+                normalization=normalization,
+                decision=decision,
+            ),
         }
 
     def handle_servicenow_event(
@@ -132,6 +240,10 @@ class IntegrationService:
         )
         normalized = mapped["normalized_event"]
         proposal = mapped["action_proposal"]
+        normalization = {
+            "normalized_event": normalized,
+            **self._build_normalization_contract(mapped),
+        }
         event_route = self.state.servicenow_connector.route_for_event_type(
             normalized["source_event_type"]
         )
@@ -145,35 +257,44 @@ class IntegrationService:
             proposal=proposal,
             facts={},
             endpoint="/v1/integrations/servicenow/webhook",
+            source_connector="servicenow",
             default_decision=DecisionOutcome.APPROVED,
             strict_require_allow=strict_require_allow,
             notify_on_escalation=False,
             append_audit=False,
         )
-        outbound = self.state.servicenow_connector.send_decision(
-            DecisionPayload(
-                decision_id=decision["decision_id"],
-                request_id=proposal.request_id,
-                action_type=proposal.action_type,
-                matched_rule_ids=[
-                    item["rule_id"] for item in decision["matched_rules"]
-                ],
-                summary=decision["summary"],
-                merkle_proof=decision.get("decision_hash"),
+        reliability = self.state.reliability_service
+        decision_payload = self._build_decision_payload(decision, proposal)
+        if reliability is None:
+            outbound = self.state.servicenow_connector.send_decision(decision_payload)
+        else:
+            outbound = reliability.call_dependency(
+                dependency_name="servicenow",
+                operation=lambda: self.state.servicenow_connector.send_decision(
+                    decision_payload
+                ),
+                fallback=lambda reason: self._degraded_outbound_fallback(
+                    dependency="servicenow",
+                    reason=reason,
+                    decision=decision,
+                    request_id=proposal.request_id,
+                ),
             )
-        )
         return {
             "status": "evaluated",
+            "policy_bundle": self._policy_bundle_info(),
+            "normalization": normalization,
             "normalized_event": normalized,
-            "mapped_action_proposal": {
-                "action_type": proposal.action_type,
-                "request_id": proposal.request_id,
-                "actor_id": proposal.actor_id,
-                "actor_role": proposal.actor_role,
-                "attributes": proposal.attributes,
-            },
+            "mapped_action_proposal": self._build_mapped_action_proposal(
+                proposal, include_actor_role=True
+            ),
             "decision": decision,
             "outbound_delivery": outbound,
+            "supported_contract": self._supported_contract(
+                connector="servicenow",
+                normalization=normalization,
+                decision=decision,
+            ),
         }
 
     def handle_slack_interaction(self, payload_json: str) -> dict[str, Any]:
@@ -185,4 +306,29 @@ class IntegrationService:
             "decision": interaction["decision"],
             "decision_id": interaction["decision_id"],
             "reviewer": interaction["reviewer"],
+        }
+
+    def _degraded_outbound_fallback(
+        self,
+        *,
+        dependency: str,
+        reason: str,
+        decision: dict[str, Any],
+        request_id: str | None,
+    ) -> dict[str, Any]:
+        self.state.processing_store.enqueue_dead_letter(
+            {
+                "event_type": "integration_outbound_retry",
+                "dependency": dependency,
+                "request_id": request_id,
+                "decision_id": decision.get("decision_id"),
+                "decision_summary": decision.get("summary"),
+            },
+            f"{dependency} outbound degraded: {reason}",
+        )
+        return {
+            "status": "degraded",
+            "fallback_mode": "queue_for_retry",
+            "reason": reason,
+            "dependency": dependency,
         }

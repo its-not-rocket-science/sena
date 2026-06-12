@@ -1,0 +1,121 @@
+version: 2
+generated_on: 2026-04-18
+product_statement: "deterministic Jira + ServiceNow approval decisioning with replayable audit evidence"
+classification_legend:
+  supported: "Contract-backed and implementation-backed default path."
+  experimental: "Implemented but not a compatibility commitment."
+  labs_demo: "Demo, investor, or exploratory collateral."
+  legacy: "Historical or deprecated material; not part of current guarantees."
+  remove: "Actively remove from default operator flow (keep only if needed internally)."
+inventory:
+  docs_default_path:
+    - path: README.md
+      classification: supported
+    - path: docs/INDEX.md
+      classification: supported
+    - path: docs/FLAGSHIP_WORKFLOW.md
+      classification: supported
+    - path: docs/CONTROL_PLANE.md
+      classification: supported
+    - path: docs/OPERATIONS.md
+      classification: supported
+    - path: docs/integrations/JIRA.md
+      classification: supported
+    - path: docs/integrations/SERVICENOW.md
+      classification: supported
+    - path: docs/SUPPORTED_VS_EXPERIMENTAL_INVENTORY.md
+      classification: supported
+  docs_non_default:
+    - path: docs/EXPERIMENTAL_INDEX.md
+      classification: experimental
+    - path: docs/COOKBOOK.md
+      classification: experimental
+    - path: docs/LABS.md
+      classification: labs_demo
+    - path: docs/labs/
+      classification: labs_demo
+    - path: docs/blog/langchain_integration.md
+      classification: labs_demo
+    - path: docs/archive/legacy_vision.md
+      classification: legacy
+    - path: docs/THIRTY_DAY_WEDGE_PLAN.md
+      classification: legacy
+  examples:
+    - path: examples/flagship/
+      classification: supported
+    - path: examples/design_partner_reference/
+      classification: supported
+    - path: examples/basic_usage.py
+      classification: supported
+    - path: examples/gated_promotion_flow.sh
+      classification: supported
+    - path: examples/simulation_scenarios.json
+      classification: supported
+    - path: examples/k8s_admission_demo/
+      classification: labs_demo
+    - path: examples/langchain_demo/
+      classification: labs_demo
+  api_surface:
+    - route: /v1/integrations/jira/webhook
+      classification: supported
+      notes: "Flagship ingress path."
+    - route: /v1/integrations/servicenow/webhook
+      classification: supported
+      notes: "Flagship ingress path."
+    - route: /v1/integrations/webhook
+      classification: experimental
+      notes: "Generic mapping surface; intentionally non-default."
+    - route: /v1/integrations/slack/interactions
+      classification: experimental
+      notes: "Interactive Slack callback; intentionally non-default."
+    - route: /health
+      classification: legacy
+      notes: "Deprecated unversioned endpoint (410)."
+    - route: /bundle
+      classification: legacy
+      notes: "Deprecated unversioned endpoint (410)."
+    - route: /evaluate
+      classification: legacy
+      notes: "Deprecated unversioned endpoint (410)."
+  scripts:
+    - path: scripts/check_design_partner_ready.py
+      classification: supported
+    - path: scripts/generate_evidence_pack.py
+      classification: supported
+    - path: scripts/generate_integration_pilot_pack.py
+      classification: supported
+    - path: scripts/verify_policy_registry.py
+      classification: supported
+    - path: scripts/refresh_replay_corpus.py
+      classification: supported
+    - path: scripts/backup.py
+      classification: supported
+    - path: scripts/restore.py
+      classification: supported
+    - path: scripts/backup_policy_registry.py
+      classification: supported
+    - path: scripts/restore_policy_registry.py
+      classification: supported
+    - path: scripts/migrate_policy_registry.py
+      classification: supported
+    - path: scripts/generate_pilot_evidence.py
+      classification: supported
+    - path: scripts/generate_integration_confidence_matrix.py
+      classification: supported
+    - path: scripts/benchmark_embedded_rules_vs_sena.py
+      classification: labs_demo
+      notes: "Useful internally, but can distract from productized governance path."
+    - path: scripts/load_test.py
+      classification: experimental
+    - path: scripts/generate_traffic.py
+      classification: experimental
+  recommendations:
+    - path: README.md#install
+      action: remove
+      note: "Do not lead with LangChain extra in default install path."
+    - path: README.md#cli-quickstart
+      action: remove
+      note: "Do not lead with demo scenario fixtures in the first CLI run."
+    - path: docs/INDEX.md
+      action: supported
+      note: "Keep inventory and flagship workflow in top section."

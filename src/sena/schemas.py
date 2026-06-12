@@ -47,6 +47,8 @@ class EvaluatePayload(BaseModel):
         supervising_owner: str | None = None
 
     action_type: NonEmptyStr
+    tenant_id: str | None = None
+    region: str | None = None
     request_id: str | None = None
     actor_id: str | None = None
     actor_role: str | None = None
@@ -60,6 +62,9 @@ class EvaluatePayload(BaseModel):
     ] = "APPROVED"
     strict_require_allow: bool = False
     dry_run: bool = False
+    simulate_exceptions: bool = False
+    downstream_outcome: Literal["success", "failure"] | None = None
+    incident_flag: bool | None = None
 
     @model_validator(mode="after")
     def validate_strict_identity_fields(self) -> "EvaluatePayload":
@@ -135,9 +140,13 @@ class EvaluatePayload(BaseModel):
     def to_replay_input(self, fallback_request_id: str) -> dict[str, Any]:
         return {
             "action_type": self.action_type,
+            "tenant_id": self.tenant_id,
+            "region": self.region,
             "request_id": self.resolved_request_id(fallback_request_id),
             "actor_id": self.actor_id,
             "actor_role": self.actor_role,
             "attributes": self.attributes,
             "facts": self.facts,
+            "downstream_outcome": self.downstream_outcome,
+            "incident_flag": self.incident_flag,
         }

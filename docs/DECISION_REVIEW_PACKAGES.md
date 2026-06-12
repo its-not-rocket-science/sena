@@ -31,7 +31,10 @@ Each package is emitted as JSON with stable top-level keys:
 - `policy_bundle_metadata`: bundle name/version/lifecycle/schema/integrity metadata.
 - `governance_evidence`: normalized missing evidence classes and per-rule evidence gaps for AI-assisted governance controls.
 - `audit_identifiers`: request, decision hash, chain hashes, storage sequence IDs.
+- `determinism_contract`: canonical replay payload plus operational metadata separation.
 - `normalized_source_system_references`: normalized source-system IDs and references.
+
+Determinism scope is canonical-only; see `docs/CANONICAL_ARTIFACT_CONTRACT.md`.
 
 ## CLI usage
 

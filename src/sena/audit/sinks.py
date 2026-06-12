@@ -198,6 +198,22 @@ class JsonlFileAuditSink:
                 }
             )
 
+        expected_segment_files = {
+            str(segment.get("file"))
+            for segment in manifest_segments
+            if isinstance(segment, dict) and segment.get("file")
+        }
+        discovered_segment_files = {
+            file.name for file in sink.parent.glob(f"{sink.name}.seg-*.jsonl")
+        }
+        orphaned_segment_files = sorted(
+            discovered_segment_files - expected_segment_files
+        )
+        if orphaned_segment_files:
+            issues.extend(
+                [f"orphaned_segment:{segment}" for segment in orphaned_segment_files]
+            )
+
         active_count = 0
         if sink.exists():
             active_records, malformed = self._read_lines(sink)

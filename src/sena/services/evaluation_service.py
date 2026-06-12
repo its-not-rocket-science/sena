@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from time import perf_counter
@@ -15,6 +17,7 @@ from sena.core.models import (
     RiskClassification,
 )
 from sena.engine.evaluator import PolicyEvaluator
+from sena.engine.explain import build_explanation
 from sena.engine.replay import (
     build_drift_report,
     evaluate_replay_cases,
@@ -100,14 +103,20 @@ class EvaluationService:
         proposal: ActionProposal,
         facts: dict[str, Any],
         endpoint: str,
+        source_connector: str = "api",
         default_decision: Any,
         strict_require_allow: bool,
         notify_on_escalation: bool = True,
         append_audit: bool = True,
         replay_input: dict[str, Any] | None = None,
+        simulate_exceptions: bool = False,
+        downstream_outcome: str | None = None,
+        incident_flag: bool | None = None,
     ) -> dict[str, Any]:
+        active_exceptions = self.state.exception_service.list_active()
         evaluator = PolicyEvaluator(
             self.state.rules,
+            exceptions=active_exceptions,
             policy_bundle=self.state.metadata,
             config=EvaluatorConfig(
                 default_decision=default_decision,
@@ -124,6 +133,11 @@ class EvaluationService:
             outcome=trace.outcome.value,
             policy=policy_bundle,
         )
+        self.state.metrics.observe_connector_outcome(
+            connector=source_connector,
+            policy_bundle=policy_bundle,
+            outcome=trace.outcome.value,
+        )
         logger.info(
             "decision_evaluated",
             decision_id=trace.decision_id,
@@ -131,10 +145,74 @@ class EvaluationService:
             policy_bundle=policy_bundle,
             evaluation_ms=evaluation_ms,
             endpoint=endpoint,
+            connector=source_connector,
         )
         payload = trace.to_dict()
+        canonical_replay_payload = dict(trace.canonical_replay_payload or {})
+        operational_metadata = dict(trace.operational_metadata or {})
+        canonical_replay_payload_hash = hashlib.sha256(
+            json.dumps(
+                canonical_replay_payload, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        payload["determinism_contract"] = {
+            "scope": "canonical_replay_payload_only",
+            "canonical_replay_payload": canonical_replay_payload,
+            "operational_metadata": operational_metadata,
+            "canonical_replay_payload_hash": canonical_replay_payload_hash,
+            "volatile_fields": ["decision_id", "decision_timestamp", "operational_metadata"],
+        }
+        explanation_bundle = {
+            "analyst": build_explanation(trace, view="analyst"),
+            "auditor": build_explanation(trace, view="auditor"),
+        }
+        payload["explanation"] = explanation_bundle["auditor"]
+        self.state.processing_store.store_decision_explanation(
+            trace.decision_id, explanation_bundle
+        )
+        if simulate_exceptions:
+            baseline_trace = PolicyEvaluator(
+                self.state.rules,
+                exceptions=[],
+                policy_bundle=self.state.metadata,
+                config=EvaluatorConfig(
+                    default_decision=default_decision,
+                    require_allow_match=strict_require_allow,
+                    on_escalation=None,
+                ),
+            ).evaluate(proposal, facts)
+            payload["exception_simulation"] = {
+                "without_exceptions": {
+                    "outcome": baseline_trace.outcome.value,
+                    "decision_hash": baseline_trace.decision_hash,
+                },
+                "with_exceptions": {
+                    "outcome": trace.outcome.value,
+                    "decision_hash": trace.decision_hash,
+                },
+                "changed": baseline_trace.outcome != trace.outcome,
+            }
+        if trace.applied_exceptions:
+            self.state.metrics.observe_exception_overlay_applied(
+                connector=source_connector,
+                policy_bundle=policy_bundle,
+                outcome=trace.outcome.value,
+            )
+            logger.info(
+                "exception_overlay_applied",
+                connector=source_connector,
+                decision_id=trace.decision_id,
+                policy_bundle=policy_bundle,
+                outcome=trace.outcome.value,
+                applied_exception_count=len(trace.applied_exceptions),
+            )
         if replay_input is not None and "audit_record" in payload:
             payload["audit_record"]["replay_input"] = replay_input
+        if "audit_record" in payload:
+            if downstream_outcome in {"success", "failure"}:
+                payload["audit_record"]["downstream_outcome"] = downstream_outcome
+            if isinstance(incident_flag, bool):
+                payload["audit_record"]["incident_flag"] = incident_flag
         if append_audit:
             appended = self.audit_service.append_record(payload["audit_record"])
             if appended is not None:
@@ -155,6 +233,7 @@ class EvaluationService:
     ) -> dict[str, Any]:
         evaluator = PolicyEvaluator(
             self.state.rules,
+            exceptions=self.state.exception_service.list_active(),
             policy_bundle=self.state.metadata,
             config=EvaluatorConfig(
                 default_decision=default_decision,

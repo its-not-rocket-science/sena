@@ -130,3 +130,25 @@ def test_audit_summarize_and_locate_decision(tmp_path) -> None:
     assert located["found"] is True
     assert located["record_index"] == 2
     assert "audit.jsonl" in located["location"]
+
+
+def test_audit_chain_verification_rejects_duplicate_decision_ids(tmp_path) -> None:
+    sink = tmp_path / "audit.jsonl"
+    append_audit_record(str(sink), {"decision_id": "dup-1", "outcome": "APPROVED"})
+    append_audit_record(str(sink), {"decision_id": "dup-1", "outcome": "BLOCKED"})
+
+    verification = verify_audit_chain(str(sink))
+    assert verification["valid"] is False
+    assert any("duplicate decision_id" in item for item in verification["errors"])
+
+
+def test_audit_chain_verification_reports_orphaned_segments(tmp_path) -> None:
+    sink = tmp_path / "audit.jsonl"
+    append_audit_record(str(sink), {"decision_id": "dec-1", "outcome": "APPROVED"})
+
+    orphan = tmp_path / "audit.jsonl.seg-999999.jsonl"
+    orphan.write_text('{"decision_id":"orphan","outcome":"APPROVED"}\n')
+
+    verification = verify_audit_chain(str(sink))
+    assert verification["valid"] is False
+    assert any("orphaned_segment" in item for item in verification["errors"])
