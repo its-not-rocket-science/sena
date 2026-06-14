@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sena — Deterministic Policy Engine for Jira and ServiceNow</title>
+<meta name="description" content="Deterministic policy engine for Jira and ServiceNow approvals with replayable audit evidence. Capture. Link. Seal. Replay.">
+
+<!-- Open Graph -->
+<meta property="og:title" content="Sena — Deterministic Policy Engine">
+<meta property="og:description" content="Deterministic policy engine for Jira and ServiceNow approvals with replayable audit evidence. Every decision captured, cryptographically chained, tamper-evident by design.">
+<meta property="og:image" content="https://raw.githubusercontent.com/its-not-rocket-science/sena/main/sena-social-media-preview.jpg">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:url" content="https://its-not-rocket-science.github.io/sena/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Schleiferdyne Systems">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Sena — Deterministic Policy Engine">
+<meta name="twitter:description" content="Deterministic policy engine for Jira and ServiceNow approvals with replayable audit evidence.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/its-not-rocket-science/sena/main/sena-social-media-preview.jpg">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --parchment:  #f0e8cc;
+  --parchment2: #e8ddb8;
+  --green:      #1a3d2b;
+  --green-mid:  #2a5a3e;
+  --gold:       #c9a227;
+  --gold-dim:   #8a6e18;
+  --crimson:    #8b1a1a;
+  --ink:        #1a1208;
+  --ink-mid:    #2e2010;
+  --muted:      #5a4a30;
+  --teal:       #0d2e2e;
+  --serif:      'Crimson Text', Georgia, serif;
+  --display:    'IM Fell English', Georgia, serif;
+  --mono:       'JetBrains Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 17px; scroll-behavior: smooth; }
+body { background: var(--parchment); color: var(--ink); font-family: var(--serif); line-height: 1.7; }
+
+.page-frame {
+  min-height: 100vh;
+  border: 6px solid var(--teal);
+  outline: 2px solid var(--gold);
+  outline-offset: -10px;
+}
+
+/* ── Hero ── */
+.hero {
+  background: linear-gradient(160deg, var(--teal) 0%, var(--green) 100%);
+  padding: 3rem 2rem 2.5rem;
+  text-align: center;
+  position: relative;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23c9a22720' stroke-width='0.5'%3E%3Cpath d='M0 30h60M30 0v60'/%3E%3C/g%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+.hero-motto {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: .85rem;
+  color: var(--gold);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  margin-bottom: 1rem;
+}
+
+.hero h1 {
+  font-family: var(--display);
+  font-size: clamp(3rem, 10vw, 5.5rem);
+  color: var(--parchment);
+  letter-spacing: .06em;
+  line-height: 1;
+  margin-bottom: .5rem;
+}
+
+.hero-tagline {
+  font-size: 1.15rem;
+  color: var(--parchment2);
+  margin-bottom: .5rem;
+}
+
+.hero-sub {
+  font-family: var(--mono);
+  font-size: .72rem;
+  color: var(--gold);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+}
+
+.four-pillars {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.75rem;
+}
+
+.pillar {
+  text-align: center;
+  min-width: 90px;
+}
+
+.pillar-word {
+  font-family: var(--display);
+  font-size: 1.1rem;
+  color: var(--gold);
+  display: block;
+  letter-spacing: .1em;
+}
+
+.pillar-desc {
+  font-size: .72rem;
+  color: rgba(240,232,204,.65);
+  line-height: 1.4;
+  margin-top: .2rem;
+}
+
+.pillar-sep {
+  color: var(--gold-dim);
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  padding-top: .2rem;
+}
+
+/* ── Nav ── */
+.nav-strip {
+  background: var(--parchment2);
+  border-top: 2px solid var(--gold-dim);
+  border-bottom: 2px solid var(--gold-dim);
+  padding: .7rem 2rem;
+  display: flex; align-items: center; justify-content: center;
+  gap: 2rem; flex-wrap: wrap;
+}
+
+.nav-strip a {
+  font-family: var(--mono);
+  font-size: .72rem;
+  color: var(--green);
+  text-decoration: none;
+  letter-spacing: .05em;
+  border-bottom: 1px solid transparent;
+  transition: border-color .15s, color .15s;
+}
+
+.nav-strip a:hover { color: var(--crimson); border-color: var(--crimson); }
+
+/* ── Main ── */
+main { max-width: 900px; margin: 0 auto; padding: 2.5rem 2rem 3rem; }
+
+.section { margin-bottom: 2.5rem; }
+
+.section-title {
+  font-family: var(--display);
+  font-size: 1.5rem;
+  color: var(--green);
+  margin-bottom: .75rem;
+  display: flex; align-items: center; gap: .6rem;
+}
+
+.section-title::after {
+  content: '';
+  flex: 1; height: 1px;
+  background: linear-gradient(to right, var(--gold-dim), transparent);
+}
+
+/* ── Policy anatomy ── */
+.policy-card {
+  background: var(--parchment2);
+  border: 1px solid var(--gold-dim);
+  border-radius: 4px;
+  padding: 1.1rem 1.25rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-top: .85rem;
+}
+
+@media (max-width: 600px) { .policy-card { grid-template-columns: 1fr; } }
+
+.policy-field { font-size: .9rem; }
+.policy-field strong {
+  font-family: var(--mono);
+  font-size: .68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  display: block;
+  margin-bottom: .1rem;
+}
+
+/* ── Audit chain ── */
+.chain {
+  display: flex; gap: 0; align-items: stretch;
+  margin-top: .85rem; flex-wrap: wrap;
+}
+
+.chain-step {
+  background: var(--green);
+  color: var(--parchment);
+  padding: .75rem 1.1rem;
+  flex: 1; min-width: 120px;
+  text-align: center;
+  position: relative;
+}
+
+.chain-step:not(:last-child)::after {
+  content: '→';
+  position: absolute;
+  right: -10px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--gold);
+  font-size: 1rem;
+  z-index: 1;
+}
+
+.chain-step h3 {
+  font-family: var(--display);
+  font-size: .95rem;
+  color: var(--gold);
+  margin-bottom: .2rem;
+}
+
+.chain-step p { font-size: .75rem; color: var(--parchment2); line-height: 1.4; }
+
+/* ── Integrations ── */
+.int-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: .85rem;
+}
+
+.int-card {
+  background: var(--parchment2);
+  border: 1px solid var(--gold-dim);
+  border-radius: 4px;
+  padding: .85rem 1rem;
+}
+
+.int-card h3 { font-family: var(--display); font-size: 1rem; color: var(--green); margin-bottom: .25rem; }
+.int-card p { font-size: .85rem; color: var(--muted); line-height: 1.5; }
+
+pre {
+  background: var(--ink);
+  color: #d4c99a;
+  font-family: var(--mono);
+  font-size: .73rem;
+  border-radius: 4px;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  line-height: 1.65;
+  border: 1px solid var(--gold-dim);
+  margin-top: .85rem;
+}
+
+.cta-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1.25rem; }
+
+.btn {
+  font-family: var(--mono);
+  font-size: .78rem;
+  padding: .5rem 1.25rem;
+  border-radius: 3px;
+  text-decoration: none;
+  letter-spacing: .05em;
+  transition: background .15s, color .15s;
+  border: none; cursor: pointer;
+}
+
+.btn-primary { background: var(--green); color: var(--parchment); }
+.btn-primary:hover { background: var(--green-mid); }
+.btn-secondary { background: transparent; color: var(--green); border: 1px solid var(--green); }
+.btn-secondary:hover { background: var(--green); color: var(--parchment); }
+
+footer {
+  background: var(--teal);
+  color: var(--parchment2);
+  text-align: center;
+  padding: 1.25rem 2rem;
+  font-family: var(--mono);
+  font-size: .7rem;
+  letter-spacing: .05em;
+}
+
+footer a { color: var(--gold); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="page-frame">
+
+<header class="hero">
+  <p class="hero-motto">Guardian of Order · Keeper of Oaths · Witness to Truth</p>
+  <h1>Sena</h1>
+  <p class="hero-tagline">Deterministic policy engine for Jira and ServiceNow approvals</p>
+  <p class="hero-sub">Replayable audit evidence</p>
+
+  <div class="four-pillars">
+    <div class="pillar">
+      <span class="pillar-word">Capture</span>
+      <span class="pillar-desc">Every decision<br>is recorded</span>
+    </div>
+    <div class="pillar-sep">·</div>
+    <div class="pillar">
+      <span class="pillar-word">Link</span>
+      <span class="pillar-desc">Cryptographically<br>chained</span>
+    </div>
+    <div class="pillar-sep">·</div>
+    <div class="pillar">
+      <span class="pillar-word">Seal</span>
+      <span class="pillar-desc">Tamper-evident<br>by design</span>
+    </div>
+    <div class="pillar-sep">·</div>
+    <div class="pillar">
+      <span class="pillar-word">Replay</span>
+      <span class="pillar-desc">Deterministic<br>and verifiable</span>
+    </div>
+  </div>
+</header>
+
+<nav class="nav-strip" aria-label="Quick links">
+  <a href="https://github.com/its-not-rocket-science/sena">GitHub</a>
+  <a href="https://github.com/its-not-rocket-science/sena#readme">README</a>
+  <a href="https://github.com/its-not-rocket-science/sena/blob/main/CONTRIBUTING.md">Contributing</a>
+  <a href="https://github.com/its-not-rocket-science/sena/issues">Issues</a>
+  <a href="https://github.com/its-not-rocket-science/its-not-rocket-science">← Profile</a>
+</nav>
+
+<main>
+
+  <section class="section">
+    <h2 class="section-title">What it does</h2>
+    <p>Sena evaluates approval requests against policy bundles and produces decisions that are <strong>deterministic</strong>, <strong>replayable</strong>, and <strong>auditable</strong>. The same request evaluated against the same policy bundle always produces the same decision — and that decision carries a complete, tamper-evident audit trail.</p>
+    <p style="margin-top:.75rem">Designed for enterprise workflows where governance teams need to demonstrate to auditors exactly why a request was approved or rejected, and reproduce that reasoning months later.</p>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Policy anatomy</h2>
+    <p>Each policy is a structured bundle evaluated deterministically:</p>
+    <div class="policy-card">
+      <div class="policy-field"><strong>Subject</strong> Who the policy applies to</div>
+      <div class="policy-field"><strong>Condition</strong> When it triggers</div>
+      <div class="policy-field"><strong>Action</strong> What is permitted or required</div>
+      <div class="policy-field"><strong>Constraint</strong> Limits on the action</div>
+      <div class="policy-field"><strong>Exception</strong> Override conditions</div>
+      <div class="policy-field"><strong>Valid until</strong> Temporal scope</div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Audit chain</h2>
+    <div class="chain">
+      <div class="chain-step">
+        <h3>Request</h3>
+        <p>Approval request received from Jira or ServiceNow</p>
+      </div>
+      <div class="chain-step">
+        <h3>Evaluate</h3>
+        <p>Policy bundle evaluated deterministically</p>
+      </div>
+      <div class="chain-step">
+        <h3>Decision</h3>
+        <p>Approved / Rejected / Escalated with full reasoning</p>
+      </div>
+      <div class="chain-step">
+        <h3>Seal</h3>
+        <p>Decision chained, signed, and stored as replayable evidence</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Integrations</h2>
+    <div class="int-grid">
+      <div class="int-card">
+        <h3>Jira</h3>
+        <p>Webhook-driven approval evaluation. Policy decisions written back as comments and status transitions.</p>
+      </div>
+      <div class="int-card">
+        <h3>ServiceNow</h3>
+        <p>REST integration for ITSM approval workflows. Full change request lifecycle support.</p>
+      </div>
+      <div class="int-card">
+        <h3>Audit replay</h3>
+        <p>Replay any historical decision with the policy bundle active at the time. Produces byte-identical output.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Quick start</h2>
+<pre>pip install sena
+
+from sena import PolicyEngine, PolicyBundle
+
+engine = PolicyEngine()
+bundle = PolicyBundle.from_yaml("policies/change-management.yaml")
+
+decision = engine.evaluate(request=request, bundle=bundle)
+print(decision.outcome)      # APPROVED / REJECTED / ESCALATED
+print(decision.audit_trail)  # replayable evidence chain</pre>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/its-not-rocket-science/sena">View on GitHub</a>
+      <a class="btn btn-secondary" href="https://github.com/its-not-rocket-science/sena#readme">Read the docs</a>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <p>Sena · MIT licence · <a href="https://github.com/its-not-rocket-science/sena">its-not-rocket-science/sena</a> · <a href="https://github.com/its-not-rocket-science">Schleiferdyne Systems</a></p>
+</footer>
+
+</div>
+</body>
+</html>
